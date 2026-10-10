@@ -49,8 +49,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   Rafflesya launches such drones). Joiners only saw drones their own copy of the system made, which stop once
   they fly the ship. The host now sends these drones like any other; a joiner's own unattributed drones are kept
   out of sight, as its other local drones already were.
-- Fixed: a Rafflesya a joiner flies didn't fire its bomb on the host. Its carrier's dock script tells it to hold
-  fire while it means to bring it home; the player's own ship ignores that, and a joiner's fighter now does too.
+- Fixed: a Rafflesya a joiner flies didn't fire its bomb on the host. Two causes: its carrier's dock script tells
+  it to hold fire while it means to bring it home (the player's own ship ignores that; a joiner's fighter now does
+  too), and the bomb is marked for system use, which the game leaves out of the fire order on a ship the local
+  player isn't flying. When a joiner fires a group, the host now also fires that group's system-marked weapons.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"

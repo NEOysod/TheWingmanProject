@@ -129,6 +129,7 @@ public class RemotePilotAI implements ShipAIPlugin {
         if (in.has(InputState.FIRE) && valid) {
             if (selected == in.group) {
                 ship.giveCommand(ShipCommand.FIRE, aim, in.group);
+                fireSystemWeapons(groups.get(in.group));
             } else {
                 // The ship hasn't switched (yet, or it won't for an AI-flown ship). The game's fire order would
                 // shoot whatever group it still has selected, so fire the wanted group's weapons ourselves.
@@ -270,6 +271,21 @@ public class RemotePilotAI implements ShipAIPlugin {
         float remaining = diff - coast;
         if (remaining > 1f) ship.giveCommand(ShipCommand.TURN_LEFT, null, 0);
         else if (remaining < -1f) ship.giveCommand(ShipCommand.TURN_RIGHT, null, 0);
+    }
+
+    /**
+     * Weapons marked for use by a system or script (hint SYSTEM, such as UAF's Rafflesya bomb) are left out of the
+     * game's fire order on a ship the local player isn't flying, though the player's own ship fires them with the
+     * rest of the group. So when a joiner fires a group, those of its weapons that are ready are fired directly.
+     */
+    private void fireSystemWeapons(WeaponGroupAPI group) {
+        for (WeaponAPI w : group.getWeaponsCopy()) {
+            try {
+                if (w.isDisabled() || w.getCooldownRemaining() > 0f || (w.usesAmmo() && w.getAmmo() <= 0)) continue;
+                if (w.getSpec() == null || w.getSpec().getAIHints() == null || !w.getSpec().getAIHints().contains(WeaponAPI.AIHints.SYSTEM)) continue;
+                w.setForceFireOneFrame(true);
+            } catch (Throwable t) { /* that weapon stays with the fire order */ }
+        }
     }
 
     /** Fires a group's weapons without going through the ship's own "selected group". */
