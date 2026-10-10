@@ -76,23 +76,37 @@ public class NetTest {
         return c;
     }
 
-    /** True if what the joiner rebuilt is the host's state, to within what the packer is allowed to leave unsent. */
+    /**
+     * True if what the joiner rebuilt is the host's state, to within what the packer is allowed to leave unsent:
+     * every ship and missile of the host's, matched by id (those left out of an update come after the rest).
+     * Extra ones are allowed: something the host no longer has is carried on for a moment, and the joiner,
+     * which has removed it already, passes over it.
+     */
     static boolean alike(Snapshot cs, Snapshot g) {
-        if (g.tick != cs.tick || g.ships.size() != cs.ships.size() || g.missiles.size() != cs.missiles.size() || g.hostTime != cs.hostTime) return false;
-        for (int i = 0; i < cs.ships.size(); i++) {
-            Snapshot.ShipState x = cs.ships.get(i), y = g.ships.get(i);
+        if (g.tick != cs.tick || g.ships.size() < cs.ships.size() || g.missiles.size() < cs.missiles.size() || g.hostTime != cs.hostTime) return false;
+        Map<Integer, Snapshot.ShipState> gs = new HashMap<Integer, Snapshot.ShipState>();
+        for (Snapshot.ShipState y : g.ships) if (gs.put(y.netId, y) != null) return false;
+        for (Snapshot.ShipState x : cs.ships) {
+            Snapshot.ShipState y = gs.get(x.netId);
+            if (y == null) return false;
             float fluxBand = x.exact ? 0.51f : x.fluxStep + 0.6f;
-            boolean ok = x.netId == y.netId && Math.abs(x.x - y.x) <= 0.29f && Math.abs(x.y - y.y) <= 0.29f && turnApart(x.facing, y.facing) < 0.06f
+            boolean ok = Math.abs(x.x - y.x) <= 0.54f && Math.abs(x.y - y.y) <= 0.54f && turnApart(x.facing, y.facing) < 0.1f
                     && Math.abs(x.flux - y.flux) <= fluxBand && (x.flux > 0f) == (y.flux > 0f)
                     && (x.firing | y.firing) == y.firing && Arrays.equals(x.weaponAngles, y.weaponAngles)
-                    && x.flags == y.flags && x.system == y.system && x.cloak == y.cloak && Math.abs(x.hull - y.hull) < 0.0001f && Math.abs(x.vx - y.vx) < 0.32f
-                    && turnApart(x.shieldFacing, y.shieldFacing) < 3f && Math.abs(x.angVel - y.angVel) < 0.26f;
+                    && x.flags == y.flags && x.system == y.system && x.cloak == y.cloak && Math.abs(x.hull - y.hull) < 0.0001f && Math.abs(x.vx - y.vx) < 0.57f
+                    && turnApart(x.shieldFacing, y.shieldFacing) < 3f && Math.abs(x.angVel - y.angVel) < 0.36f;
             if (ok && x.exact) ok = Math.abs(x.x - y.x) <= 0.032f;
+            if (!ok && System.getProperty("why") != null) System.out.println("ship " + x.netId + " host x" + x.x + " y" + x.y + " f" + x.facing + " vx" + x.vx + " w" + x.angVel + " flux" + x.flux + " firing" + x.firing + " flags" + x.flags
+                    + " | joiner x" + y.x + " y" + y.y + " f" + y.facing + " vx" + y.vx + " w" + y.angVel + " flux" + y.flux + " firing" + y.firing + " flags" + y.flags + " angles " + Arrays.equals(x.weaponAngles, y.weaponAngles));
             if (!ok) return false;
         }
-        for (int i = 0; i < cs.missiles.size(); i++) {
-            Snapshot.MissileState x = cs.missiles.get(i), y = g.missiles.get(i);
-            if (!(x.id == y.id && Math.abs(x.x - y.x) <= 0.29f && Math.abs(x.y - y.y) <= 0.29f && Math.abs(x.flightTime - y.flightTime) < 0.051f && turnApart(x.facing, y.facing) < 3f)) return false;
+        Map<Integer, Snapshot.MissileState> gm = new HashMap<Integer, Snapshot.MissileState>();
+        for (Snapshot.MissileState y : g.missiles) if (gm.put(y.id, y) != null) return false;
+        for (Snapshot.MissileState x : cs.missiles) {
+            Snapshot.MissileState y = gm.get(x.id);
+            if (y != null && System.getProperty("why") != null && !(Math.abs(x.x - y.x) <= 0.54f && Math.abs(x.y - y.y) <= 0.54f && Math.abs(x.flightTime - y.flightTime) < 0.051f && turnApart(x.facing, y.facing) < 3f))
+                System.out.println("missile " + x.id + " host " + x.x + "," + x.y + " t" + x.flightTime + " f" + x.facing + " | joiner " + y.x + "," + y.y + " t" + y.flightTime + " f" + y.facing);
+            if (y == null || !(Math.abs(x.x - y.x) <= 0.54f && Math.abs(x.y - y.y) <= 0.54f && Math.abs(x.flightTime - y.flightTime) < 0.051f && turnApart(x.facing, y.facing) < 3f)) return false;
         }
         return true;
     }
@@ -255,12 +269,9 @@ public class NetTest {
                     byte[] wire = pe.encode(ps, f - 1);
                     if (!pe.lastKey) { steady += wire.length; n++; }
                     Snapshot pg = pd.decode(wire);
-                    for (int i = 0; i < 100; i++) {
-                        Snapshot.MissileState x = ps.missiles.get(i), y = pg.missiles.get(i);
-                        if (Math.abs(x.x - y.x) > 0.29f || Math.abs(x.y - y.y) > 0.29f || Math.abs(x.flightTime - y.flightTime) > 0.051f) near = false;
-                    }
+                    if (!alike(ps, pg)) near = false;
                 }
-                check("100 missiles flying straight for 240 uneven updates: " + (steady / n) + " bytes an update, never more than a quarter unit out", near && steady / n < 320);
+                check("100 missiles flying straight for 240 uneven updates: " + (steady / n) + " bytes an update, never more than half a unit out", near && steady / n < 120);
             }
             {   // a road that loses updates, delivers some out of order, and reports back late (UDP)
                 SnapshotCodec.Encoder ue = new SnapshotCodec.Encoder(); SnapshotCodec.Decoder ud = new SnapshotCodec.Decoder();

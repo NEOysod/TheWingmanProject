@@ -63,9 +63,9 @@ final class Settings {
                 "Type a number. Must be the same for everyone; the host needs this TCP port reachable. Normally 24816."));
 
         ITEMS.add(new Item(1, "snapshotRate", "Updates per second", HOST, true, new String[] { "10", "15", "20", "30", "45", "60" },
-                "How often the host sends positions. 60 is smoothest and uses the most bandwidth; 20-30 suits a weak connection."));
+                "How often the host sends positions. 30 is the best balance; more costs bandwidth and, on an uneven connection, is less smooth."));
         ITEMS.add(new Item(1, "sendEverything", "Send everything, every update", HOST, true, YES_NO,
-                "On: smoothest. Off: things simply carrying on as before are skipped; about a third of the bandwidth."));
+                "On: smoothest (anything moving just as expected is left out anyway). Off: fighters every other update and less precise; less bandwidth."));
         ITEMS.add(new Item(1, "compactUpdates", "Send updates as changes only", HOST, true, YES_NO,
                 "On: each update carries only what changed since the one before; about a third of the size, nothing lost."));
         ITEMS.add(new Item(1, "compressLink", "Compress the connection", BOTH, false, YES_NO,

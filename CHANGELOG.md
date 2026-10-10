@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6-beta
+Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
+
+- **Half the bandwidth, smoother movement.** Measured on a simulated battle (40 ships, 80 fighters, 200 missiles,
+  one joiner): 39 KB/s instead of 80 over TCP, 52 instead of 121 over UDP, with copies that sit 10-15% closer to
+  the host's and move 10-25% more evenly (35-50% more evenly over a laggy, uneven connection).
+  - **Updates guess acceleration.** Both PCs work out how fast each ship's and missile's speed and turn are
+    changing, so a missile speeding up or a fighter in a steady turn no longer has to be re-sent every update.
+  - **What is guessed right is left out.** A ship or missile whose every value is where the guess puts it is not
+    in the update at all; both PCs carry it on by the guess (at most 30 updates in a row).
+  - **Joiners move copies along their curve.** Between updates a copy is carried on along its acceleration and
+    turn (for up to a quarter of a second), not in a straight line.
+  - Positions may sit half a unit (was a quarter) and speeds half a unit a second off before they are re-sent;
+    errors never add up.
+  - **30 updates a second by default (was 60).** With the above, 30 is as smooth as 60 was, and over an uneven
+    connection smoother: every unevenly timed update is a small correction. Settings saved in game are kept.
+- **Traffic in the log.** The host and joiners now write one short line every two minutes with what the mod sent
+  and received (and, on joiners, how unevenly updates arrived), so playtest logs show real figures.
+- For developers: `test/SyncBench.java` measures bandwidth and smoothness on a simulated battle.
+
 ## 0.5-beta
 Protocol 45: everyone in a game needs 0.5. Includes everything in 0.4.2.
 

@@ -22,6 +22,12 @@ public final class Snapshot {
     public static final class ShipState {
         public int netId;
         public float x, y, vx, vy, facing, angVel;
+        /**
+         * How fast its speed and turn rate were changing (units/s^2, degrees/s^2), as worked out by the compact
+         * format from the updates both ends hold. Not sent; zero in the old format. Lets a copy be carried on
+         * between updates along the curve it is on, not in a straight line.
+         */
+        public float ax, ay, angAcc;
         public float hull = 1f; // 0..1
         public float cr = 1f;   // combat readiness 0..1, sent in half-percent steps
         public float flux, hardFlux;
@@ -82,6 +88,8 @@ public final class Snapshot {
         public float x, y, vx, vy, facing;
         /** Turn rate in degrees per second, so a turning missile can be drawn turning between updates. */
         public float angVel;
+        /** How fast its speed and turn rate were changing (see ShipState.ax). */
+        public float ax, ay, angAcc;
         public int flags;
         /** How long the missile has been flying on the host, in seconds. Its fuel runs by this clock, not the joiner's. */
         public float flightTime;

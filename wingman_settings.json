@@ -27,12 +27,13 @@
     "modCheck": "content",
 
     # How many times per second the host sends positions, at most (never more than the host's own frame
-    # rate). 60 is the smoothest and uses the most bandwidth; 20-30 is plenty on a weak connection.
-    "snapshotRate": 60,
+    # rate). 30 is the best balance: joiners carry everything on smoothly between updates. More uses more
+    # bandwidth and, over an uneven connection, is no smoother (each unevenly timed update is a correction).
+    "snapshotRate": 30,
 
-    # true: every ship, fighter and missile in view is sent in every update: smoothest, most bandwidth.
-    # false: things that are simply carrying on as before are skipped, and fighters go in every other
-    # update: about a third of the bandwidth, a little less smooth.
+    # true: every ship, fighter and missile in view is considered for every update (anything moving exactly
+    # as expected is left out anyway): smoothest. false: the host also skips things that have changed only a
+    # little, and fighters go in every other update: less bandwidth, a little less smooth.
     "sendEverything": true,
 
     # true: each position update carries only what has changed since the one before (a ship's position by a

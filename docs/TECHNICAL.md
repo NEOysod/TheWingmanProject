@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 45 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 46 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -241,7 +241,8 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   second. Fighters go in every other update unless firing or hit. Missiles: when they stray (3 units, 4°, 0.25 s
   of flight), at least every two refresh intervals.
 - **Wrecks** are sent when knocked off course (3 units, 2°) or every ~4 s.
-- **Rate** (`snapshotRate`, default 60/s): when a link refuses an update, the next is full and the rate drops to
+- **Rate** (`snapshotRate`, default 30/s; measured with `SyncBench`, 30 is as smooth as 60 and smoother over an
+  uneven link, at about two thirds of the bytes): when a link refuses an update, the next is full and the rate drops to
   two thirds (not below 8); after 5 clean seconds it climbs back by a fifth of the setting.
 
 ### 5.3 The compact form (`SnapshotCodec`)
@@ -254,11 +255,24 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   and for changes the tick it is built on. Per entity: zigzag varint of (id − previous id), a bit mask of fields
   that differ, then per field zigzag(current − reference), or XOR for bit-set fields (flags, firing, stages);
   angles compare the short way round. Turret angles and shot totals go as lists of changed entries.
-- **Guessing.** The reference is a guess, not the base itself: position + speed × dt, facing + turn rate × dt,
-  flight time + dt, with dt from the two updates' `hostTime` (sent exactly, so both ends compute the same).
-- **Bands** (encoder only): a field within its band of the guess (position 4 steps = ¼ unit, facing 8 steps,
-  speeds 2, shield 1, missile flight 2, flux `fluxStep` never across zero) is not sent, and the guess is recorded
-  as what the joiner holds, so errors never add up. `exact` ships have no bands.
+- **Guessing.** The reference is a guess, not the base itself, with dt from the two updates' `hostTime` (sent
+  exactly, so both ends compute the same): speeds + acceleration × dt, position + (speed + ½ acceleration × dt)
+  × dt, facing likewise from turn rate and turn acceleration, flight time + dt. Acceleration is used only when the
+  updates are at most 0.25 s apart (`ACC_SPAN`).
+- **Acceleration** is never sent. Each remembered state carries three extra integers past the sent fields (x, y
+  and turn acceleration in the speed field's steps per second), set by `settle()` after every update on both
+  ends: half the old value plus half of (speed − previous speed) / dt, clamped; zero for a new entity or a longer
+  gap. Decoded states expose it as `ax`, `ay`, `angAcc` for the joiner's motion (7.4).
+- **Bands** (encoder only): a field within its band of the guess (position 8 steps = ½ unit, facing 16 steps,
+  speeds 4 (½ unit/s), turn rate 3, shield 1, missile flight 2, flux `fluxStep` never across zero) is not sent, and
+  the guess is recorded as what the joiner holds, so errors never add up. `exact` ships have no bands.
+- **Left out when guessed right.** A ship or missile held by the player whose every field is within its band of
+  the guess (and turret angles and shot totals unchanged; never an `exact` ship) is not written at all. Both ends
+  then *carry* it: the guess becomes its state, acceleration settled, and a quiet counter (another unsent
+  integer) goes up. Entities in the base but absent from the snapshot (gone, or trimmed as unseen) are carried
+  the same way. At `CARRY` (30) quiet updates in a row an entity must be sent, or is forgotten by both ends. The
+  decoder hands the game every entity it holds, sent or carried; ids the joiner no longer has are passed over.
+  It refuses an update that would leave it holding over 30,000 ships or missiles.
 - **Per-player encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
   unchanged entities sharing arrays. Over TCP each update is built on the previous; over UDP on the newest tick
   the player acknowledged, if still held. Otherwise a **key** (measured against zeros), always by TCP and taken as
@@ -273,9 +287,20 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
 `Snapshot` also has its own full format (`SNAPSHOT`), used when `compactUpdates` is off or if the codec ever
 throws on the host; joiners read both into the same object.
 
-**Measured** (simulated, every ship active, 60 updates/s, per joiner): a battle of 60 ships, 120 fighters and
-400 missiles costs about 190 KB/s as changes and 73 KB/s with compression (920 KB/s in the full format). Packing
-takes about 0.2 ms per frame on the host.
+**Measured** with `test/SyncBench.java` (a simulated battle of 40 ships, 80 fighters and 200 missiles, all
+manoeuvring, accelerating and firing; one joiner; 50 ms + up to 20 ms jitter):
+
+| | 0.5 (60/s) | 0.6 (30/s) |
+|---|---|---|
+| TCP, compressed | 79.5 KB/s | 38.9 KB/s |
+| UDP, with headers | 121 KB/s | 52 KB/s |
+| copies off the host (avg, ships / fighters / missiles) | 1.8 / 5.8 / 9.6 units | 1.6 / 5.1 / 8.1 units |
+| jitter (RMS acceleration error, same order) | 162 / 605 / 912 u/s² | 144 / 506 / 697 u/s² |
+| jitter at 120 ms + up to 60 ms | 289 / 915 / 1780 u/s² | 161 / 585 / 871 u/s² |
+
+Most of the "off" figure is the joiner's own tolerance (7.4), not the update rate. Higher rates are *less*
+smooth over an uneven link, since each unevenly timed update is a small correction. Packing takes about 0.2 ms
+per frame on the host.
 
 ---
 
@@ -426,7 +451,9 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 
 ### 7.4 Moving puppets
 
-- Each puppet is carried forward from its last state (position + velocity × age, age capped at 1 s).
+- Each puppet is carried forward from its last state: position + (velocity + ½ acceleration × a) × age, velocity
+  + acceleration × a, facing and turn rate likewise, with age capped at 1 s and a = min(age, 0.25 s)
+  (`ACC_REACH`: past a quarter of a second it goes on in a straight line). Missiles the same (age capped at 2 s).
 - **Tolerance:** inside `3 + 0.05 v` units for ships (`5 + 0.06 v` fighters, `6 + 0.06 v` missiles; × `syncTolerance`)
   the gap fades at about 1/s; beyond, the excess closes at 10/s (fighters 14/s); over 500 units, or after a
   detected teleport (`jumped`: more than `150 + 0.3 × speeds` off the dead-reckoned place), it snaps. Velocity is
@@ -762,7 +789,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `playerTags`, `playerOutlines` | true | both | yes | P-number tags, outlines |
 | `announceAddresses` | false | host | no | Show this PC's addresses in battle |
 | `port` | 24816 | both | no | TCP and UDP port |
-| `snapshotRate` | 60 | host | yes | Updates per second (5-60) |
+| `snapshotRate` | 30 | host | yes | Updates per second (5-60) |
 | `sendEverything` | true | host | yes | Every entity in every update (5.2) |
 | `compactUpdates` | true | host | yes | Compact update format (5.3) |
 | `compressLink` | true | both | no | Deflate the connection |
@@ -780,7 +807,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `fighterHangars` | true | joiner | no | Host fighters in the copy's hangars (8.6) |
 | `joinerSubsystems` | true | both | yes | MagicLib subsystems follow the joiner (8.7) |
 | `damageReports` | true | both | yes | Damage reports (7.10) |
-| `debugLog` | false | both | yes | Detailed log lines (`Dbg`), traffic and timing every 30 s |
+| `debugLog` | false | both | yes | Detailed log lines (`Dbg`), traffic and timing every 30 s (without it: a short traffic line every 2 min) |
 | `neverMirrorSystems` | [] | joiner | — | File only: system ids never mirrored |
 
 **Files in `saves/common`** (the game adds `.data`): `wingman_settings` (in-game changes), `wingman_join` (address,
@@ -837,6 +864,10 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
   - `NetTest`: packing, player cap and numbering, version and mod refusals, every message's round trip, compact
     updates over 300 ticks, a lossy network (25% loss, reordering, a half-second blackout), compression, UDP,
     controls ordering, lobby, battlefield and campaign data.
+  - `SyncBench` (not a pass/fail test): bandwidth (TCP compressed, UDP with headers, raw by kind) and joiner
+    smoothness (distance from the host's positions one delay ago, and jitter) on a simulated battle through the
+    real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,
+    `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name
     spoofing, password guessing, connection and message floods, UDP junk, 30,000 mangled inputs for each of 13
     decoders, impossible numbers; an honest player must stay served throughout.

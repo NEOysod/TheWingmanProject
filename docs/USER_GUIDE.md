@@ -210,8 +210,8 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 ### Smoothness
 | Setting | Default | What it does |
 |---|---|---|
-| Updates per second | 60 | How often the host sends positions. Lower it on a weak connection. |
-| Send everything, every update | on | Off: things carrying on as before are skipped. Less bandwidth, slightly less smooth. |
+| Updates per second | 30 | How often the host sends positions. 30 is the best balance; 20 on a weak connection. More is not smoother over an uneven connection. |
+| Send everything, every update | on | Anything moving just as expected is left out anyway. Off: things that changed only a little are skipped too, and fighters go every other update. Less bandwidth, slightly less smooth. |
 | Send updates as changes only | on | Each update carries only what changed. Leave on. |
 | Compress the connection | on | Compresses everything sent over the main connection. Leave on. |
 | Updates and controls by UDP | on | A lost packet costs one update instead of a freeze. Falls back by itself if blocked. |
@@ -274,7 +274,8 @@ Work down this list; stop when it is good enough.
    player would. Two copies of the game on one PC is heavier than real play.
 2. **Wi-Fi or a long route?** Leave "Updates and controls by UDP" on. If the host's log shows it fell back
    to TCP, open UDP 24816 on the host's firewall.
-3. **Host's upload is limited?** On the host, lower "Updates per second" from 60 to 30, then to 20.
+3. **Host's upload is limited?** On the host, lower "Updates per second" from 30 to 20. (Raising it above 30
+   costs bandwidth and is not smoother over an uneven connection.)
 4. **Still too much?** On the host, turn off "Send everything, every update".
 5. **Things shake or twitch?** On the joiner, raise "Difference from the host left alone" towards 2.
 6. **Your own ship rubber-bands on a very bad connection?** On the joiner, try turning off "My ship

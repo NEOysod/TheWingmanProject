@@ -494,6 +494,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (Dbg.on) probeTargetable(own);
         prof.mark(6);
         orders.tick();
+        // Bandwidth meter: detailed every 30 seconds with debug logging; otherwise a short line every two minutes,
+        // so a playtest's log says what the mod cost and how evenly updates arrived.
+        if (!Dbg.on) {
+            String brief = wingman.net.NetStats.report(120f);
+            if (brief != null) {
+                Global.getLogger(WingmanClientPlugin.class).info("Wingman traffic (joiner): " + brief
+                        + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : ""));
+                lateSum = 0f;
+                lateN = 0;
+            }
+        }
         String traffic = Dbg.on ? wingman.net.NetStats.report(30f) : null; // bandwidth meter, one line every 30 seconds
         if (traffic != null) {
             Dbg.info(WingmanClientPlugin.class, "Wingman traffic (joiner): " + traffic);
@@ -3788,6 +3799,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * gap just fades over a second or so), so small differences never show as shaking. Beyond it: the excess is
      * closed quickly. While paused nothing moves, so a gap beyond the tolerance is simply closed.
      */
+    /** How long a copy is carried on along its acceleration before going on in a straight line, in seconds. */
+    private static final float ACC_REACH = 0.25f;
+
     private static float closing(float err, float tol, float amount, float rate) {
         if (err <= 0.001f) return 0f;
         if (amount <= 0f) return err > tol ? 1f : 0f;
@@ -3817,8 +3831,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float age = Math.max(0f, Math.min(1f, clock - pp.targetAt));
 
         // Predict where the host's ship is by now, and ease toward it (snap if far off). A fighter turns and
-        // darts far more sharply than a ship, so it is held much closer to the host's position.
-        float tx = t.x + t.vx * age, ty = t.y + t.vy * age;
+        // darts far more sharply than a ship, so it is held much closer to the host's position. It is carried
+        // on along the curve it is on (its acceleration, as the update format works it out), for a quarter of a
+        // second at most; beyond that in a straight line.
+        float aa = Math.min(age, ACC_REACH);
+        float tx = t.x + (t.vx + 0.5f * t.ax * aa) * age, ty = t.y + (t.vy + 0.5f * t.ay * aa) * age;
         Vector2f loc = ship.getLocation();
         float dx = tx - loc.x, dy = ty - loc.y;
         float k = Math.min(1f, amount * (pp.fighter ? 30f : 12f));
@@ -3884,9 +3901,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
             Vector2f vel = ship.getVelocity();
             float vb = amount <= 0f ? 1f : Math.min(1f, amount * 25f); // speed changes are taken up over a few frames
-            vel.set(vel.x + (t.vx - vel.x) * vb, vel.y + (t.vy - vel.y) * vb);
+            float wvx = t.vx + t.ax * aa, wvy = t.vy + t.ay * aa;
+            vel.set(vel.x + (wvx - vel.x) * vb, vel.y + (wvy - vel.y) * vb);
         }
-        float tf = t.facing + t.angVel * age;
+        float tf = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
         if (pp.module) {
             // turns with its ship
         } else if (!own) {
@@ -3894,7 +3912,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float turnTol = (1.5f + Math.abs(t.angVel) * 0.05f) * slack;
             float tk = closing(Math.abs(turn), turnTol, amount, pp.fighter ? 20f : 12f);
             if (tk > 0f) ship.setFacing(ship.getFacing() + turn * tk);
-            ship.setAngularVelocity(t.angVel);
+            ship.setAngularVelocity(t.angVel + t.angAcc * aa);
         } else {
             // Our own ship turns under our own hands and the host follows (see RemotePilotAI.steerToHeading).
             // Only if the two drift far apart, because the real ship can't turn right now (overloaded, engines
@@ -4024,7 +4042,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         MissileAPI m = mp.missile;
         // A missile flying straight is not repeated by the host for up to a second: carry it on from where it was.
         float age = Math.max(0f, Math.min(2f, clock - mp.targetAt));
-        float tx = t.x + t.vx * age, ty = t.y + t.vy * age;
+        float aa = Math.min(age, ACC_REACH); // along its acceleration for a moment, as for ships
+        float tx = t.x + (t.vx + 0.5f * t.ax * aa) * age, ty = t.y + (t.vy + 0.5f * t.ay * aa) * age;
         Vector2f loc = m.getLocation();
         float dx = tx - loc.x, dy = ty - loc.y;
         // Carried by its own flight at the host's speed; position corrected only beyond a tolerance, as for ships.
@@ -4032,14 +4051,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
         float k = err > 300f ? 1f : closing(err, (6f + speed * 0.06f) * slack, amount, 12f);
         if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
-        m.getVelocity().set(t.vx, t.vy);
+        m.getVelocity().set(t.vx + t.ax * aa, t.vy + t.ay * aa);
         // Heading: where the host had it, turned on by its turn rate for the time since. Then let it keep turning
         // at that rate until the next update, instead of jumping from one heading to the next.
-        float heading = t.facing + t.angVel * age;
+        float heading = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
         float swing = shortestTurn(m.getFacing(), heading);
         float sk = closing(Math.abs(swing), (3f + Math.abs(t.angVel) * 0.05f) * slack, amount, 30f);
         if (sk > 0f) m.setFacing(m.getFacing() + swing * sk);
-        m.setAngularVelocity(t.angVel);
+        m.setAngularVelocity(t.angVel + t.angAcc * aa);
         m.setHitpoints(100000f); // only the host decides when point defense kills it
         boolean hostOut = (t.flags & Snapshot.M_FIZZLING) != 0;
         if (hostOut && !mp.flamedOut) {

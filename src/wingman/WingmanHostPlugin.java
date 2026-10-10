@@ -353,7 +353,19 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (extras != null) extras.tick(engine, session, byId);
         prof.mark(8);
 
-        // Bandwidth meter (debug logging only): one line every 30 seconds while anyone is connected.
+        // Bandwidth meter: with debug logging, a detailed line every 30 seconds while anyone is connected;
+        // otherwise a short one every two minutes, so a playtest's log says what the mod really cost.
+        if (!Dbg.on && !session.getPlayers().isEmpty()) {
+            String traffic = wingman.net.NetStats.report(120f);
+            if (traffic != null) {
+                int ships = 0, fighters = 0;
+                for (ShipAPI s : byId.values()) { if (s.isFighter()) fighters++; else ships++; }
+                long[] pc = session.packerCounts();
+                Global.getLogger(WingmanHostPlugin.class).info("Wingman traffic (host, " + session.getPlayers().size() + " joined, " + ships
+                        + " ships, " + fighters + " fighters, " + missilesById.size() + " missiles, " + rate + " of " + cfg.snapshotRate
+                        + " updates/s, " + pc[2] + " ship/missile states left out as guessed right so far): " + traffic);
+            }
+        }
         if (Dbg.on) {
             String traffic = wingman.net.NetStats.report(30f);
             if (traffic != null) {
@@ -364,7 +376,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + (possibleStates == 0 ? 100 : Math.round(100f * sentStates / possibleStates)) + "% of ship/missile states needed sending, "
                         + trimmed + " held back as out of sight, " + halved + " fighter states left for the next update, " + scriptEnds + " missiles ended by a script so far; "
                         + (extras == null ? "" : extras.statsSent + " stat values, " + extras.notesSent + " script values and " + extras.hurtsSent + " damage reports sent so far (" + extras.ordinary + " ordinary weapon hits not reported)")
-                        + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent"
+                        + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
+                        + session.packerCounts()[2] + " ship/missile states left out as guessed right"
                         + "; updates: " + session.describeUpdates()
                         + "; armor/ammo read for " + damage.looked + " ships and passed over for " + damage.passedOver
                         + (extras == null ? "" : "; stats read for " + extras.statLooks + " and passed over for " + extras.statSkips) + "): " + traffic);

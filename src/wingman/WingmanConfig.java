@@ -16,7 +16,7 @@ public final class WingmanConfig {
     public String hostAddress = "127.0.0.1";
     public int port = 24816;
     public int maxPlayers = 4;
-    public int snapshotRate = 60;
+    public int snapshotRate = 30;
     /** Host: send every ship, fighter and missile in every update, whether or not it has done anything new. */
     public boolean sendEverything = true;
     /** Host: send each position update as what changed since the one before (about a third of the size). */

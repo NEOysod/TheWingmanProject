@@ -615,9 +615,9 @@ public final class HostSession {
 
     /** Values the packers left unsent as near enough, and values sent, over all players so far. */
     public long[] packerCounts() {
-        long held = 0, sent = 0;
-        for (Player p : players) if (p.encoder != null) { held += p.encoder.fieldsHeld; sent += p.encoder.fieldsSent; }
-        return new long[] { held, sent };
+        long held = 0, sent = 0, carried = 0;
+        for (Player p : players) if (p.encoder != null) { held += p.encoder.fieldsHeld; sent += p.encoder.fieldsSent; carried += p.encoder.carried; }
+        return new long[] { held, sent, carried };
     }
 
     /** Sent to everyone connected, synced or not. */
