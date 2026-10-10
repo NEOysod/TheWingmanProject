@@ -154,6 +154,11 @@ final class ClientOrders {
 
     void onOrders(Orders o) { host = o; lastReconcile = 0; }
 
+    /** Our copy of the host's objective number i; null if there is none. */
+    BattleObjectiveAPI placedAt(int i) {
+        return i >= 0 && i < placed.size() ? placed.get(i) : null;
+    }
+
     /** The host's tooltip text for each objective, by the host's order. */
     private final Map<Integer, String> texts = new HashMap<Integer, String>();
 
@@ -190,8 +195,8 @@ final class ClientOrders {
 
     /**
      * The host's game took this objective off the field (a mod's objective that ends itself, such as derelict
-     * ships captured): take ours away too. One whose script is held back here can't say so itself, so a notice
-     * says who took it.
+     * ships captured): take ours away too. One whose script is held back here can't say so itself: the host's
+     * line for it arrives as a battle message, or, with those off, a notice here says who took it.
      */
     private void gone(int i, BattleObjectiveAPI o, int owner) {
         placed.set(i, null);
@@ -199,7 +204,9 @@ final class ClientOrders {
         try {
             if (engine.isEntityInPlay(o)) engine.removeEntity(o);
         } catch (Throwable t) { /* already gone */ }
-        if (mirror) {
+        boolean hostSays = false;
+        try { hostSays = WingmanConfig.load().hostMessages; } catch (Throwable t) { /* say it ourselves */ }
+        if (mirror && !hostSays) { // with the host's lines coming, its script says what happened itself
             String name = o.getDisplayName() == null ? "An objective" : o.getDisplayName();
             Ui.say(engine, name + (owner == 0 ? " captured by your side" : owner == 1 ? " captured by the enemy" : " is gone")
                     + " (its effect runs in the host's game).");

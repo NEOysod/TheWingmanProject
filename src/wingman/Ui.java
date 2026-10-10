@@ -11,7 +11,12 @@ final class Ui {
         try {
             Global.getLogger(Ui.class).info(text);
             if (engine != null && engine.getCombatUI() != null) {
-                engine.getCombatUI().addMessage(0, text);
+                MessageSpy.ownLine = true; // Wingman's own notice: never sent to others or held back
+                try {
+                    engine.getCombatUI().addMessage(0, text);
+                } finally {
+                    MessageSpy.ownLine = false;
+                }
             }
         } catch (Throwable ignored) {
         }

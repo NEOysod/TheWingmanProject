@@ -177,6 +177,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         wingman.net.Conn.compression = cfg.compressLink;
         wingman.net.Conn.udp = cfg.useUdp;
         readyPhase = cfg.readyCheck ? 0 : 2;
+        tapMessages();
         started = true;
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
         if (cfg.password.isEmpty()) Ui.say(engine, "Co-op: no join password is set, so anyone who can reach this PC on port " + cfg.port
@@ -193,11 +194,53 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         return true;
     }
 
+    private MessageSpy spy;
+    private long spyCheckedAt, msgWindowStart;
+    private int msgsInWindow, msgsDropped;
+
+    /**
+     * Send scripts' lines in the message feed to joiners (see MessageTap). Checked again every few seconds,
+     * in case the game rebuilt its feed.
+     */
+    private void tapMessages() {
+        spyCheckedAt = System.currentTimeMillis();
+        if (!cfg.hostMessages) return;
+        MessageSpy s = MessageTap.install(engine);
+        if (s == null || s == spy) return;
+        spy = s;
+        s.sink = new MessageSpy.Sink() {
+            public boolean line(int indent, Object[] parts) {
+                sendLine(indent, parts);
+                return true;
+            }
+        };
+    }
+
+    private void sendLine(int indent, Object[] parts) {
+        if (session == null || session.getPlayers().isEmpty() || !cfg.hostMessages) return;
+        long now = System.currentTimeMillis();
+        if (now - msgWindowStart > 1000) { msgWindowStart = now; msgsInWindow = 0; }
+        if (++msgsInWindow > 30) { // a script writing lines every frame: the rest of this second stays here
+            if (msgsDropped++ == 0) Global.getLogger(WingmanHostPlugin.class).info("Wingman messages: over 30 lines a second; extra lines are not sent");
+            return;
+        }
+        try {
+            byte[] m = MessageTap.encode(engine, indent, parts, new MessageTap.HostNames() {
+                public Integer shipId(ShipAPI ship) { return ids.get(ship); }
+                public int objectiveIndex(com.fs.starfarer.api.combat.BattleObjectiveAPI o) { return orders.objectiveIndex(o); }
+            });
+            if (m != null) session.broadcast(Msg.COMBAT_MSG, m);
+        } catch (Throwable t) {
+            if (msgsDropped++ == 0) Global.getLogger(WingmanHostPlugin.class).warn("Wingman: a message line could not be sent", t);
+        }
+    }
+
     private final Prof prof = new Prof("network", "ships", "wrecks", "missiles", "shots", "firing", "players", "orders+map", "damage", "updates");
 
     private void step() {
         prof.begin();
         for (String line : session.pump()) Ui.say(engine, "Co-op: " + line);
+        if (System.currentTimeMillis() - spyCheckedAt > 3000) tapMessages();
         if (session.acceptError != null) {
             String err = session.acceptError;
             session.acceptError = null;

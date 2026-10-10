@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4-beta
+Protocol 43: everyone in a game needs 0.4.
+
+- **Battle messages follow the host.** Lines mods' scripts write to the combat message feed (the derelict
+  crew's hail, a system's warning, a mod's notices) are sent from the host's game, with their colours, ship
+  icons and objective names, and a joiner shows those in place of its own scripts' copies. Objectives held back
+  on a joiner now speak there too. The game's own lines are made on each PC as before. New setting "Battle
+  messages follow the host" (both PCs, on by default).
+- The notice Wingman showed when a held-back objective was captured now appears only with that setting off,
+  since the objective's own line says so.
+
 ## 0.3-beta
 Protocol 42: everyone in a game needs 0.3.
 

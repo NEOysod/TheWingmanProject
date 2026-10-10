@@ -125,6 +125,11 @@ final class HostOrders {
         return o;
     }
 
+    /** Where this objective is in the list joiners were sent; -1 if it isn't in it. */
+    int objectiveIndex(BattleObjectiveAPI o) {
+        return objectives == null ? -1 : objectives.indexOf(o);
+    }
+
     private String[] lastTexts;
     private long lastTextsAt;
     private boolean textsBroken;

@@ -246,6 +246,50 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    private MessageSpy spy;
+    private long spyCheckedAt;
+
+    /**
+     * Follow the battle's message feed (see MessageTap): while the host's lines are coming, this PC's own
+     * scripts' lines are held back, since the host's copies of the same scripts write them for everyone.
+     */
+    private void tapMessages() {
+        spyCheckedAt = System.currentTimeMillis();
+        MessageSpy s = MessageTap.install(engine);
+        if (s == null || s == spy) return;
+        spy = s;
+        s.sink = new MessageSpy.Sink() {
+            public boolean line(int indent, Object[] parts) {
+                return !(welcomed && cfg != null && cfg.hostMessages && link != null && link.getState() == ClientLink.State.CONNECTED);
+            }
+        };
+    }
+
+    private int badLines;
+
+    /** A script's line from the host's game: shown here as written there. */
+    private void showHostLine(byte[] data) {
+        if (cfg == null || !cfg.hostMessages) return;
+        if (System.currentTimeMillis() - spyCheckedAt > 3000) tapMessages();
+        try {
+            Object[] d = MessageTap.decode(data, new MessageTap.LocalNames() {
+                public ShipAPI ship(int hostId) {
+                    Puppet pp = puppets.get(hostId);
+                    return pp == null ? null : pp.ship;
+                }
+                public com.fs.starfarer.api.combat.BattleObjectiveAPI objective(int i) { return orders.placedAt(i); }
+            });
+            if (d == null) { if (badLines++ == 0) Global.getLogger(WingmanClientPlugin.class).warn("Wingman: a malformed message line from the host was skipped"); return; }
+            int indent = (Integer) d[0];
+            Object[] parts = new Object[d.length - 1];
+            System.arraycopy(d, 1, parts, 0, parts.length);
+            if (spy != null) spy.showHostLine(indent, parts);
+            else if (engine.getCombatUI() != null) engine.getCombatUI().addMessage(indent, parts);
+        } catch (Throwable t) {
+            if (badLines++ == 0) Global.getLogger(WingmanClientPlugin.class).warn("Wingman: a message line from the host could not be shown", t);
+        }
+    }
+
     /** Wait until our stand-in ship is on the field, clear the stage, then connect. */
     private boolean prepare() {
         ShipAPI ps = engine.getPlayerShip();
@@ -260,6 +304,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         makeInvulnerable(placeholder);
         try { placeholder.addListener(new HullGuard()); } catch (Throwable t) { /* damage cut still applies */ }
         ObjectiveMirror.restore(); // the objectives are made: held-back kinds get their own scripts back for later battles
+        tapMessages();
         orders.start(engine);
         environment.start(engine);
 
@@ -888,6 +933,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             case Msg.OBJECTIVES:
                 orders.onObjectives(p.data);
+                break;
+            case Msg.COMBAT_MSG:
+                showHostLine(p.data);
                 break;
             case Msg.OBJECTIVE_TEXT:
                 orders.onObjectiveText(p.data);

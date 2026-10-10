@@ -22,10 +22,10 @@ copy, which produces the right look, while positions, hull, flux, armor, deaths 
 Three constraints shape almost every detail:
 
 1. **The sandbox.** Starsector's script loader (`com.fs.starfarer.loading.scripts.B`, 0.98a-RC8) refuses
-   most of `java.io` (only `IOException`, `InputStream`, `OutputStream` are used), `java.lang.reflect`,
-   `java.lang.invoke`, the `java.nio.file` file classes, `javax.script` and `java.util.prefs`. Hence the
-   hand-written byte packing (`Out`/`In`), files only through `Global.getSettings()` and `saves/common`, no
-   lambdas, and risky classes kept alone (`Zip` for `java.util.zip`, `Udp` for `DatagramSocket`,
+   most of `java.io` (only `IOException`, `InputStream`, `OutputStream` are used), `java.lang.reflect`, the
+   `java.nio.file` file classes, `javax.script` and `java.util.prefs`. `java.lang.invoke` is not refused;
+   Wingman uses `MethodHandles` for exactly one private field (`MessageTap`). Hence the hand-written byte
+   packing (`Out`/`In`), files only through `Global.getSettings()` and `saves/common`, no lambdas, and risky classes kept alone (`Zip` for `java.util.zip`, `Udp` for `DatagramSocket`,
    `Transport` to probe sockets) so that a refusal switches off one feature rather than the mod.
 2. **The game thread never waits.** Network I/O runs on background threads with queues in between; expensive
    reads happen on demand; an idle host does almost nothing.
@@ -40,13 +40,13 @@ Three constraints shape almost every detail:
 | --- | --- |
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
 | Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `HostOrders`, `ShipStats` |
-| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `SystemWatch`, `Compat`, `Groups` |
+| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
 | Campaign | `WingmanModPlugin` |
 | Network (`wingman.net`, no game classes) | `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats` |
 | Messages (`wingman.net`) | `Snapshot`, `SnapshotCodec`, `InputState`, `ShipSpawn`, `DamageState`, `Extras`, `Orders`, `BattleInfo`, `Lobby`, `ModList` |
-| Build | `build.sh`, `build.bat`, `tools/PatchNew.java`, `tools/stub/`, `dist/make.sh` |
+| Build | `build.sh`, `build.bat`, `tools/PatchNew.java`, `tools/PatchPackage.java`, `tools/stub/`, `dist/make.sh` |
 
 ---
 
@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 42 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 43 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -209,6 +209,7 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 44 / 45 / 46 | UDP_OFFER / UDP_READY / UDP_MODE | TCP | UDP setup (inside `ClientLink`) |
 | 47 | SIDE | host → joiner | id, new side (0, 1 or neutral 100) |
 | 48 | OBJECTIVE_TEXT | host → joiner | objective index, its tooltip text (≤ 4,000 characters), on change |
+| 49 | COMBAT_MSG | host → joiner | a script's line in the message feed: indent, ≤ 40 parts (colour, text ≤ 1,000, ship id, objective index); ≤ 30/s |
 
 ---
 
@@ -599,8 +600,7 @@ a change is over 15 s old (the mission list sets the mission up just to show it)
 
 What a held-back objective does reaches joiners through the host: ships it spawns or parks are copied (neutral
 side 100 included), side changes follow (`SIDE`), its tooltip text comes by `OBJECTIVE_TEXT`, and its removal by
-`Orders.GONE`. Its own combat messages don't: the game's message list (`CombatState.getMessageWidget()`, class
-`com.fs.starfarer.class.C`) keeps them in a private field, and the sandbox forbids reflection.
+`Orders.GONE`, and the lines its script writes to the message feed come by `COMBAT_MSG` (8.5).
 
 If changing the spec fails, the kind gets the older stand-in instead: a `sensor_array` at the same spot, listed in
 `JoinSetup.standIns` so the battlefield check doesn't count it as missing; `ClientOrders` places, owns and orders it
@@ -632,6 +632,31 @@ saved in `saves/common/wingman_compat` at the end of each battle. "Worth a look"
 and missiles or shots that needed help at least 5 times and more often than they worked. Delete clears it.
 
 ---
+
+### 8.5 Battle messages (`MessageTap`, `MessageSpy`)
+
+Lines scripts write with `CombatUIAPI.addMessage` (an objective's hail, a system's warning, a mod's notices)
+are sent from the host and shown on joiners, whose own scripts' lines are held back meanwhile, so every screen
+reads the same and held-back objectives still speak.
+
+- **The feed.** `CombatState.messageWidget` (class `com.fs.starfarer.class.C`) is private and made with a plain
+  `new C()`. At battle start (host `start()`, joiner `prepare()`, re-checked every 3 s) `MessageTap.install`
+  swaps it for a `MessageSpy`, a subclass, through `MethodHandles.privateLookupIn` (looked up by name so the jar
+  still targets Java 8). Java source can't name the package `class`, so `MessageSpy` is compiled against
+  `tools/stub/com/fs/starfarer/klass/` and `tools/PatchPackage` rewrites `klass` to `class` in the compiled class.
+- **Telling scripts' lines from the game's.** The game's own lines (destroyed, disabled, deployed, retreated,
+  objective taken, no command points) all go through `o00000(Object...)`, which forwards to
+  `o00000(int, Object...)`; `addMessage` calls the second directly. `MessageSpy` counts entries into the first, so a
+  line reaching the second at depth 0 is a script's. Each PC still makes the game's own lines from what it sees.
+  Wingman's notices (`Ui.say`) set `MessageSpy.ownLine` and are never sent or held back.
+- **Parts.** The feed takes text, `Color`, ships (as `Ship`, deployed member or fleet member: an icon and name)
+  and objectives. Ships go as the host's net id and objectives as the host's index; the joiner swaps in its
+  copies, or the name (`?` if unknown).
+- **Joiner.** While connected with `hostMessages` on, the sink returns false for its own scripts' lines and
+  host lines are shown through `showHostLine`, past the sink. Malformed messages are skipped with one log line.
+- **Limits.** 30 lines a second from the host (the rest of that second is dropped and logged once), 40 parts,
+  1,000 characters per text part. If the swap fails (another Java, a changed game) the feature is off with one
+  warning and both screens behave as before.
 
 ## 9. Title screen and joining
 
@@ -690,6 +715,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `syncStats` | true | both | yes | Stats follow the host |
 | `syncScriptMemory` | true | both | yes | Script memory follows the host |
 | `campaignStandIn` | true | joiner | no | Stand-in campaign and fleets (8.3) |
+| `hostMessages` | true | both | yes | Battle messages follow the host (8.5) |
 | `damageReports` | true | both | yes | Damage reports (7.10) |
 | `debugLog` | false | both | yes | Detailed log lines (`Dbg`), traffic and timing every 30 s |
 | `neverMirrorSystems` | [] | joiner | — | File only: system ids never mirrored |
@@ -708,7 +734,7 @@ safety list), `wingman_compat` (report evidence). Passwords are stored as plain 
 | Ring | Guard | When it trips |
 | --- | --- | --- |
 | A message | try/catch per message | Skipped; joiner stops co-op after 40, host drops a player after 20 |
-| A feature | `broken` flags (codec, fog, damage listener, reports, stats, notes, armor, asteroids, orders, wings, hit matching, local-ship matching, stand-in campaign…) | That feature off for the battle; the codec falls back to the full format |
+| A feature | `broken` flags (codec, fog, damage listener, reports, stats, notes, armor, asteroids, orders, wings, hit matching, local-ship matching, stand-in campaign, message feed, objective mirror…) | That feature off for the battle; the codec falls back to the full format |
 | A script | `GuardedMissileAI`, try/catch around on-hit scripts | That script off for that missile |
 | A system or objective | `SystemWatch` breadcrumb | System not mirrored, objective held back, on that PC from the next start; F5 resets |
 | A flown ship | `RemotePilotAI.failed` | Ship back to the AI, player told |
@@ -729,8 +755,9 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
 
 ## 12. Build, test and release
 
-- **Build:** `./build.sh /path/to/starsector-core` (or `build.bat`): compile the stub, compile `PatchNew`, compile
-  `src/` for Java 8 with the stub ahead of the game jars, patch `TitleLauncher.class`, jar the `wingman` package to
+- **Build:** `./build.sh /path/to/starsector-core` (or `build.bat`): compile the stubs, compile `PatchNew` and
+  `PatchPackage`, compile `src/` for Java 8 with the stubs ahead of the game jars, patch `TitleLauncher.class` and
+  `MessageSpy.class`, jar the `wingman` package to
   `jars/Wingman.jar`. The jar is committed so the mod works from a download.
 - **Tests** (plain Java against the built jar, real sockets on 127.0.0.1; add `channels` to use the other driver):
   - `NetTest`: packing, player cap and numbering, version and mod refusals, every message's round trip, compact

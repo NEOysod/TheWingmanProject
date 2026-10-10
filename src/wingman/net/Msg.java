@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 42;
+    public static final int PROTOCOL_VERSION = 43;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -68,6 +68,8 @@ public final class Msg {
     public static final byte SIDE = 47;
     /** host -> joiner: byte objective index (host's order), UTF tooltip text (at most 4,000 characters). Sent when it changes. */
     public static final byte OBJECTIVE_TEXT = 48;
+    /** host -> joiner: a script's line in the battle's message feed (see MessageTap): byte indent, byte count, parts. */
+    public static final byte COMBAT_MSG = 49;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */

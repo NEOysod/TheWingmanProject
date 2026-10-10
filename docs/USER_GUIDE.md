@@ -1,4 +1,4 @@
-# The Wingman Project 0.3 — User Guide
+# The Wingman Project 0.4 — User Guide
 
 Co-op for Starsector battles. One player hosts a battle and up to three friends join it, each flying a ship
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong
@@ -309,8 +309,11 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   its real name, look and tooltip (the host's text), but its script runs only in the host's game. What it
   does reaches joiners the usual way: ships it brings in or parks (the derelict fleet, which sits on the
   neutral side until captured) are copied from the host, and when the host's game takes the objective off
-  the field, so does the joiner's, with a short notice of who captured it. The script's own combat messages
-  (such as the derelict crew's hail) are seen by the host only: the game gives mods no way to read them.
+  the field, so does the joiner's, and its messages (such as the derelict crew's hail) come from the host.
+- **Battle messages** that mods' scripts write to the message feed (an objective's hail, a system's warning)
+  are sent from the host's game, and a joiner shows those instead of its own scripts' copies, so every screen
+  reads the same. The game's own lines (ship destroyed, objective taken) are made on each PC as before. A
+  setting turns it off ("Battle messages follow the host", needed on both).
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 

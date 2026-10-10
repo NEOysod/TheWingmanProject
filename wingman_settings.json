@@ -123,6 +123,12 @@
     # flags) for the battle, and puts the copies of ships in stand-in fleets. Turn off if a mod misbehaves.
     "campaignStandIn": true,
 
+    # Battle messages follow the host: lines mods' scripts write to the combat message feed (an objective's
+    # hail, a system's warning) are sent from the host's game, and a joiner shows those instead of its own
+    # scripts' lines, so every screen reads the same. The game's own lines (ship destroyed, objective taken)
+    # are made by each PC as before. Needed on both.
+    "hostMessages": true,
+
     # Damage reports: the host reports damage as it happens; a joiner plays out (harmlessly) any damage its
     # own game did not produce, so scripts that react to a ship being hit still react.
     "damageReports": true,
