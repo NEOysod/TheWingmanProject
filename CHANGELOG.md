@@ -28,8 +28,11 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   the way the game clears a finished one, without launching anything.
 - Fixed: a fighter taken over by a joiner said "Ship is not combat-ready, controls are locked". The game takes a
   wing's readiness from the fleet record it was made from, and fighters on joiners' screens were made from one
-  with none. They now get the host's figure (or 70% where the host's fighter has none of its own), and a figure of
-  nothing from the host is no longer copied onto a fighter.
+  with none. They now get at least 70% (the host's figure for a fighter can be low or nothing, and a wing's
+  launch readiness can't be changed once it exists), and a figure of nothing from the host is no longer copied
+  onto a fighter. If a fighter in a joiner's hands is still locked, the game is asked to judge again, and the
+  reason goes in the joiner's log.
+- The log now names the exact build ("Wingman: build 0.6-beta <date>"), since playtest zips of one version differ.
 - **Fixed: a Rafflesya taken over with Manual Override was flown home by its carrier's scripts.** UAF's Rafflesya dock
   gives a fighter a docking AI (or none) when it needs rearming or its carrier pulls back, as it would the local
   player's fighter; on the host that took the joiner's controls away for half a second at a time, long enough to be

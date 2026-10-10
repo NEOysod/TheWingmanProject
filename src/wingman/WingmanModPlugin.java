@@ -14,6 +14,12 @@ import wingman.net.HostSession;
  */
 public class WingmanModPlugin extends BaseModPlugin {
     @Override
+    public void onApplicationLoad() {
+        // Which build this is, beyond the version: playtest zips of the same version differ.
+        Global.getLogger(WingmanModPlugin.class).info("Wingman: build " + Build.ID);
+    }
+
+    @Override
     public void onGameLoad(boolean newGame) {
         ObjectiveMirror.restore(); // a campaign's battles get every objective's own script
         try {

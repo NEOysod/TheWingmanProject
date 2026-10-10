@@ -2420,7 +2420,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             member.setOwner(sp.owner);
             // The wing's launch readiness comes from this record. Left at nothing, the game counts its fighters as
             // "not combat-ready" and locks the controls of one a player flies (Isenoria's Manual Override).
-            try { member.getRepairTracker().setCR(sp.cr > 0.01f ? sp.cr : 0.7f); } catch (Throwable t) { /* as the game made it */ }
+            // (at least 70%: the host's figure for a fighter can be low or nothing, and this one is fixed for good)
+            try { member.getRepairTracker().setCR(Math.max(0.7f, sp.cr)); } catch (Throwable t) { /* as the game made it */ }
             underCommander(member, sp);
             // A fighter with an officer of its own (some mods make them): the officer goes aboard, so their
             // skills act here and their face shows when the fighter is looked at.
@@ -4135,6 +4136,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 pp.systemOff = followSystem(ship, ship.getSystem(), t.system, t.systemLevel, own, pp.systemOff, amount);
                 if (!own && !pp.module) teleportLook(pp, t);
                 if (!pp.fighter) BayQuiet.quiet(ship); // no "fighter being built" sparks on bays that build nothing here
+                if (own && pp.fighter) FighterUnlock.unlock(ship); // a fighter handed to us must answer our controls
                 pp.cloakOff = followSystem(null, ship.getPhaseCloak(), t.cloak, t.cloakLevel, own, pp.cloakOff, amount);
                 // Backstop for "can it be hit": phased or not is the host's call for every ship but the one in our hands.
                 boolean phased = (t.flags & Snapshot.F_PHASED) != 0;
