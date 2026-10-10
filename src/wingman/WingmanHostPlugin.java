@@ -1747,8 +1747,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
      * - Any mod: if the joiner's controls haven't flown their ship for half a second of battle time, and the ship
      *   isn't landing, landed or held still by a script, the joiner's controls are put back.
      */
+    private float lastPilotCheck = -1f;
+    private int fightersFlownHere;
+
     private void keepPilots() {
         float now = engine.getTotalElapsedTime(false);
+        float since = lastPilotCheck;
+        lastPilotCheck = now;
+        if (since < 0f) return;
         for (HostSession.Player p : session.getPlayers()) {
             ShipAPI s = (ShipAPI) p.ship;
             if (s == null || !s.isAlive() || s.isHulk() || onAutopilot.contains(p.id)) continue;
@@ -1756,12 +1762,20 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             if (!(p.savedAI instanceof RemotePilotAI)) continue;
             RemotePilotAI pilot = (RemotePilotAI) p.savedAI;
             if (pilot.failed || pilot.lastFlown < 0f) continue;
+            // A fighter whose carrier's script took its controls before it moved last frame (UAF's Rafflesya dock
+            // does, in whatever order the game moves the two) didn't answer the joiner at all then. This frame it
+            // is flown from here, before anything moves: the joiner's commands go in first, whatever AI it has.
+            boolean missed = s.isFighter() && pilot.lastFlown < since && !s.isLanding() && !s.isFinishedLanding();
+            if (missed) {
+                pilot.advance(engine.getElapsedInLastFrame());
+                fightersFlownHere++;
+            }
             // A fighter a joiner flies (Isenoria's Manual Override) is fought over every frame by its carrier's
             // scripts: UAF's Rafflesya dock hands it a docking AI, or none, as it would the local player's fighter.
             // So it gets the joiner's controls back at once, not after half a second (by then it has flown home).
-            if (now - pilot.lastFlown < (s.isFighter() ? 0.001f : 0.5f)) continue;
+            if (!missed && now - Math.max(pilot.lastFlown, s.isFighter() ? -1f : pilot.restoredAt) < (s.isFighter() ? 0.001f : 0.5f)) continue;
             if (s.isLanding() || s.isFinishedLanding() || s.controlsLocked() || s.isRetreating()) continue;
-            pilot.lastFlown = now; // give it a moment before trying again
+            pilot.restoredAt = now; // (a ship: given a moment before trying again)
             s.setShipAI(pilot);
             if (s.isFighter() && fightersKept++ > 0) continue; // (said once: it happens every frame while a script insists)
             Dbg.info(WingmanHostPlugin.class, "Wingman: a script took the controls of " + p.name + "'s ship; they are given back");

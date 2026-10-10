@@ -36,7 +36,9 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
 - **Fixed: a Rafflesya taken over with Manual Override was flown home by its carrier's scripts.** UAF's Rafflesya dock
   gives a fighter a docking AI (or none) when it needs rearming or its carrier pulls back, as it would the local
   player's fighter; on the host that took the joiner's controls away for half a second at a time, long enough to be
-  recalled. A fighter a joiner flies now gets their controls back the same frame. (Use "Switch back to Isenoria"
+  recalled. A fighter a joiner flies now gets their controls back the same frame, and if the carrier's script
+  took them before the fighter moved (the game moves ships in its own order), the joiner's commands are given to
+  the fighter directly at the start of the next frame, so it never drifts ("parked") or flies home by itself. (Use "Switch back to Isenoria"
   to send it home to rearm, as in single player.)
 - **Speed bursts look and feel right** (Super Nakiha's Dimensional Drift and other systems that multiply speed).
   Other ships: while a system runs, a copy is no longer carried on along its (wild) acceleration, and is held close

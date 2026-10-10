@@ -46,9 +46,16 @@ public class RemotePilotAI implements ShipAIPlugin {
 
     /** Battle time of the last frame the game asked this AI to fly (see WingmanHostPlugin.keepPilots). */
     public volatile float lastFlown = -1f;
+    /** When the host last put this pilot back after a script took the ship (battle time). */
+    public float restoredAt = -1f;
 
     public void advance(float amount) {
-        try { lastFlown = Global.getCombatEngine().getTotalElapsedTime(false); } catch (Throwable t) { /* no engine: not stale either */ }
+        // Once a frame at most: the host may already have flown it this frame (see WingmanHostPlugin.keepPilots).
+        try {
+            float now = Global.getCombatEngine().getTotalElapsedTime(false);
+            if (now == lastFlown && lastFlown > 0f) return;
+            lastFlown = now;
+        } catch (Throwable t) { /* no engine: not stale either */ }
         if (failed) { ship.giveCommand(ShipCommand.DECELERATE, null, 0); return; }
         try {
             fly(amount);
