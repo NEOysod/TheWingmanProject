@@ -22,6 +22,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   copies are now switched off the proper way, with their real cooldown. A note goes in the joiner's log if a
   hand-over still ends within 5 seconds.
 - Fixed: a joiner flying a fighter could send the host a retreat order for it.
+- Fixed: a fighter taken over by a joiner said "Ship is not combat-ready, controls are locked". The game takes a
+  wing's readiness from the fleet record it was made from, and fighters on joiners' screens were made from one
+  with none. They now get the host's figure (or 70% where the host's fighter has none of its own), and a figure of
+  nothing from the host is no longer copied onto a fighter.
 - **Fixed: a Rafflesya taken over with Manual Override was flown home by its carrier's scripts.** UAF's Rafflesya dock
   gives a fighter a docking AI (or none) when it needs rearming or its carrier pulls back, as it would the local
   player's fighter; on the host that took the joiner's controls away for half a second at a time, long enough to be

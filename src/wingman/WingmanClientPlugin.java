@@ -2159,8 +2159,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         HullGuard guard = new HullGuard();
         try { ship.addListener(guard); } catch (Throwable t) { /* the damage cut above still applies */ }
         setSide(ship, sp.owner);
-        ship.setCRAtDeployment(sp.cr);
-        ship.setCurrentCR(sp.cr);
+        float cr = !sp.wingId.isEmpty() && sp.cr <= 0.01f ? 0.7f : sp.cr; // (a fighter with no figure of its own: see apply)
+        ship.setCRAtDeployment(cr);
+        ship.setCurrentCR(cr);
 
         Puppet pp = new Puppet();
         pp.netId = sp.netId;
@@ -2417,6 +2418,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         try {
             FleetMemberAPI member = Global.getFactory().createFleetMember(FleetMemberType.FIGHTER_WING, sp.wingId);
             member.setOwner(sp.owner);
+            // The wing's launch readiness comes from this record. Left at nothing, the game counts its fighters as
+            // "not combat-ready" and locks the controls of one a player flies (Isenoria's Manual Override).
+            try { member.getRepairTracker().setCR(sp.cr > 0.01f ? sp.cr : 0.7f); } catch (Throwable t) { /* as the game made it */ }
             underCommander(member, sp);
             // A fighter with an officer of its own (some mods make them): the officer goes aboard, so their
             // skills act here and their face shows when the fighter is looked at.
@@ -4083,7 +4087,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
         }
         ship.setHitpoints(Math.max(1f, t.hull * ship.getMaxHitpoints()));
-        if (Math.abs(ship.getCurrentCR() - t.cr) > 0.004f) ship.setCurrentCR(t.cr); // the host's readiness, not ours
+        // The host's readiness, not ours. A fighter's own figure on the host is often nothing at all (fighters run
+        // on their carrier's), and a fighter at zero is "not combat ready" with its controls locked when a player
+        // flies it (Isenoria's Manual Override): such a figure is not copied onto a fighter.
+        if (!(pp.fighter && t.cr <= 0.01f) && Math.abs(ship.getCurrentCR() - t.cr) > 0.004f) ship.setCurrentCR(t.cr);
         FluxTrackerAPI flux = ship.getFluxTracker();
         // Guard rail: never more flux than this copy of the ship can hold, whatever arrives.
         float room = Math.max(1f, ship.getMaxFlux());
