@@ -150,6 +150,7 @@ public class RemotePilotAI implements ShipAIPlugin {
             }
         }
         watchFire(groups, amount);
+        followShots(groups, valid, amount);
 
         // Shield / phase cloak: make the host ship match what the player has locally.
         ShieldAPI shield = ship.getShield();
@@ -292,6 +293,93 @@ public class RemotePilotAI implements ShipAIPlugin {
                 if (w.getSpec() == null || w.getSpec().getAIHints() == null || !w.getSpec().getAIHints().contains(WeaponAPI.AIHints.SYSTEM)) continue;
                 w.setForceFireOneFrame(true);
             } catch (Throwable t) { /* that weapon stays with the fire order */ }
+        }
+    }
+
+    // Shots asked for by a press of the fire button, from weapons that fire a limited number of shots (bombs,
+    // missiles): weapon -> {seconds followed, ammo at the press}.
+    private final java.util.Map<WeaponAPI, float[]> shots = new java.util.IdentityHashMap<WeaponAPI, float[]>();
+    private boolean shotHeld;
+    private int shotGroup = -1, pressLines;
+    /** For the host's report: presses of the fire button seen, shots launched by hand, what the last press asked for. */
+    public volatile int pressesSeen, shotsLaunched;
+    public volatile String lastPress = "none";
+
+    /**
+     * Makes each press of the fire button count for weapons with ammo. The fire order and the force-fire above only
+     * last while the button is down, and a bomb with a charge-up may need the order for longer than a quick click
+     * reaches the host (or, on a fighter the AI flies, ignore it). So each such weapon in the pressed group (the
+     * ship's group and the loadout's group of that number) is told to fire every frame until it has fired, for
+     * up to 0.6 seconds (1.5 while charging up). A fighter's weapon that still hasn't fired is then fired by hand:
+     * its shot is launched from the weapon, with its ammo and cooldown used up as if it had fired itself.
+     */
+    private void followShots(java.util.List<WeaponGroupAPI> groups, boolean valid, float amount) {
+        boolean held = in.has(InputState.FIRE);
+        if (held && in.group >= 0 && (!shotHeld || in.group != shotGroup)) {
+            pressesSeen++;
+            java.util.List<WeaponAPI> want = new java.util.ArrayList<WeaponAPI>();
+            if (valid) want.addAll(groups.get(in.group).getWeaponsCopy());
+            for (WeaponAPI w : loadoutWeapons(in.group)) if (!want.contains(w)) want.add(w);
+            StringBuilder sb = new StringBuilder();
+            for (WeaponAPI w : want) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(w.getId());
+                if (w.usesAmmo()) sb.append(' ').append(w.getAmmo()).append('/').append(w.getMaxAmmo());
+                if (w.getCooldownRemaining() > 0f) sb.append(" cooling");
+                if (w.isDisabled()) sb.append(" disabled");
+                if (!w.usesAmmo() || w.isBeam() || w.getAmmo() <= 0 || w.isDisabled() || w.getCooldownRemaining() > 0f) continue;
+                if (!shots.containsKey(w)) shots.put(w, new float[] {0f, w.getAmmo()});
+            }
+            lastPress = "group " + (in.group + 1) + " [" + sb + "]";
+            if (ship.isFighter() && pressLines++ < 6) Global.getLogger(RemotePilotAI.class).info("Wingman fire: " + ship.getHullSpec().getHullId()
+                    + " fire pressed on " + lastPress + " (ship has " + groups.size() + " groups)");
+        }
+        shotHeld = held;
+        shotGroup = in.group;
+        if (shots.isEmpty()) return;
+        java.util.Iterator<java.util.Map.Entry<WeaponAPI, float[]>> it = shots.entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<WeaponAPI, float[]> e = it.next();
+            WeaponAPI w = e.getKey();
+            float[] f = e.getValue();
+            f[0] += amount;
+            try {
+                if (!ship.isAlive() || w.isDisabled() || w.getAmmo() <= 0 || w.getAmmo() < f[1] || w.getCooldownRemaining() > 0f) { it.remove(); continue; }
+                boolean charging = w.getChargeLevel() > 0f || w.isFiring();
+                if (f[0] < (charging ? 1.5f : 0.6f)) { w.setForceFireOneFrame(true); continue; }
+                it.remove();
+                if (ship.isFighter()) launch(w);
+            } catch (Throwable t) { it.remove(); }
+        }
+    }
+
+    /** The weapons of weapon group 'index' of the ship's loadout, by slot. */
+    private java.util.List<WeaponAPI> loadoutWeapons(int index) {
+        java.util.List<WeaponAPI> out = new java.util.ArrayList<WeaponAPI>();
+        try {
+            java.util.List<com.fs.starfarer.api.loading.WeaponGroupSpec> specs = ship.getVariant().getWeaponGroups();
+            if (specs == null || index >= specs.size()) return out;
+            java.util.List<String> slots = specs.get(index).getSlots();
+            if (slots == null) return out;
+            for (WeaponAPI w : ship.getAllWeapons()) if (w.getSlot() != null && slots.contains(w.getSlot().getId())) out.add(w);
+        } catch (Throwable t) { /* none */ }
+        return out;
+    }
+
+    /** Fires one shot of a weapon that wouldn't fire when told to: its projectile, ammo and cooldown. */
+    private void launch(WeaponAPI w) {
+        try {
+            Vector2f at = null;
+            try { at = w.getFirePoint(0); } catch (Throwable t) { /* none */ }
+            if (at == null) at = w.getLocation();
+            Object shot = Global.getCombatEngine().spawnProjectile(ship, w, w.getId(), new Vector2f(at.x, at.y), w.getCurrAngle(), new Vector2f(ship.getVelocity().x, ship.getVelocity().y));
+            if (shot == null) return;
+            w.setAmmo(Math.max(0, w.getAmmo() - 1));
+            w.setRemainingCooldownTo(w.getCooldown());
+            if (shotsLaunched++ < 4) Global.getLogger(RemotePilotAI.class).info("Wingman fire: " + w.getId() + " on " + ship.getHullSpec().getHullId()
+                    + " did not fire when told to; launched its shot by hand");
+        } catch (Throwable t) {
+            Global.getLogger(RemotePilotAI.class).warn("Wingman fire: could not launch " + w.getId() + " by hand", t);
         }
     }
 

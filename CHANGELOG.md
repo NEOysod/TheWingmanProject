@@ -55,6 +55,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   player isn't flying. When a joiner fires a group, the host now also fires that group's system-marked weapons.
   And a fighter flown by the AI may have no weapon groups set up at all (the game makes them for a ship a player
   flies): a group the joiner fires that the ship doesn't have is now fired from its loadout, weapon by weapon.
+  Each press of the fire button now counts for weapons with ammo (bombs, missiles): the host keeps telling each
+  one in the pressed group to fire until it has (up to 0.6 s, 1.5 s while charging up), so a quick click is
+  enough. On a fighter, a weapon that still won't fire is fired by hand: its shot is launched from the weapon,
+  using its ammo and cooldown. The host's fighter report shows the presses it saw and what each asked for.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
