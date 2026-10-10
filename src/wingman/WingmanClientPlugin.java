@@ -1016,6 +1016,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Ui.say(engine, "Co-op: " + Msg.readUtf(p.data));
                 break;
             case Msg.RESET:
+                hostPaused = false;
                 toPlaceholder();
                 for (Puppet pp : puppets.values()) engine.removeEntity(pp.ship);
                 for (MissilePuppet mp : missiles.values()) engine.removeEntity(mp.missile);
@@ -1259,6 +1260,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 replayShot(Msg.reader(p.data));
                 break;
             case Msg.BATTLE_END:
+                hostPaused = false;
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman: the host says its battle is over");
                 hostEnded = true;
                 JoinSetup.battleOver();
@@ -1381,6 +1383,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     mp.target = ms;
                     mp.targetAt = now;
                 }
+                hostPaused = snap.paused;
                 if (snap.paused != engine.isPaused()) engine.setPaused(snap.paused);
                 break;
             }
@@ -1910,6 +1913,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float w = 330f;
             panel.button((Global.getSettings().getScreenWidth() - w) / 2f, 150f, w, 46f, "RETREAT", "Enter: leave the battle with this ship", false);
         }
+        if (hostPaused && (lobby == null || !lobby.readyCheck)) {
+            panel.banner("PAUSED", "The host has paused the battle.", Panel.WARN);
+        }
         if (lobby == null || !lobby.readyCheck) return;
         int built = builtShips();
         boolean synced = built + skippedShips >= lobby.expected && lobby.expected > 0;
@@ -1956,6 +1962,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         panel.render("READY CHECK", lines, colors, footer);
     }
+
+    /** The host's battle is paused (as of the last update): shown in large letters, since only the host can unpause. */
+    private boolean hostPaused;
 
     /** Put the player back in the invisible stand-in ship. */
     private void toPlaceholder() {

@@ -124,6 +124,49 @@ final class Panel {
         }
     }
 
+    /**
+     * A large word across the screen, a little above the middle, on a dark band: for "PAUSED". The game's
+     * biggest font is drawn at 3x, and the line under it at its normal size.
+     */
+    void banner(String word, String sub, Color color) {
+        if (broken) return;
+        try {
+            if (bodyFont == null) bodyFont = Global.getSettings().getString("defaultFont");
+            float savedWidth = width;
+            width = 2000f; // labels sized to their text, not wrapped
+            LabelAPI big = label(word, "graphics/fonts/orbitron24aabold.fnt", color);
+            LabelAPI small = sub == null || sub.isEmpty() ? null : label(sub, bodyFont, TEXT);
+            width = savedWidth;
+            final float SCALE = 3f;
+            float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+            float bw = big.computeTextWidth(word) * SCALE, bh = big.getPosition().getHeight() * SCALE;
+            float sub_h = small == null ? 0f : small.getPosition().getHeight() + GAP;
+            float cy = sh * 0.68f, bandH = bh + sub_h + PAD * 2f;
+
+            GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glColor4f(0.03f, 0.05f, 0.08f, 0.6f);
+            quad(GL11.GL_QUADS, 0f, cy - bandH / 2f, sw, bandH);
+            GL11.glPopAttrib();
+
+            float top = cy + bandH / 2f - PAD;
+            GL11.glPushMatrix();
+            GL11.glTranslatef((sw - bw) / 2f, top - bh, 0f);
+            GL11.glScalef(SCALE, SCALE, 1f);
+            big.getPosition().setLocation(0f, 0f);
+            big.render(1f);
+            GL11.glPopMatrix();
+            if (small != null) {
+                float w = small.computeTextWidth(sub);
+                draw(small, (sw - w) / 2f, top - bh - GAP);
+            }
+        } catch (Throwable e) {
+            failed("banner", e);
+        }
+    }
+
     /** A small clickable-looking box with one or two lines of text, for the title screen. */
     void button(float x, float y, float w, float h, String text, String sub, boolean hover) {
         if (broken) return;

@@ -8,6 +8,8 @@ Same protocol as 0.4 (43): 0.4.x versions play together.
   off until restart, in battle it closed the page.
 - Panels no longer disappear silently: a drawing error is logged and that frame skipped, and a failure on the
   title screen's settings page closes only that page.
+- **Big "PAUSED" on joiners' screens** while the host has the battle paused (only the host can unpause).
+- The host no longer keeps the last battle's AI for a player's ship after the battle ends.
 
 ## 0.4.1-beta
 Same protocol as 0.4 (43): 0.4 and 0.4.1 play together.
