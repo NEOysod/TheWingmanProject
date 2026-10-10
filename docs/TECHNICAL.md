@@ -497,6 +497,10 @@ firing bit clears.
   then runs as written (a phase ship fades, a mod's system draws its effects). Disagreements are corrected at once
   for on/off and after 0.25 s for smaller ones; a phase state is forced after 0.3 s. On the player's ship the keys
   rule and the host only corrects after most of a second.
+- **Stopping:** a system running on the copy while the host's is at rest is switched off with `deactivate()` first
+  (it winds down and starts its real cooldown), `forceState` only after 0.3 s more. A forced COOLDOWN is given the
+  system's full cooldown if it came with none, so it doesn't read as idle at once (UAF's Isenoria ends its fighter
+  hand-over when Rafflesya Control is neither on nor cooling down).
 - **Starting from rest:** `useSystem()` first (a teleporter decides its destination at that moment), `forceState`
   only as a fallback and never for teleporter-class systems; teleporters and drone systems on other ships are left
   alone (their positions come from the host).

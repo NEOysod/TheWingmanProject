@@ -648,6 +648,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * Ship selection is the game's own transfer-command order. Whenever the ship under our control changes
      * (we boarded a puppet, or left one), tell the host which ship we now want; it answers with ASSIGN.
      */
+    private float fighterSince = -100f;
+    private int fighterBounces;
+
     private void watchPlayerShip(Conn conn) {
         ShipAPI ps = engine.getPlayerShip();
         if (ps == lastPlayerShip) return;
@@ -657,6 +660,20 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         for (Puppet pp : puppets.values()) if (pp.ship != ps) pp.ship.setShipAI(new PuppetAI());
         if (ps != placeholder) placeholder.setShipAI(new PuppetAI());
         Puppet now = ps == null ? null : byShip.get(ps);
+        // Taken out of a fighter a script handed us, back into the ship we flew, within a few seconds: note why it
+        // might have happened (a carrier script ends the hand-over when the carrier's system stops), for the log.
+        Puppet left = was == null ? null : byShip.get(was);
+        if (left != null && left.fighter && now != null && !now.fighter && clock - fighterSince < 5f && fighterBounces++ < 5) {
+            String sys = "none";
+            try {
+                ShipSystemAPI cs = ps.getSystem();
+                if (cs != null) sys = cs.getId() + " " + cs.getState() + ", cooldown left " + Math.round(cs.getCooldownRemaining() * 10f) / 10f
+                        + (now.target == null ? "" : ", host's stage " + STAGES[Math.max(0, Math.min(STAGES.length - 1, now.target.system))]);
+            } catch (Throwable t) { /* just the fact then */ }
+            Global.getLogger(WingmanClientPlugin.class).info("Wingman: put back into " + ps.getHullSpec().getHullId() + " from its fighter after "
+                    + Math.round((clock - fighterSince) * 1000f) + " ms (fighter alive " + was.isAlive() + "; carrier system: " + sys + ")");
+        }
+        if (now != null && now.fighter) fighterSince = clock;
         // A fighter only when a mod's script handed us one from the ship we flew (UAF's Isenoria does).
         boolean ok = now != null && (!now.fighter || WingmanHostPlugin.linked(ps, was));
         claim(conn, ok ? now.netId : -1);
@@ -1817,7 +1834,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -3656,12 +3673,28 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             if (teleports(sys) || apart < patience + 0.3f) return apart;
         }
+        if (running(have) && restWant) {
+            // Stopping one that runs here while the host's has stopped: switched off the proper way first, so it
+            // winds down and starts its real cooldown, as on the host. Some mods count on that cooldown: UAF's
+            // Isenoria keeps its pilot in a Rafflesya only while Rafflesya Control is on or cooling down.
+            boolean tryNow = apart - amount < patience || (int) (apart * 2f) != (int) ((apart - amount) * 2f);
+            if (tryNow) {
+                try { sys.deactivate(); systemsStopped++; } catch (Throwable th) { /* pushed below */ }
+            }
+            if (apart < patience + 0.3f) return apart;
+        }
         sys.forceState(want, Math.max(0f, Math.min(1f, progress)));
+        // A cooldown pushed in from outside may start with nothing left of it, which reads as idle at once. The
+        // host's has only just begun: give this copy its full length, which then runs down by its own clock.
+        if (want == ShipSystemAPI.SystemState.COOLDOWN) {
+            try { if (sys.getCooldownRemaining() <= 0f && sys.getCooldown() > 0f) sys.setCooldownRemaining(sys.getCooldown()); }
+            catch (Throwable th) { /* left as the game made it */ }
+        }
         if (own) sysForcedAt = clock; // our doing, not the player's: not to be counted as a use
         systemsForced++;
         return 0f;
     }
-    private int systemsForced, systemsStarted;
+    private int systemsForced, systemsStarted, systemsStopped;
     private final LocalDamage localDamage = new LocalDamage();
     private boolean statsBroken, hurtsBroken, damageListening;
     private int frame, statFixes, notesApplied, hurtsSeen, hurtsPlayed, shotsMadeUp, shotsHeld;
@@ -4275,7 +4308,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         int leave = 0;
         try { // the game's own Retreat order, given to the ship we are flying
             com.fs.starfarer.api.combat.CombatFleetManagerAPI.AssignmentInfo order = engine.getFleetManager(0).getTaskManager(false).getAssignmentFor(s);
-            if (order != null && order.getType() != null && "RETREAT".equals(order.getType().name())) leave |= InputState.RETREAT;
+            if (order != null && order.getType() != null && "RETREAT".equals(order.getType().name()) && !s.isFighter()) leave |= InputState.RETREAT; // (a fighter has no retreat of its own)
         } catch (Throwable t) { /* no order */ }
         if (System.currentTimeMillis() < retreatNowUntil) leave |= InputState.RETREAT_NOW;
         ShipEngineControllerAPI ec = s.getEngineController();

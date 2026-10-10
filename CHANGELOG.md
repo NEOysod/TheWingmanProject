@@ -16,6 +16,12 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
     errors never add up.
   - **30 updates a second by default (was 60).** With the above, 30 is as smooth as 60 was, and over an uneven
     connection smoother: every unevenly timed update is a small correction. Settings saved in game are kept.
+- **Fixed: Isenoria's Manual Override threw the joiner back into the carrier at once.** When the joiner took the
+  Rafflesya, the host's AI took the carrier and switched Rafflesya Control off; the joiner's copy followed into a
+  cooldown with no time on it, which reads as "off", and Isenoria ends the hand-over then. Systems on joiners'
+  copies are now switched off the proper way, with their real cooldown. A note goes in the joiner's log if a
+  hand-over still ends within 5 seconds.
+- Fixed: a joiner flying a fighter could send the host a retreat order for it.
 - **Traffic in the log.** The host and joiners now write one short line every two minutes with what the mod sent
   and received (and, on joiners, how unevenly updates arrived), so playtest logs show real figures.
 - For developers: `test/SyncBench.java` measures bandwidth and smoothness on a simulated battle.

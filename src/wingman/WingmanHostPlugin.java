@@ -470,7 +470,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = (ShipAPI) p.ship;
             int flags = p.input.flags, before = p.retreatFlags;
             p.retreatFlags = s == null ? 0 : flags & (InputState.RETREAT | InputState.RETREAT_NOW);
-            if (s == null || !s.isAlive() || s.isHulk()) continue;
+            if (s == null || !s.isAlive() || s.isHulk() || s.isFighter()) continue; // a fighter is never ordered to retreat
             try {
                 com.fs.starfarer.api.combat.CombatFleetManagerAPI fm = engine.getFleetManager(s.getOwner());
                 com.fs.starfarer.api.combat.DeployedFleetMemberAPI dfm = fm.getDeployedFleetMember(s);
