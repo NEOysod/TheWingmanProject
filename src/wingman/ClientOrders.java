@@ -76,6 +76,7 @@ final class ClientOrders {
     /** New battle on the host: forget everything. */
     void reset() {
         host = null;
+        texts.clear();
         previousHostKeys = new HashSet<String>();
         previousShipOrders = new HashSet<Integer>();
         loggedState = false;
@@ -95,6 +96,7 @@ final class ClientOrders {
         placed.clear();
         for (int i = 0; i < all.size(); i++) {
             BattleObjectiveAPI o = all.get(i);
+            if (engine != null && !engine.isEntityInPlay(o)) continue; // taken off the field (see gone)
             o.getLocation().set(PARK - i * 1000f, PARK);
             o.setOwner(100);
             List<BattleObjectiveAPI> list = spare.get(o.getType());
@@ -126,6 +128,7 @@ final class ClientOrders {
                 BattleObjectiveAPI o = list.remove(best);
                 o.getLocation().set(x, y);
                 placed.add(o);
+                applyText(placed.size() - 1);
             }
             Dbg.info(ClientOrders.class, "Wingman orders: host has " + n + " objectives, placed "
                     + (n - missing) + (missing > 0 ? " (" + missing + " are of a kind or number this mod has no spare for)" : ""));
@@ -151,13 +154,69 @@ final class ClientOrders {
 
     void onOrders(Orders o) { host = o; lastReconcile = 0; }
 
+    /** The host's tooltip text for each objective, by the host's order. */
+    private final Map<Integer, String> texts = new HashMap<Integer, String>();
+
+    void onObjectiveText(byte[] data) {
+        if (broken || engine == null) return;
+        try {
+            In in = Msg.reader(data);
+            int i = in.readByte() & 0xFF;
+            String text = in.readUTF();
+            if (text.length() > 4000) return;
+            texts.put(i, text);
+            applyText(i);
+        } catch (Throwable t) {
+            fail("showing an objective's tooltip", t);
+        }
+    }
+
+    private void applyText(int i) {
+        if (i >= placed.size()) return;
+        MirrorObjectiveEffect m = mirrorOf(placed.get(i));
+        if (m != null) m.setText(texts.get(i));
+    }
+
+    /** The do-nothing script of a held-back objective (see ObjectiveMirror); null for one running its own. */
+    private static MirrorObjectiveEffect mirrorOf(BattleObjectiveAPI o) {
+        try {
+            if (o instanceof com.fs.starfarer.combat.entities.BattleObjective) {
+                Object e = ((com.fs.starfarer.combat.entities.BattleObjective) o).getEffect();
+                if (e instanceof MirrorObjectiveEffect) return (MirrorObjectiveEffect) e;
+            }
+        } catch (Throwable t) { /* treated as its own */ }
+        return null;
+    }
+
+    /**
+     * The host's game took this objective off the field (a mod's objective that ends itself, such as derelict
+     * ships captured): take ours away too. One whose script is held back here can't say so itself, so a notice
+     * says who took it.
+     */
+    private void gone(int i, BattleObjectiveAPI o, int owner) {
+        placed.set(i, null);
+        boolean mirror = mirrorOf(o) != null;
+        try {
+            if (engine.isEntityInPlay(o)) engine.removeEntity(o);
+        } catch (Throwable t) { /* already gone */ }
+        if (mirror) {
+            String name = o.getDisplayName() == null ? "An objective" : o.getDisplayName();
+            Ui.say(engine, name + (owner == 0 ? " captured by your side" : owner == 1 ? " captured by the enemy" : " is gone")
+                    + " (its effect runs in the host's game).");
+        }
+        Dbg.info(ClientOrders.class, "Wingman objectives: '" + o.getType() + "' is gone from the host's battle; removed here too");
+    }
+
     void tick() {
         if (broken || engine == null || host == null) return;
         try {
             // Who holds each objective is the host's call; the local game would otherwise work it out for itself.
             for (int i = 0; i < placed.size() && i < host.objectiveOwners.length; i++) {
                 BattleObjectiveAPI o = placed.get(i);
-                if (o != null && o.getOwner() != host.objectiveOwners[i]) o.setOwner(host.objectiveOwners[i]);
+                if (o == null) continue;
+                int owner = host.objectiveOwners[i] & 0x7F;
+                if ((host.objectiveOwners[i] & Orders.GONE) != 0) { gone(i, o, owner); continue; }
+                if (o.getOwner() != owner) o.setOwner(owner);
             }
             long now = System.currentTimeMillis();
             if (now - lastReconcile < 300) return;

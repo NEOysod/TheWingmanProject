@@ -24,8 +24,13 @@ public final class Orders {
         }
     }
 
-    /** Owner of each objective, in the order they were sent: 0 players, 1 enemy, 100 nobody. */
+    /**
+     * Owner of each objective, in the order they were sent: 0 players, 1 enemy, 100 nobody; plus GONE when the
+     * host's game has taken the objective off the field (a mod's objective that ends itself when captured).
+     */
     public int[] objectiveOwners = new int[0];
+    /** Added to an owner: the objective is gone from the host's battle. */
+    public static final int GONE = 0x80;
     public boolean fullAssault, fullRetreat;
     public List<Assignment> assignments = new ArrayList<Assignment>();
 

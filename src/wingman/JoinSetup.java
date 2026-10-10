@@ -30,7 +30,7 @@ public final class JoinSetup {
         public String status = "";
     }
 
-    /** The vanilla kind made where a mod's objective can't be (see SystemWatch). */
+    /** The vanilla kind made where a mod's objective can't be and can't be shown as itself either (see ObjectiveMirror). */
     public static final String STAND_IN_OBJECTIVE = "sensor_array";
     /** Host objective kinds this battle shows with a stand-in; the map check doesn't count them as missing. */
     public static final java.util.Set<String> standIns = new java.util.HashSet<String>();
@@ -57,6 +57,12 @@ public final class JoinSetup {
             }
             String effect = effectClasses.get(type);
             if (SystemWatch.get().allowObjective(type, effect, CampaignStandIn.isInstalled())) return type;
+            // Held back: made as itself (real name, icon, look) with a script that does nothing here.
+            if (ObjectiveMirror.blank(type, effect)) {
+                com.fs.starfarer.api.Global.getLogger(JoinSetup.class).info("Wingman objectives: '" + type + "' (" + effect
+                        + ") can't run in a joiner's battle; it is shown as itself, run by the host's game");
+                return type;
+            }
             standIns.add(type);
             com.fs.starfarer.api.Global.getLogger(JoinSetup.class).info("Wingman objectives: '" + type + "' (" + effect
                     + ") can't run in a joiner's battle; a " + STAND_IN_OBJECTIVE + " marks its place");

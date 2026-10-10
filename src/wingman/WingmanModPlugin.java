@@ -15,6 +15,7 @@ import wingman.net.HostSession;
 public class WingmanModPlugin extends BaseModPlugin {
     @Override
     public void onGameLoad(boolean newGame) {
+        ObjectiveMirror.restore(); // a campaign's battles get every objective's own script
         try {
             Global.getSector().addTransientScript(new Watch());
         } catch (Throwable t) {

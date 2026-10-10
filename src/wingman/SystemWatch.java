@@ -38,13 +38,13 @@ final class SystemWatch {
     // battle. Some were written for campaign battles only and reach for the campaign (the player fleet's
     // cargo, credits, a derelict fleet), which a joiner, on the title screen, doesn't have: the game then
     // crashes while setting the battle up, before any of this mod's code runs again. Those known to do so
-    // are never made on a joiner; a plain stand-in marks the spot instead. Any other mod's kind is noted
+    // are held back on a joiner: made as themselves but with a script that does nothing (ObjectiveMirror). Any other mod's kind is noted
     // here before it is made, as for ship systems, and blocked from the next start if the game died.
     /**
      * Effect scripts (or packages, ending in a dot) known to need the campaign's data: the player fleet, its
      * cargo and credits, the player's level. The stand-in campaign (CampaignStandIn) provides those, so with
-     * it in place they run, under the same crash safety net as any other mod's kind; without it, a stand-in
-     * objective is made instead.
+     * it in place they run, under the same crash safety net as any other mod's kind; without it, they are
+     * held back (ObjectiveMirror).
      */
     static final String[] CAMPAIGN_DATA_OBJECTIVES = {
             "data.scripts.combat.obj.SotfReinforcerEffect",   // Secrets of the Frontier: counts the player fleet's AI cores

@@ -543,13 +543,13 @@ public class NetTest {
                 && !orphan.mergeOnto(null) && orphan.gridWidth == 0 && orphan.armor.length == 0);
 
         // fleet orders round trip
-        Orders od = new Orders(); od.objectiveOwners = new int[] {0, 1, 100}; od.fullAssault = true;
+        Orders od = new Orders(); od.objectiveOwners = new int[] {0, 1, 100, 1 | Orders.GONE}; od.fullAssault = true;
         Orders.Assignment oa = new Orders.Assignment(); oa.type = "CAPTURE"; oa.targetKind = Orders.TARGET_OBJECTIVE; oa.targetId = 2; oa.members.add(7); oa.members.add(9); od.assignments.add(oa);
         Orders.Assignment ob = new Orders.Assignment(); ob.type = "RALLY_TASK_FORCE"; ob.targetKind = Orders.TARGET_POINT; ob.x = 1234.5f; ob.y = -777f; od.assignments.add(ob);
         Orders.ShipOrder os = new Orders.ShipOrder(); os.ship = 12; os.type = "RETREAT"; os.direct = true; od.shipOrders.add(os);
         Orders og = Orders.decode(od.encode());
         Orders.Assignment near = new Orders.Assignment(); near.type = "RALLY_TASK_FORCE"; near.targetKind = Orders.TARGET_POINT; near.x = 1236f; near.y = -775f;
-        check("orders round trip: " + og.assignments.get(0).key() + " / " + og.assignments.get(1).key(), og.objectiveOwners[2] == 100 && og.shipOrders.size() == 1 && og.shipOrders.get(0).ship == 12 && og.shipOrders.get(0).type.equals("RETREAT") && og.shipOrders.get(0).direct && og.fullAssault && !og.fullRetreat
+        check("orders round trip: " + og.assignments.get(0).key() + " / " + og.assignments.get(1).key(), og.objectiveOwners[2] == 100 && (og.objectiveOwners[3] & Orders.GONE) != 0 && (og.objectiveOwners[3] & 0x7F) == 1 && og.shipOrders.size() == 1 && og.shipOrders.get(0).ship == 12 && og.shipOrders.get(0).type.equals("RETREAT") && og.shipOrders.get(0).direct && og.fullAssault && !og.fullRetreat
                 && og.assignments.size() == 2 && og.assignments.get(0).members.get(1) == 9 && og.assignments.get(1).x == 1234.5f
                 && og.assignments.get(1).key().equals(near.key()) && !og.assignments.get(0).key().equals(og.assignments.get(1).key()));
 

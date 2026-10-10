@@ -647,7 +647,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         // (Modules of multi-part ships and system drones count as ships in their own right: each has its own
         // hull, armor and guns, and a joiner's copy has to be told what becomes of them.)
         if (s == null || s.isHulk() || !s.isAlive() || s.isShuttlePod()) return false;
-        if (s.getOwner() != 0 && s.getOwner() != 1) return false;
+        // Neutral ships (side 100) too: a mod's objective can park ships there (derelicts waiting to be captured).
+        if (s.getOwner() != 0 && s.getOwner() != 1 && s.getOwner() != 100) return false;
         return !s.isFighter() || s.getWing() != null; // fighters are sent too, as long as they belong to a wing
     }
 
@@ -682,7 +683,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private void checkSide(int id, ShipAPI s) {
         int now = s.getOwner();
         Integer was = sides.get(id);
-        if (was == null || was == now || (now != 0 && now != 1)) return;
+        if (was == null || was == now || (now != 0 && now != 1 && now != 100)) return;
         sides.put(id, now);
         try {
             byte[] old = spawnMsgs.get(id);

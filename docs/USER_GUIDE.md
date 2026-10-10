@@ -1,4 +1,4 @@
-# The Wingman Project 0.2 — User Guide
+# The Wingman Project 0.3 — User Guide
 
 Co-op for Starsector battles. One player hosts a battle and up to three friends join it, each flying a ship
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong
@@ -300,12 +300,17 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   few frames early or late compared with the host, and occasionally differ.
 - If a mod's **ship system** or **battle objective** appears to have crashed a joiner's game, it is no longer
   mirrored on that PC from the next launch on. Ships still move and take damage correctly; only its effects
-  are missing (an objective is shown as a plain Sensor Array at the same spot). The CO-OP panel lists what was
+  are missing (an objective still shows with its own name and look, but does nothing on that PC). The CO-OP panel lists what was
   switched off this way, and **F5** switches it all back on.
 - Battle objectives whose scripts need the campaign's data (Secrets of the Frontier's reinforcement
   beacons; the asteroid and credit-cache objectives from its Extra Combat Objectives add-on) run on a joiner's
   PC using the stand-in campaign (see below). Those that need the campaign world itself (the add-on's
-  derelict-fleet objective), or any that crash anyway, are shown as a plain Sensor Array at the same spot.
+  derelict-fleet objective), or any that crash anyway, are held back: on a joiner's screen the objective has
+  its real name, look and tooltip (the host's text), but its script runs only in the host's game. What it
+  does reaches joiners the usual way: ships it brings in or parks (the derelict fleet, which sits on the
+  neutral side until captured) are copied from the host, and when the host's game takes the objective off
+  the field, so does the joiner's, with a short notice of who captured it. The script's own combat messages
+  (such as the derelict crew's hail) are seen by the host only: the game gives mods no way to read them.
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 

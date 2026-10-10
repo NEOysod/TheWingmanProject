@@ -45,7 +45,7 @@ public class MissionDefinition implements MissionDefinitionPlugin {
 
         // The host's own objectives, of whatever kind (a mod's too), exactly where the host has them. Their
         // own scripts then run here as on the host. Objectives can only be made now, before the battle starts.
-        // A kind whose script needs a running campaign gets a stand-in instead (see JoinSetup.kindToMake).
+        // A kind whose script can't run here is made as itself with a do-nothing script (see JoinSetup.kindToMake).
         JoinSetup.standIns.clear();
         // Mods' scripts that look at the campaign find a copy of the host's (see CampaignStandIn).
         JoinSetup.prepareCampaign();

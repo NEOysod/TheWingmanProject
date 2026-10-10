@@ -259,6 +259,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         placeholder.setCollisionClass(CollisionClass.NONE);
         makeInvulnerable(placeholder);
         try { placeholder.addListener(new HullGuard()); } catch (Throwable t) { /* damage cut still applies */ }
+        ObjectiveMirror.restore(); // the objectives are made: held-back kinds get their own scripts back for later battles
         orders.start(engine);
         environment.start(engine);
 
@@ -888,6 +889,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.OBJECTIVES:
                 orders.onObjectives(p.data);
                 break;
+            case Msg.OBJECTIVE_TEXT:
+                orders.onObjectiveText(p.data);
+                break;
             case Msg.STATS:
                 if (cfg == null || !cfg.syncStats) break;
                 for (wingman.net.Extras.Stats st : wingman.net.Extras.decodeStats(p.data)) {
@@ -1027,7 +1031,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 // A ship changed sides on the host (boarded, hacked, taken over by a script).
                 In in = Msg.reader(p.data);
                 int id = in.readInt(), side = in.readByte();
-                if (side != 0 && side != 1) break;
+                if (side != 0 && side != 1 && side != 100) break;
                 Puppet pp = puppets.get(id);
                 if (pp == null) break;
                 pp.owner = side;
@@ -1793,7 +1797,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     private static String describe(Puppet pp) {
         String name = pp.ship.getName();
-        return (pp.owner == 0 ? "friendly " : "enemy ") + (name == null || name.isEmpty()
+        return (pp.owner == 0 ? "friendly " : pp.owner == 100 ? "neutral " : "enemy ") + (name == null || name.isEmpty()
                 ? pp.ship.getHullSpec().getHullId() : name) + " (ship thinks it is side " + pp.ship.getOwner() + ")";
     }
 

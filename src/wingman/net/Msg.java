@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 41;
+    public static final int PROTOCOL_VERSION = 42;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -64,8 +64,10 @@ public final class Msg {
     public static final byte UDP_OFFER = 44;    // host -> joiner: long token, int port. "Updates and controls may also travel by UDP: say hello there"
     public static final byte UDP_READY = 45;    // joiner -> host: the host's answer came back by UDP, so that way works
     public static final byte UDP_MODE = 46;     // host -> joiner: byte 1 = send your controls by UDP from now on, 0 = by this connection again
-    /** A ship changed sides mid-battle (boarded, hacked...): int net id, byte new side (0 or 1). */
+    /** A ship changed sides mid-battle (boarded, hacked, a derelict captured): int net id, byte new side (0, 1 or neutral 100). */
     public static final byte SIDE = 47;
+    /** host -> joiner: byte objective index (host's order), UTF tooltip text (at most 4,000 characters). Sent when it changes. */
+    public static final byte OBJECTIVE_TEXT = 48;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */

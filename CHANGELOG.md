@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3-beta
+Protocol 42: everyone in a game needs 0.3.
+
+- **Held-back objectives show as themselves.** An objective whose script can't run on a joiner's PC (it needs
+  the campaign world, or it crashed there before) used to be replaced by a plain Sensor Array, which also ran a
+  sensor effect the host never had. It is now made as its own kind, with its real name, icon and look, and a
+  script that does nothing; its tooltip shows the host's text. The change to the objective's kind is made on the
+  joiner's PC only for the moment the battle starts, and put back straight after.
+- **Neutral ships are copied.** Ships a mod parks on the neutral side, like SOTF Extra Combat Objectives'
+  derelict fleet waiting to be captured, now appear on joiners' screens from the start, and change sides with
+  the host's when captured.
+- **Objectives that end themselves end for joiners too.** When the host's game takes an objective off the field
+  (the derelict fleet once captured), joiners' copies go as well, with a notice of who captured a held-back one.
+  The objective's own combat messages (the derelict crew's hail) are still seen by the host only.
+
 ## 0.2-beta
 Protocol 41: everyone in a game needs 0.2.
 

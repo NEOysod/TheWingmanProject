@@ -40,7 +40,7 @@ Three constraints shape almost every detail:
 | --- | --- |
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
 | Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `HostOrders`, `ShipStats` |
-| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `SystemWatch`, `Compat`, `Groups` |
+| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
 | Campaign | `WingmanModPlugin` |
@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 41 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 42 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -207,7 +207,8 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 41 | NEED_KEY | joiner → host | send me a full update |
 | 42 / 43 | ZIP_OK / ZIP_ON | both | compression (inside `Conn`) |
 | 44 / 45 / 46 | UDP_OFFER / UDP_READY / UDP_MODE | TCP | UDP setup (inside `ClientLink`) |
-| 47 | SIDE | host → joiner | id, new side |
+| 47 | SIDE | host → joiner | id, new side (0, 1 or neutral 100) |
+| 48 | OBJECTIVE_TEXT | host → joiner | objective index, its tooltip text (≤ 4,000 characters), on change |
 
 ---
 
@@ -297,7 +298,8 @@ frame:
 ### 6.2 Ships, ids and wrecks
 
 - **Network ids** for ships, missiles and wrecks (`ids`, `byId`, …): messages name ids, never game objects.
-- **Eligible:** ships, modules, drones, wing fighters, sides 0 and 1, not hulks or shuttles.
+- **Eligible:** ships, modules, drones, wing fighters, sides 0, 1 and neutral 100 (ships a mod's objective parks,
+  such as derelicts waiting to be captured), not hulks or shuttles.
 - **`announce`** builds and caches the `SPAWN` (`buildSpawn`): hull, name, place, CR, vents and capacitors,
   hullmods (normal, s-mods, permanent, s-modded built-ins, suppressed), every weapon by slot and the weapon order
   used for firing bits, weapon groups (autofire from the design, since the AI turns most groups on), wings,
@@ -306,7 +308,7 @@ frame:
 - **Deaths:** `DESPAWN` with a reason. A dead non-fighter becomes a tracked wreck under the same id (up to 150).
   `trackWrecks` reports wrecks gone and, four times a second, gives new hulk pieces an id and a parent
   (`WRECK_SPLIT`). Split history is pruned past 600.
-- **Side changes** (`checkSide`): a tracked ship's side is remembered at `announce`; a change to 0 or 1 updates the
+- **Side changes** (`checkSide`): a tracked ship's side is remembered at `announce`; a change to 0, 1 or 100 updates the
   cached `SPAWN` and broadcasts `SIDE`. A player whose ship leaves side 0 loses it with a notice.
 
 ### 6.3 Missiles and scripted shots
@@ -363,7 +365,7 @@ skipped reaches the expected count.
 | `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | 4×/s, at most 40 ships per message. Reads a ship only if hit, touched (ammo), flown, never sent, or on a 1-in-8 rotation; everything again every 10 s. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
 | `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 43 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
 | `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the campaign planet behind the battle, the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
-| `HostOrders` | `OBJECTIVES`, `ORDERS` | Side 0's task manager: objective owners, full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
+| `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
 | `ShipStats` | (used by both) | 43 stats: 23 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil…) and 20 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen, peak CR, phase…). Damage-only stats are left out. |
 
 ---
@@ -532,7 +534,9 @@ react. Replayed damage is not counted as local.
   radius is nearest, measured once off-map), snapped when 25 units off, removed when missing from a full list.
 - **Objectives** (`ClientOrders`): the mission makes the host's objectives in place plus 18 vanilla spares. For each
   host objective the unused local one of the same kind nearest its spot is used (or the stand-in made at that exact
-  spot, 8.2); the rest are parked off the map, owned by nobody. Ownership is forced from the host every frame.
+  spot, 8.2); the rest are parked off the map, owned by nobody. Ownership is forced from the host every frame. An
+  objective the host marks gone is removed here too, with a notice of who captured it if its script was held back.
+  Tooltip texts from `OBJECTIVE_TEXT` are put on held-back objectives' `MirrorObjectiveEffect`.
 - **Orders:** every 300 ms the joiner's command screen is made to match the host's (assignments created or removed,
   full assault, direct orders); anything the joiner adds is removed with a notice. Full retreat is disabled.
 
@@ -580,13 +584,27 @@ objective's creation. The host sends its objectives in `BATTLE_INFO`; `MissionDe
 | Effect class | On a joiner |
 | --- | --- |
 | The game's own (`com.fs.starfarer.`) or none | Made as is |
-| In `CAMPAIGN_WORLD_OBJECTIVES` (needs the campaign battle, star systems or campaign scripts: SOTF Extra Combat Objectives' derelict fleet) | A `sensor_array` is made at the same spot instead |
-| In `CAMPAIGN_DATA_OBJECTIVES` (needs only the player fleet, cargo, credits, level: Secrets of the Frontier's reinforcement objectives; the add-on's asteroid and credit cache) | Made if the stand-in campaign is in place; otherwise a `sensor_array` |
-| Any other mod's | Made, after `objective:<type>` is written as pending to the safety file; trusted when a battle with it ends normally; blocked (stand-in) from the next start if the game died |
+| In `CAMPAIGN_WORLD_OBJECTIVES` (needs the campaign battle, star systems or campaign scripts: SOTF Extra Combat Objectives' derelict fleet) | Held back |
+| In `CAMPAIGN_DATA_OBJECTIVES` (needs only the player fleet, cargo, credits, level: Secrets of the Frontier's reinforcement objectives; the add-on's asteroid and credit cache) | Made if the stand-in campaign is in place; otherwise held back |
+| Any other mod's | Made, after `objective:<type>` is written as pending to the safety file; trusted when a battle with it ends normally; held back from the next start if the game died |
 
-Kinds shown with a stand-in are listed in `JoinSetup.standIns`, so the battlefield check doesn't count them as
-missing, and `ClientOrders` places, owns and orders the stand-in like the real one. The lists were made by reading
-each class's bytecode for `SectorAPI` / `CampaignFleetAPI` calls.
+**Held back** (`ObjectiveMirror`): the objective is made as its own kind, so it has its real name, icon, sprite and
+capture time, but runs `MirrorObjectiveEffect`, which does nothing. The game builds an objective's script from its
+kind's spec (`com.fs.starfarer.loading.specs.oOOo`, fetched with `SpecStore.o00000(oOOo.class, type)`) when the
+battle starts, through `ScriptStore`, which loads the class by name. So `blank(type, effectClass)` points the spec's
+effect class at `wingman.MirrorObjectiveEffect` (the setter is named `Ó00000(String)`; the build compiles against
+`tools/stub/.../SpecStore.java`) and `restore()` puts the JSON's class back. Restore runs in the joiner's
+`prepare()` once the battle has started, in `onGameLoad` (before any campaign battle), and on the title screen once
+a change is over 15 s old (the mission list sets the mission up just to show it). Nothing on the host is changed.
+
+What a held-back objective does reaches joiners through the host: ships it spawns or parks are copied (neutral
+side 100 included), side changes follow (`SIDE`), its tooltip text comes by `OBJECTIVE_TEXT`, and its removal by
+`Orders.GONE`. Its own combat messages don't: the game's message list (`CombatState.getMessageWidget()`, class
+`com.fs.starfarer.class.C`) keeps them in a private field, and the sandbox forbids reflection.
+
+If changing the spec fails, the kind gets the older stand-in instead: a `sensor_array` at the same spot, listed in
+`JoinSetup.standIns` so the battlefield check doesn't count it as missing; `ClientOrders` places, owns and orders it
+like the real one. The lists were made by reading each class's bytecode for `SectorAPI` / `CampaignFleetAPI` calls.
 
 ### 8.3 The stand-in campaign (`CampaignStandIn`)
 
@@ -692,7 +710,7 @@ safety list), `wingman_compat` (report evidence). Passwords are stored as plain 
 | A message | try/catch per message | Skipped; joiner stops co-op after 40, host drops a player after 20 |
 | A feature | `broken` flags (codec, fog, damage listener, reports, stats, notes, armor, asteroids, orders, wings, hit matching, local-ship matching, stand-in campaign…) | That feature off for the battle; the codec falls back to the full format |
 | A script | `GuardedMissileAI`, try/catch around on-hit scripts | That script off for that missile |
-| A system or objective | `SystemWatch` breadcrumb | Not mirrored on that PC from the next start; F5 resets |
+| A system or objective | `SystemWatch` breadcrumb | System not mirrored, objective held back, on that PC from the next start; F5 resets |
 | A flown ship | `RemotePilotAI.failed` | Ship back to the AI, player told |
 | The plugin | `advance()` catch-all | Host: ships to the AI, joiners told, battle ended for them. Joiner: "CO-OP STOPPED" with an offer to leave |
 

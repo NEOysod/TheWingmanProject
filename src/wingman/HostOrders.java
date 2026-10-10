@@ -40,6 +40,7 @@ final class HostOrders {
                 w.out.writeFloat(o.getLocation().y);
             }
             lastSent = null; // make sure the orders follow straight after
+            lastTexts = null; // and the objectives' tooltip texts, for whoever just joined
             return w.done();
         } catch (Throwable t) {
             fail(t);
@@ -53,6 +54,7 @@ final class HostOrders {
         if (now - lastBuiltAt < 300) return;
         lastBuiltAt = now;
         try {
+            sendTexts(session);
             byte[] enc = build(engine, ids).encode();
             if (Arrays.equals(enc, lastSent) && now - lastSentAt < 3000) return;
             lastSent = enc;
@@ -66,7 +68,10 @@ final class HostOrders {
     private Orders build(CombatEngineAPI engine, Map<ShipAPI, Integer> ids) {
         Orders o = new Orders();
         o.objectiveOwners = new int[Math.min(objectives.size(), 255)];
-        for (int i = 0; i < o.objectiveOwners.length; i++) o.objectiveOwners[i] = objectives.get(i).getOwner();
+        for (int i = 0; i < o.objectiveOwners.length; i++) {
+            BattleObjectiveAPI ob = objectives.get(i);
+            o.objectiveOwners[i] = (ob.getOwner() & 0x7F) | (engine.isEntityInPlay(ob) ? 0 : Orders.GONE);
+        }
 
         CombatTaskManagerAPI tm = engine.getFleetManager(0).getTaskManager(false);
         o.fullAssault = tm.isFullAssault();
@@ -118,6 +123,46 @@ final class HostOrders {
             public int compare(Orders.ShipOrder a, Orders.ShipOrder b) { return a.ship < b.ship ? -1 : a.ship > b.ship ? 1 : 0; }
         });
         return o;
+    }
+
+    private String[] lastTexts;
+    private long lastTextsAt;
+    private boolean textsBroken;
+
+    /**
+     * Each objective's tooltip text, as its own script writes it, sent when it changes. A joiner shows it on
+     * objectives whose script is held back there (see ObjectiveMirror), so the tooltip reads as on the host.
+     */
+    private void sendTexts(HostSession session) {
+        if (textsBroken) return;
+        long now = System.currentTimeMillis();
+        if (lastTexts != null && now - lastTextsAt < 1000) return;
+        lastTextsAt = now;
+        try {
+            int n = Math.min(objectives.size(), 255);
+            if (lastTexts == null || lastTexts.length != n) lastTexts = new String[n];
+            for (int i = 0; i < n; i++) {
+                String text = null;
+                try {
+                    BattleObjectiveAPI o = objectives.get(i);
+                    if (o instanceof com.fs.starfarer.combat.entities.BattleObjective) {
+                        com.fs.starfarer.api.combat.BattleObjectiveEffect e = ((com.fs.starfarer.combat.entities.BattleObjective) o).getEffect();
+                        if (e != null) text = e.getLongDescription();
+                    }
+                } catch (Throwable t) { /* a script that can't describe itself right now */ }
+                if (text == null) text = "";
+                if (text.length() > 4000) text = text.substring(0, 4000);
+                if (text.equals(lastTexts[i])) continue;
+                lastTexts[i] = text;
+                Msg.W w = new Msg.W();
+                w.out.writeByte(i);
+                w.out.writeUTF(text);
+                session.broadcast(Msg.OBJECTIVE_TEXT, w.done());
+            }
+        } catch (Throwable t) {
+            textsBroken = true;
+            Global.getLogger(HostOrders.class).warn("Wingman: objectives' tooltips are not sent this battle", t);
+        }
     }
 
     private void fail(Throwable t) {
