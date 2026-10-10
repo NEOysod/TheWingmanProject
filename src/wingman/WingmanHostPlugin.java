@@ -1779,7 +1779,10 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             Global.getLogger(WingmanHostPlugin.class).info("Wingman fighter report: " + p.name + " flies " + s.getHullSpec().getHullId()
                     + ": AI " + ai + ", controls locked " + s.controlsLocked() + ", landing " + (s.isLanding() || s.isFinishedLanding())
                     + ", docked " + docked + ", drones out " + drones + ", system " + (sys == null ? "none" : sys.getId() + " " + sys.getState())
-                    + ", ammo [" + ammo + "], wing returning " + (s.getWing() != null && s.getWing().isReturning(s)));
+                    + ", ammo [" + ammo + "], wing returning " + (s.getWing() != null && s.getWing().isReturning(s))
+                    + (p.savedAI instanceof RemotePilotAI ? ", weapon groups " + ((RemotePilotAI) p.savedAI).liveGroups + ", joiner's group "
+                        + (((RemotePilotAI) p.savedAI).reportGroup + 1) + (((RemotePilotAI) p.savedAI).lastFire ? " firing" : "")
+                        + ", fired from the loadout " + ((RemotePilotAI) p.savedAI).loadoutFires + " times" : ""));
         } catch (Throwable t) { /* a report is not worth an error */ }
     }
     private int fightersFlownHere;

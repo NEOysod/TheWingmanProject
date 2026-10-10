@@ -53,6 +53,8 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   it to hold fire while it means to bring it home (the player's own ship ignores that; a joiner's fighter now does
   too), and the bomb is marked for system use, which the game leaves out of the fire order on a ship the local
   player isn't flying. When a joiner fires a group, the host now also fires that group's system-marked weapons.
+  And a fighter flown by the AI may have no weapon groups set up at all (the game makes them for a ship a player
+  flies): a group the joiner fires that the ship doesn't have is now fired from its loadout, weapon by weapon.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"

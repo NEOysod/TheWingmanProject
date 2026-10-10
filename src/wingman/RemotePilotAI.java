@@ -126,6 +126,13 @@ public class RemotePilotAI implements ShipAIPlugin {
 
         trackCursor(groups, amount);
         directFire = false;
+        reportGroup = in.group;
+        liveGroups = groups.size();
+        lastFire = in.has(InputState.FIRE);
+        // A ship flown by an AI may have no weapon groups set up at all (the game makes them from the loadout for a
+        // ship a player flies; a fighter flown by the AI has none): the group the joiner fires, as their own game
+        // has it from the same loadout, is then fired here from the loadout, weapon by weapon.
+        if (in.has(InputState.FIRE) && !valid && in.group >= 0) fireFromLoadout(in.group);
         if (in.has(InputState.FIRE) && valid) {
             if (selected == in.group) {
                 ship.giveCommand(ShipCommand.FIRE, aim, in.group);
@@ -286,6 +293,29 @@ public class RemotePilotAI implements ShipAIPlugin {
                 w.setForceFireOneFrame(true);
             } catch (Throwable t) { /* that weapon stays with the fire order */ }
         }
+    }
+
+    /** For the host's report on fighters flown by joiners: the group fired last, how many groups the ship has. */
+    public volatile int reportGroup = -1, liveGroups = -1, loadoutFires;
+    public volatile boolean lastFire;
+
+    /** Fires weapon group 'index' of the ship's loadout (its variant's groups, by slot), whatever groups it has now. */
+    private void fireFromLoadout(int index) {
+        try {
+            java.util.List<com.fs.starfarer.api.loading.WeaponGroupSpec> specs = ship.getVariant().getWeaponGroups();
+            if (specs == null || index >= specs.size()) return;
+            java.util.List<String> slots = specs.get(index).getSlots();
+            if (slots == null || slots.isEmpty()) return;
+            boolean any = false;
+            for (WeaponAPI w : ship.getAllWeapons()) {
+                if (w.getSlot() == null || !slots.contains(w.getSlot().getId())) continue;
+                if (w.isDisabled() || w.getCooldownRemaining() > 0f || (w.usesAmmo() && w.getAmmo() <= 0)) continue;
+                w.setForceFireOneFrame(true);
+                any = true;
+            }
+            if (any && loadoutFires++ == 0) Global.getLogger(RemotePilotAI.class).info("Wingman fire: " + ship.getHullSpec().getHullId()
+                    + " has " + ship.getWeaponGroupsCopy().size() + " weapon groups of its own; firing group " + (index + 1) + " from its loadout");
+        } catch (Throwable t) { /* nothing fires from that group */ }
     }
 
     /** Fires a group's weapons without going through the ship's own "selected group". */
