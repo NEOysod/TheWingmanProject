@@ -651,6 +651,25 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * (we boarded a puppet, or left one), tell the host which ship we now want; it answers with ASSIGN.
      */
     private float fighterSince = -100f;
+    private float ownBurstUntil = -100f;
+
+    /** Is the ship in our hands in a burst of speed from its system (or right-click system), here or on the host? */
+    private static boolean ownBurst(ShipAPI ship, Snapshot.ShipState t) {
+        try {
+            ShipSystemAPI sys = ship.getSystem(), cloak = ship.getPhaseCloak();
+            boolean here = sys != null && sys.isActive() || cloak != null && cloak.isActive();
+            boolean there = t.system >= 1 && t.system <= 3 || t.cloak >= 1 && t.cloak <= 3;
+            if (!here && !there) return false;
+            // only if it really is moving faster than the ship normally can
+            // (measured against the ship's own top speed before anything is added to it: the system's boost is in
+            // the ship's current top speed)
+            float top = ship.getMutableStats().getMaxSpeed().getBaseValue();
+            float v = (float) Math.sqrt(ship.getVelocity().x * ship.getVelocity().x + ship.getVelocity().y * ship.getVelocity().y), hv = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
+            return Math.max(v, hv) > top * 1.25f + 20f;
+        } catch (Throwable th) {
+            return false;
+        }
+    }
     private int fighterBounces;
 
     private void watchPlayerShip(Conn conn) {
@@ -3900,6 +3919,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** How long a copy is carried on along its acceleration before going on in a straight line, in seconds. */
     private static final float ACC_REACH = 0.25f;
 
+    /**
+     * An acceleration to carry a copy on by, kept to what a ship can do: at most enough to double or halve its
+     * speed in a quarter of a second (plus a little for one starting from rest).
+     */
+    private static float clampAcc(float a, float vx, float vy) {
+        float cap = 400f + 4f * (float) Math.sqrt(vx * vx + vy * vy);
+        return a > cap ? cap : a < -cap ? -cap : a;
+    }
+
     private static float closing(float err, float tol, float amount, float rate) {
         if (err <= 0.001f) return 0f;
         if (amount <= 0f) return err > tol ? 1f : 0f;
@@ -3932,8 +3960,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // darts far more sharply than a ship, so it is held much closer to the host's position. It is carried
         // on along the curve it is on (its acceleration, as the update format works it out), for a quarter of a
         // second at most; beyond that in a straight line.
-        float aa = Math.min(age, ACC_REACH);
-        float tx = t.x + (t.vx + 0.5f * t.ax * aa) * age, ty = t.y + (t.vy + 0.5f * t.ay * aa) * age;
+        // While a system runs on it (a speed burst, a dash) its speed changes too sharply to be carried on along
+        // a curve: straight on from the host's latest figures, and it is held close (see below).
+        boolean surging = t.system >= 1 && t.system <= 3 || t.cloak >= 1 && t.cloak <= 3;
+        float aa = surging ? 0f : Math.min(age, ACC_REACH);
+        // (and never more than a sensible change of speed, whatever the figures say)
+        float ax = clampAcc(t.ax, t.vx, t.vy), ay = clampAcc(t.ay, t.vx, t.vy);
+        float tx = t.x + (t.vx + 0.5f * ax * aa) * age, ty = t.y + (t.vy + 0.5f * ay * aa) * age;
         Vector2f loc = ship.getLocation();
         float dx = tx - loc.x, dy = ty - loc.y;
         float k = Math.min(1f, amount * (pp.fighter ? 30f : 12f));
@@ -3949,11 +3982,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float hostSpeed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
             float slack = 15f + hostSpeed * 0.12f;
             Vector2f vel = ship.getVelocity();
+            // During a burst of speed from a system (here or on the host) and a moment after, a few milliseconds
+            // between the two ships' timing is tens of units apart: pulling on that mid-burst feels like rubber.
+            // So the gap is left alone then unless it is large, and closed smoothly once the burst is over.
+            boolean bursting = ownBurst(ship, t);
+            if (bursting) ownBurstUntil = clock + 0.4f;
+            boolean easing = bursting || clock < ownBurstUntil;
             if (reconcile(pp, t)) {
                 // The true difference is known: follow that, and only that.
                 dx = reconX; dy = reconY;
                 err = (float) Math.sqrt(dx * dx + dy * dy);
                 slack = (3f + hostSpeed * 0.02f) * this.slack;
+                if (easing) slack = Math.max(slack, 40f + hostSpeed * 0.15f);
                 if (err > 700f) {
                     loc.set(loc.x + dx, loc.y + dy);
                     vel.set(t.vx, t.vy);
@@ -3994,15 +4034,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float err = (float) Math.sqrt(dx * dx + dy * dy);
             float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
             float tol = pp.fighter ? 5f + speed * 0.06f : 3f + speed * 0.05f;
-            k = err > 500f || pp.jumped ? 1f : closing(err, tol * slack, amount, pp.fighter ? 14f : 10f);
+            // A ship in a burst covers its tolerance in a few frames: it is held much closer meanwhile, or it
+            // visibly trails and then catches up.
+            if (surging) tol = Math.min(tol, 3f + speed * 0.01f);
+            k = err > 500f || pp.jumped ? 1f : closing(err, tol * slack, amount, surging ? 25f : pp.fighter ? 14f : 10f);
             boolean leapt = pp.jumped && k >= 1f;
             pp.jumped = false;
             float fromX = loc.x, fromY = loc.y;
             if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
             if (leapt) teleportTrail(pp, fromX - loc.x, fromY - loc.y);
             Vector2f vel = ship.getVelocity();
-            float vb = amount <= 0f ? 1f : Math.min(1f, amount * 25f); // speed changes are taken up over a few frames
-            float wvx = t.vx + t.ax * aa, wvy = t.vy + t.ay * aa;
+            float vb = amount <= 0f ? 1f : Math.min(1f, amount * (surging ? 60f : 25f)); // speed changes are taken up over a few frames
+            float wvx = t.vx + ax * aa, wvy = t.vy + ay * aa;
             vel.set(vel.x + (wvx - vel.x) * vb, vel.y + (wvy - vel.y) * vb);
         }
         float tf = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;

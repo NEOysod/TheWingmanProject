@@ -22,6 +22,16 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   copies are now switched off the proper way, with their real cooldown. A note goes in the joiner's log if a
   hand-over still ends within 5 seconds.
 - Fixed: a joiner flying a fighter could send the host a retreat order for it.
+- **Fixed: a Rafflesya taken over with Manual Override was flown home by its carrier's scripts.** UAF's Rafflesya dock
+  gives a fighter a docking AI (or none) when it needs rearming or its carrier pulls back, as it would the local
+  player's fighter; on the host that took the joiner's controls away for half a second at a time, long enough to be
+  recalled. A fighter a joiner flies now gets their controls back the same frame. (Use "Switch back to Isenoria"
+  to send it home to rearm, as in single player.)
+- **Speed bursts look and feel right** (Super Nakiha's Dimensional Drift and other systems that multiply speed).
+  Other ships: while a system runs, a copy is no longer carried on along its (wild) acceleration, and is held close
+  to the host's position instead of trailing and catching up; accelerations used between updates are kept to what a
+  ship can do. Your own ship: during a burst and 0.4 s after, the gap to the host is left alone unless large, then
+  closed smoothly, instead of being pulled on mid-burst.
 - **Teleports show on joiners' screens.** Other ships' Phase Skimmers (the Wolf's) and other teleporters are not
   run on a joiner's copy (it can't know where the real ship goes), so the copy just popped to its new place. Their
   look is now drawn: the system's shimmer while it runs, its sound, and a fading image where the ship jumped from.

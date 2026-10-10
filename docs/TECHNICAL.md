@@ -454,6 +454,9 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 - Each puppet is carried forward from its last state: position + (velocity + ½ acceleration × a) × age, velocity
   + acceleration × a, facing and turn rate likewise, with age capped at 1 s and a = min(age, 0.25 s)
   (`ACC_REACH`: past a quarter of a second it goes on in a straight line). Missiles the same (age capped at 2 s).
+  Ships: the acceleration is capped at 400 + 4 × speed (`clampAcc`); while the host reports the system or the
+  right-click system running (stage 1-3) it is not used at all, the tolerance is cut to `3 + 0.01 v` and the
+  excess closed at 25/s, velocity blended at 60/s.
 - **Tolerance:** inside `3 + 0.05 v` units for ships (`5 + 0.06 v` fighters, `6 + 0.06 v` missiles; × `syncTolerance`)
   the gap fades at about 1/s; beyond, the excess closes at 10/s (fighters 14/s); over 500 units, or after a
   detected teleport (`jumped`: more than `150 + 0.3 × speeds` off the dead-reckoned place), it snaps. Velocity is
@@ -471,7 +474,8 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 - **Reconciliation** (`reconcile`): each control set carries a 16-bit sequence number; the joiner remembers when
   each was sent and where its ship was each frame (256 frames). The host reports which set it last acted on and
   for how long, so the joiner compares the host's position with where *its own* ship was at that moment: the
-  true error with the delay removed. Beyond `3 + 0.02 v` units it is pulled at `4 + min(8, over/25)`/s, the
+  true error with the delay removed (during a speed burst from a system, here or on the host, moving over 1.25 ×
+  the hull's base top speed + 20, and 0.4 s after: `40 + 0.15 v` instead). Beyond `3 + 0.02 v` units it is pulled at `4 + min(8, over/25)`/s, the
   history shifted too; velocity blended over 60; over 700 the ship jumps. Without a usable ack, the speed-based
   slack is used.
 - **Controls** (`captureInput`): movement keys, fire (not in the command screen or paused), shield/phase, system
@@ -724,6 +728,8 @@ subsystems are the values of the ship's custom data entry `magicSubsystems`.
   parked: its `state` field set to COOLDOWN and its `stateInterval` to 10⁹ s, without `setState`, so no callback of
   the mod runs. A request un-parks the named subsystem and calls `activate()` if `canActivateInternal()` and
   `canActivate()`. Ships no longer flown by a joiner are un-parked (READY), so their AI uses them again.
+- **Fighters a joiner flies** (`keepPilots`): their `RemotePilotAI` is put back the same frame if anything replaced it
+  (UAF's Rafflesya dock), not after 0.5 s as for ships.
 - **Scripts that switch "the player" to another ship:** a fired subsystem that changes the host's player ship
   (Isenoria's override) is undone at once; the subsystems the script just added to the new ship are removed on
   the host (`dropAddedSince`). Each frame (`guardHostShip`), a switch of the host to a fighter that isn't from

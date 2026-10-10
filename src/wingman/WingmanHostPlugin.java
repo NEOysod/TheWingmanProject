@@ -1736,6 +1736,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
 
     /** Arma Armatura's "don't go and refit" mark: a ship whose mark is in the future isn't sent to a carrier. */
     static final String ARMAA_NO_REFIT = "armaa_refitSuppressedUntil";
+    private int fightersKept;
 
     /**
      * A joiner flies their ship by its AI slot (RemotePilotAI). Some mods put their own AI in that slot: Arma
@@ -1754,10 +1755,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             try { s.getCustomData().put(ARMAA_NO_REFIT, now + 1f); } catch (Throwable t) { /* no custom data: nothing to switch off */ }
             if (!(p.savedAI instanceof RemotePilotAI)) continue;
             RemotePilotAI pilot = (RemotePilotAI) p.savedAI;
-            if (pilot.failed || pilot.lastFlown < 0f || now - pilot.lastFlown < 0.5f) continue;
+            if (pilot.failed || pilot.lastFlown < 0f) continue;
+            // A fighter a joiner flies (Isenoria's Manual Override) is fought over every frame by its carrier's
+            // scripts: UAF's Rafflesya dock hands it a docking AI, or none, as it would the local player's fighter.
+            // So it gets the joiner's controls back at once, not after half a second (by then it has flown home).
+            if (now - pilot.lastFlown < (s.isFighter() ? 0.001f : 0.5f)) continue;
             if (s.isLanding() || s.isFinishedLanding() || s.controlsLocked() || s.isRetreating()) continue;
             pilot.lastFlown = now; // give it a moment before trying again
             s.setShipAI(pilot);
+            if (s.isFighter() && fightersKept++ > 0) continue; // (said once: it happens every frame while a script insists)
             Dbg.info(WingmanHostPlugin.class, "Wingman: a script took the controls of " + p.name + "'s ship; they are given back");
         }
     }
