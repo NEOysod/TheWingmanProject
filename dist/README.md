@@ -6,7 +6,7 @@ fly a ship from the host's fleet, side by side, in real time.
 > **Beta.** Played mostly by two people so far. It works, but expect rough edges, and please report what you
 > find (see below).
 
-`RELEASE_NOTES.md` has the full description, how it works, and the safety warning. Please read the safety
+`RELEASE_NOTES.md` has the full description, how it works, which kinds of mods can cause trouble, and the safety warning. Please read the safety
 part before you host.
 
 ## What you need

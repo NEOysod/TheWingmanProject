@@ -286,17 +286,56 @@ All of these can be changed during a battle with Ctrl+Shift+O.
 
 ## 9. Playing with other mods
 
-- Ships, weapons, missiles, systems and hullmods from mods work the same way as vanilla ones: their scripts
-  run on every player's copy, on the host's timing.
+Most mods just work: ships, weapons, hullmods, ship systems and missiles from mods are copied like vanilla
+ones, and their scripts run on every player's copy, on the host's timing. What causes trouble is not how big
+a mod is but what its combat scripts assume. A joiner's battle is a copy started from the title screen, with
+no campaign loaded, in which every ship except your own is a puppet the host moves.
+
+### How the mod handles mod content
+
 - **F2** in the CO-OP panel shows the mod compatibility report: what scripted content your mods bring, how
   each kind is handled, and what has been seen of it in play. "Worth a look" marks items that keep needing
   help. Those are the ones to mention in a report.
 - Effects a mod draws directly (particles, sounds, arcs) follow the script that makes them. They can be a
   few frames early or late compared with the host, and occasionally differ.
-- If a mod's ship system appears to have crashed a joiner's game, that system is no longer mirrored on that
-  PC from the next launch on. The ship still moves and takes damage correctly; only that system's visual
-  effect is missing. The CO-OP panel lists any systems switched off this way, and **F5** switches them
-  back on.
+- If a mod's **ship system** or **battle objective** appears to have crashed a joiner's game, it is no longer
+  mirrored on that PC from the next launch on. Ships still move and take damage correctly; only its effects
+  are missing (an objective is shown as a plain Sensor Array at the same spot). The CO-OP panel lists what was
+  switched off this way, and **F5** switches it all back on.
+- Battle objectives whose scripts are known to need a campaign (Secrets of the Frontier's reinforcement
+  beacons; the derelict-fleet, asteroid and credit-cache objectives from its Extra Combat Objectives add-on)
+  are never made on a joiner's PC: a Sensor Array marks the spot instead.
+- Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
+  any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
+
+### What kind of mod can cause problems
+
+| Risk | Kind of mod | What can happen | Covered? |
+| --- | --- | --- | --- |
+| **Crash (joiner)** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign memory or flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign, so the script finds nothing and the joiner's game crashes, at battle setup or the first time the script runs. | Ship systems and objectives: yes, after one crash (or never, for the known ones). Hullmods, weapon scripts and combat plugins: no. |
+| **Crash (joiner)** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`, the captain's fleet). | A joiner's copies belong to no fleet, so a script that doesn't check for that crashes. | No. Fleet-wide skills themselves are handled; a mod's own script reading the fleet is not. |
+| **Crash (joiner)** | Combat scripts that assume the player's ship is a real, armed ship. | A joiner without a ship sits in an invisible stand-in with no weapons; a script that reads its weapons or officer may fail. | Partly: the stand-in is a normal small ship, so most scripts are fine. |
+| **Out of step** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | Joiners keep showing the ship on its old side. Damage and positions are still the host's. | No. |
+| **Out of step** | Mods that create ship types or variants at runtime from the campaign (procedural hulls, generated skins). | The joiner's game doesn't have that ship type, so the ship is invisible there (it still counts for the ready check). | Reported in the log; the ship is skipped. |
+| **Out of step** | Combat scripts that pick at random (random variant, random proc, random target). | Each PC picks differently, so visuals can differ. Damage, positions and deaths are always the host's. | Damage and deaths: yes. Visuals: no. |
+| **Out of step** | Mods that keep setting their own AI on every ship during battle. | On a joiner it would override the do-nothing AI that puppets use, so ships twitch and fire on their own between updates. | No. Mods that choose an AI when a ship is created are fine. |
+| **Out of step** | Mods that behave differently in missions (`isMission()`). | A joiner's battle is a mission, so such a mod may run its "mission" rules there. | No. |
+| **Can't join** | Different content mods or versions. | The joiner is refused and told exactly what differs. | Yes (mod list check). |
+| **Can't join** | Mods that replace or hide the title screen battle. | The CO-OP panel may not appear. | Use the **Wingman: Join Game** mission instead. |
+| **Heavy** | Mods that fill the field with projectiles or fighters (very large salvos, swarms). | Big updates and a busy joiner. A joiner shows at most 2,000 missiles and 800 fighters. | Capped. |
+| **Fine** | Interface-only mods: HUDs, combat chatter, camera, sound, graphics (GraphicsLib, shaders). | Each player's runs on its own; nothing to keep in step. Marked "utility", they may even differ between players. | n/a |
+| **Fine** | Ship, weapon and faction packs; AI mods that choose an AI when a ship is created; campaign-only mods. | Copied like vanilla content, or never touch the battle. | n/a |
+
+### If a mod gives trouble
+
+1. Note the mod, the ship, weapon, system or objective, and what happened.
+2. Turn on "Detailed log for bug reports" (Troubleshooting page) on both PCs, make it happen again, and send
+   both `starsector.log` files. A crash leaves the culprit's name near the end of the joiner's log.
+3. Meanwhile:
+    - **A ship system:** add its id to `neverMirrorSystems` in `wingman_settings.json` so it is never
+      mirrored on joiners.
+    - **Something you can't place:** play without that mod for co-op sessions.
+    - **A "utility" mod that does change battles:** set "Mod list check" (host's settings, "Hosting and joining" page) to "all" so it must match too.
 
 ---
 
