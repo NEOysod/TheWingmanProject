@@ -1748,6 +1748,38 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
      *   isn't landing, landed or held still by a script, the joiner's controls are put back.
      */
     private float lastPilotCheck = -1f;
+    private float fighterReportAt = -100f;
+    private int fighterReports;
+
+    /**
+     * What is happening to a fighter a joiner flies, every 5 seconds (12 lines a battle at most), in the normal log:
+     * carriers' scripts fight over such fighters (UAF's Isenoria), and only a log from a real game shows how.
+     */
+    private void fighterReport(HostSession.Player p, ShipAPI s, float now) {
+        if (now - fighterReportAt < 5f || fighterReports >= 12) return;
+        fighterReportAt = now;
+        fighterReports++;
+        try {
+            String ai = "none";
+            try { if (s.getShipAI() != null) ai = s.getShipAI().getClass().getName(); } catch (Throwable t) { ai = "?"; }
+            int drones = 0;
+            for (ShipAPI d : engine.getShips()) {
+                try { if (d.isDrone() && d.getDroneSource() == s && d.isAlive()) drones++; } catch (Throwable t) { /* not a drone */ }
+            }
+            StringBuilder ammo = new StringBuilder();
+            for (WeaponAPI w : s.getAllWeapons()) {
+                if (!w.usesAmmo()) continue;
+                if (ammo.length() > 0) ammo.append(", ");
+                ammo.append(w.getId()).append(' ').append(w.getAmmo()).append('/').append(w.getMaxAmmo());
+            }
+            Object docked = s.getCustomData().get("uafDocked");
+            com.fs.starfarer.api.combat.ShipSystemAPI sys = s.getSystem();
+            Global.getLogger(WingmanHostPlugin.class).info("Wingman fighter report: " + p.name + " flies " + s.getHullSpec().getHullId()
+                    + ": AI " + ai + ", controls locked " + s.controlsLocked() + ", landing " + (s.isLanding() || s.isFinishedLanding())
+                    + ", docked " + docked + ", drones out " + drones + ", system " + (sys == null ? "none" : sys.getId() + " " + sys.getState())
+                    + ", ammo [" + ammo + "], wing returning " + (s.getWing() != null && s.getWing().isReturning(s)));
+        } catch (Throwable t) { /* a report is not worth an error */ }
+    }
     private int fightersFlownHere;
 
     private void keepPilots() {
@@ -1765,6 +1797,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             // A fighter whose carrier's script took its controls before it moved last frame (UAF's Rafflesya dock
             // does, in whatever order the game moves the two) didn't answer the joiner at all then. This frame it
             // is flown from here, before anything moves: the joiner's commands go in first, whatever AI it has.
+            if (s.isFighter()) {
+                // A carrier's script may tell its fighter to hold fire (UAF's Rafflesya dock does while it means to
+                // bring it home); the local player's own ship pays no attention to that, and a joiner's mustn't either.
+                try { s.setHoldFire(false); } catch (Throwable t) { /* no such switch */ }
+                fighterReport(p, s, now);
+            }
             boolean missed = s.isFighter() && pilot.lastFlown < since && !s.isLanding() && !s.isFinishedLanding();
             if (missed) {
                 pilot.advance(engine.getElapsedInLastFrame());

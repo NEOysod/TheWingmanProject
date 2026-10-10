@@ -651,6 +651,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * (we boarded a puppet, or left one), tell the host which ship we now want; it answers with ASSIGN.
      */
     private float fighterSince = -100f;
+    private int fighterAutopilotLines, droneGoneLines;
     private float ownBurstUntil = -100f;
 
     /** Is the ship in our hands in a burst of speed from its system (or right-click system), here or on the host? */
@@ -1210,6 +1211,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     }
                     break;
                 }
+                if (pp.drone && droneGoneLines < 8) { // (see the fighter report on the host: whose drones go, and how)
+                    droneGoneLines++;
+                    Puppet mine = ownId < 0 ? null : puppets.get(ownId);
+                    Global.getLogger(WingmanClientPlugin.class).info("Wingman: the host removed drone " + id + " (" + pp.ship.getHullSpec().getHullId()
+                            + ", " + (how == Msg.DESPAWN_REMOVED ? "taken off the field" : "destroyed") + ")" + (mine != null && mine.fighter ? " while we fly a fighter" : ""));
+                }
                 byShip.remove(pp.ship);
                 if (pp.weapons.length > 0) { // its missiles may still be on their way to us
                     pp.goneAt = clock;
@@ -1759,10 +1766,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = own.ship;
             String ai = "none";
             try { if (s.getShipAI() != null) ai = s.getShipAI().getClass().getName(); } catch (Throwable t) { ai = "?"; }
-            Dbg.info(WingmanClientPlugin.class, "Wingman autopilot: " + (now ? "ON" : "OFF") + " on " + describe(own)
+            String line = "Wingman autopilot: " + (now ? "ON" : "OFF") + " on " + describe(own)
                     + ", controls locked " + s.controlsLocked() + ", ship AI " + ai + ", retreating order "
                     + (engine.getFleetManager(0).getTaskManager(false).getAssignmentFor(s) != null
-                        ? String.valueOf(engine.getFleetManager(0).getTaskManager(false).getAssignmentFor(s).getType()) : "none"));
+                        ? String.valueOf(engine.getFleetManager(0).getTaskManager(false).getAssignmentFor(s).getType()) : "none");
+            // A fighter handed to us by a script (Isenoria) is where this has gone wrong: said in the normal log.
+            if (own.fighter && fighterAutopilotLines++ < 12) Global.getLogger(WingmanClientPlugin.class).info(line);
+            else Dbg.info(WingmanClientPlugin.class, line);
         }
         autopilot = now;
         autopilotShip = own;

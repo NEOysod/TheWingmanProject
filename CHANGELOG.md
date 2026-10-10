@@ -44,7 +44,12 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   script then recalls every Rafflesya and holds it on the landing pad (in single player the player's own fighter
   is exempt as "the player's ship"; a joiner's isn't). Now, while a joiner flies a fighter from their own carrier,
   the host holds the carrier as they left it, systems untouched, slowing to a stop, until they come back to it or
-  take another ship. (Use "Switch back to Isenoria"
+  take another ship.
+- Fixed: a Rafflesya a joiner flies didn't fire its bomb on the host. Its carrier's dock script tells it to hold
+  fire while it means to bring it home; the player's own ship ignores that, and a joiner's fighter now does too.
+- Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
+  happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
+  wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
   to send it home to rearm, as in single player.)
 - **Speed bursts look and feel right** (Super Nakiha's Dimensional Drift and other systems that multiply speed).
   Other ships: while a system runs, a copy is no longer carried on along its (wild) acceleration, and is held close
