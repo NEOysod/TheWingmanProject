@@ -715,6 +715,15 @@ wing's deployed-member record: the private field `Òôôo00` (type `CombatFleetM
 `combat.entities.ship.A.C`, set through `MethodHandles.privateLookupIn`. `bay.getWing()` then returns the host's
 wing; the bay's own replacements stay held back by the refit time. Setting `fighterHangars` (joiner).
 
+### 8.6b Bays that build nothing (`BayQuiet`)
+
+A puppet carrier's fighter refit time is ×100,000, so it never finishes a fighter, but a bay that loses one still
+starts a replacement and the game draws its build sparks (`renderers.fx.oOOO`) while it is pending. Each frame,
+for every puppet with bays, a pending replacement is cleared through `java.lang.invoke` on the bay class's private
+fields, as the game does when a build completes: the request (`O\u00f5\u00f4o00`, `CombatFleetManager...M$Oo`),
+its timer (`\u00d6\u00f4\u00f4o00`, `IntervalTracker`), the effect (`String.String$interface`) and the queued count
+(`super.String$interface`, 0). Nothing is launched. On failure: one log line, sparks as before.
+
 ### 8.7 MagicLib subsystems (`Subsystems`)
 
 MagicLib's `MagicSubsystem.advanceInternal` reads the hotkey only when the ship is the engine's player ship;

@@ -22,6 +22,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   copies are now switched off the proper way, with their real cooldown. A note goes in the joiner's log if a
   hand-over still ends within 5 seconds.
 - Fixed: a joiner flying a fighter could send the host a retreat order for it.
+- **No more "fighter being built" sparks on joiners' carriers.** A copy of a carrier never builds fighters (the
+  host's are shown), and its rebuild time is stretched so it can't; but a bay that lost a fighter still started a
+  rebuild, and showed the game's build sparks for the rest of the battle. Such a rebuild is now cleared at once,
+  the way the game clears a finished one, without launching anything.
 - Fixed: a fighter taken over by a joiner said "Ship is not combat-ready, controls are locked". The game takes a
   wing's readiness from the fleet record it was made from, and fighters on joiners' screens were made from one
   with none. They now get the host's figure (or 70% where the host's fighter has none of its own), and a figure of

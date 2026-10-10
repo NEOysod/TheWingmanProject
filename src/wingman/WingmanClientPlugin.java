@@ -1855,7 +1855,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -4134,6 +4134,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             try {
                 pp.systemOff = followSystem(ship, ship.getSystem(), t.system, t.systemLevel, own, pp.systemOff, amount);
                 if (!own && !pp.module) teleportLook(pp, t);
+                if (!pp.fighter) BayQuiet.quiet(ship); // no "fighter being built" sparks on bays that build nothing here
                 pp.cloakOff = followSystem(null, ship.getPhaseCloak(), t.cloak, t.cloakLevel, own, pp.cloakOff, amount);
                 // Backstop for "can it be hit": phased or not is the host's call for every ship but the one in our hands.
                 boolean phased = (t.flags & Snapshot.F_PHASED) != 0;
