@@ -33,6 +33,11 @@ Protocol 45: everyone in a game needs 0.5. Includes everything in 0.4.2.
   Rafflesya Control and Isenoria). Each host wing is now put in the right hangar of the copy. The host now
   also says which hangar by its real number (it counted only hangars with fighters out). New setting
   "Fighters in their carriers' hangars" (joiner, on).
+- **Fixed: fighters were still not put in their carriers' hangars** (so Isenoria's Manual Override and the
+  greyed-out carrier panel were not fixed after all). The game's field name that Wingman sets has accented
+  letters, and the build read the source file in a different text encoding, so the name came out wrong and the
+  feature switched itself off with a log line. The name is now written in a form no encoding can change, and the
+  build refuses sources with such letters.
 - **MagicLib subsystems follow the joiner.** MagicLib reads the keyboard only for the local player's ship, so on
   the host a joiner's subsystems were fired by the ship's AI whatever the joiner pressed. Now the joiner's PC
   tells the host when the player switches one on, the host fires it on the real ship, and holds the rest so the

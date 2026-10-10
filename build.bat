@@ -10,7 +10,7 @@ dir /s /b tools\stub\*.java > build\stubs.txt
 javac -nowarn --release 8 -cp "%CORE%\*" -d build\stub @build\stubs.txt || ( pause & exit /b 1 )
 javac -nowarn -d build\tools tools\PatchNew.java tools\PatchPackage.java || ( pause & exit /b 1 )
 dir /s /b src\*.java > build\sources.txt
-javac -nowarn --release 8 -cp "build\stub;%CORE%\*" -d build\classes @build\sources.txt || ( pause & exit /b 1 )
+javac -nowarn -encoding UTF-8 --release 8 -cp "build\stub;%CORE%\*" -d build\classes @build\sources.txt || ( pause & exit /b 1 )
 java -cp build\tools PatchNew build\classes\wingman\TitleLauncher.class coopNew new || ( pause & exit /b 1 )
 java -cp build\tools PatchPackage build\classes\wingman\MessageSpy.class com/fs/starfarer/klass/ com/fs/starfarer/class/ || ( pause & exit /b 1 )
 jar cf jars\Wingman.jar -C build\classes wingman
