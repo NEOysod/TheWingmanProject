@@ -5,6 +5,8 @@ import java.util.List;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
+import com.fs.starfarer.api.campaign.LocationAPI;
+import com.fs.starfarer.api.campaign.StarSystemAPI;
 import com.fs.starfarer.api.campaign.SectorAPI;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.characters.FullName;
@@ -22,7 +24,9 @@ import wingman.net.BattleInfo;
  * often while the battle is being set up, where nothing of ours can catch it. So, while the join mission is
  * set up, a player fleet is made from what the host sent: its cargo (commodities) and credits, a commander
  * with the player's name, level and skills, and the player's story points; the campaign's simple flags are
- * set on the sector's memory. The copies of ships are also put in stand-in fleets, one per side, so a script
+ * set on the sector's memory. The fleet is put in a place of its own (an empty star system, or hyperspace if
+ * the host fights there), since scripts ask the player fleet where it is and crash on "nowhere" (Arma
+ * Armatura's strikecraft hullmod looks for star coronas around it). The copies of ships are also put in stand-in fleets, one per side, so a script
  * that asks a ship for its fleet gets one.
  *
  * None of it changes the battle: the host's game still decides everything, and the stand-in only answers
@@ -37,6 +41,9 @@ public final class CampaignStandIn {
     private static final List<String> flagsSet = new ArrayList<String>();
     private static int storyPointsBefore = -1;
     private static boolean broken;
+    /** Where the stand-in fleet is, and the empty star system made for it (null if it is in hyperspace). */
+    private static LocationAPI place;
+    private static StarSystemAPI madeSystem;
     private static long installedAt;
 
     /** Put the host's campaign in place. Called while the join mission is set up. */
@@ -64,6 +71,7 @@ public final class CampaignStandIn {
             } catch (Throwable t) { /* a fleet without a named commander */ }
             sector.setPlayerFleet(f);
             player = f;
+            placeFleet(sector, f, b.hyperspace);
             installed = true;
             installedAt = System.currentTimeMillis();
             try {
@@ -87,6 +95,24 @@ public final class CampaignStandIn {
             broken = true;
             Global.getLogger(CampaignStandIn.class).warn("Wingman: the stand-in campaign can't be made on this PC; mods' scripts will find none", t);
             remove();
+        }
+    }
+
+    /** Put the stand-in fleet somewhere: hyperspace if the host's battle is there, else an empty star system. */
+    private static void placeFleet(SectorAPI sector, CampaignFleetAPI f, boolean hyperspace) {
+        try {
+            LocationAPI at = null;
+            if (hyperspace) at = sector.getHyperspace();
+            if (at == null) {
+                madeSystem = sector.createStarSystem("Wingman stand-in");
+                at = madeSystem;
+            }
+            at.addEntity(f);
+            f.setLocation(0f, 0f);
+            place = at;
+        } catch (Throwable t) {
+            Global.getLogger(CampaignStandIn.class).warn("Wingman: the stand-in fleet could not be given a place; scripts that ask where "
+                    + "the player fleet is may fail", t);
         }
     }
 
@@ -133,6 +159,14 @@ public final class CampaignStandIn {
             if (sector != null) for (String key : flagsSet) sector.getMemoryWithoutUpdate().unset(key);
         } catch (Throwable t) { /* gone with the sector */ }
         flagsSet.clear();
+        try {
+            if (place != null && player != null) place.removeEntity(player);
+        } catch (Throwable t) { /* gone with the sector */ }
+        try {
+            if (sector != null && madeSystem != null) sector.removeStarSystem(madeSystem);
+        } catch (Throwable t) { /* gone with the sector */ }
+        place = null;
+        madeSystem = null;
         storyPointsBefore = -1;
         player = null;
         enemy = null;

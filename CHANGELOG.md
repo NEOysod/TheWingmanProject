@@ -9,6 +9,10 @@ Protocol 45: everyone in a game needs 0.5. Includes everything in 0.4.2.
   only when the joiner turns on autopilot (U), as in single player, and is repaired and rearmed on the host as
   usual (hull, armour, CR and ammo follow). The landing and the launch are shown on everyone's screens, and the
   joiner has the controls back as soon as the ship is out.
+- **Fixed: a joiner's game crashed at the end of a battle with Arma Armatura ships** (and could whenever an Armaa
+  ship was made in battle). The mod asks where the player fleet is, to look for star coronas; the stand-in
+  campaign's fleet was nowhere. It is now put in an empty star system of its own (in hyperspace when the host
+  fights there), which is taken away with the rest of the stand-in.
 - **Controls kept after a mod resets a ship's AI.** If any mod's script gives a joiner's ship a new AI on the
   host, Wingman puts the joiner back in control within half a second (not while the ship is landing, landed,
   retreating or locked by the game).

@@ -620,6 +620,9 @@ data; mods' battle scripts that read them would crash.
   or ship exists): only if the sector has no player fleet and `campaignStandIn` is on. A fleet
   (`createEmptyFleet("player", …)`) with that cargo and credits and a commander copied from the host's character,
   set as the sector's player fleet; story points on `getPlayerStats()`; every host flag the sector's memory lacks.
+  The fleet is added to a location so `getContainingLocation()` is never null (Arma Armatura's `armaa_strikeCraft`
+  reads its terrain on every ship made in battle): hyperspace when the host's battle is there, otherwise an empty
+  star system made for it (`createStarSystem("Wingman stand-in")`, removed with the stand-in).
 - **Fleets for ships:** each puppet's fleet member joins the side's stand-in fleet (side 0 the player fleet, side 1
   a separate `independent` one), so `getFleetData()` is never null. Fighters are left out.
 - **Removal** (`remove`): on `leaveBattle`, and from the title screen when a stand-in older than 15 s is found (the
