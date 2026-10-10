@@ -117,6 +117,7 @@ public final class HostSession {
             p.conn.send(Msg.BATTLE_END, Msg.EMPTY);
             p.shipNetId = -1;
             p.ship = null;
+            p.savedAI = null; // nothing of the finished battle is kept (an AI holds its ship, and the ship its battle)
             p.ready = false;
         }
     }
