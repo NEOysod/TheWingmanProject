@@ -90,6 +90,9 @@ public final class CampaignStandIn {
         }
     }
 
+    /** Whether the stand-in is in place now (the join mission asks, to decide which objectives it can make). */
+    static synchronized boolean isInstalled() { return installed; }
+
     /** The stand-in fleet a copy of a ship on this side belongs to; null if there is none. */
     static synchronized CampaignFleetAPI fleetFor(int owner) {
         if (!installed || broken) return null;

@@ -56,7 +56,7 @@ public final class JoinSetup {
                 effectClasses = m;
             }
             String effect = effectClasses.get(type);
-            if (SystemWatch.get().allowObjective(type, effect)) return type;
+            if (SystemWatch.get().allowObjective(type, effect, CampaignStandIn.isInstalled())) return type;
             standIns.add(type);
             com.fs.starfarer.api.Global.getLogger(JoinSetup.class).info("Wingman objectives: '" + type + "' (" + effect
                     + ") can't run in a joiner's battle; a " + STAND_IN_OBJECTIVE + " marks its place");

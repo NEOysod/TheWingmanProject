@@ -12,6 +12,11 @@ From the mod compatibility review: three kinds of mod that could crash a joiner 
   the joiner leaves. A setting turns it off ("Stand-in campaign for mod scripts", joiner).
 - **Ships belong to fleets on joiners.** Copies of ships now join stand-in fleets, one per side, so scripts
   that ask a ship for its fleet get one instead of crashing.
+- **Mod objectives that need the campaign's data now run on joiners.** With the stand-in campaign in place,
+  Secrets of the Frontier's reinforcement objectives (the Hyperwave Transmitter crash) and the add-on's
+  asteroid and credit-cache objectives are made for real, under the crash safety net: if one still crashes,
+  it gets the Sensor Array stand-in from the next start. The derelict-fleet objective, which needs the
+  campaign world itself, keeps the stand-in.
 - **Side changes are followed.** When a mod switches a ship to the other side mid-battle (boarding,
   hacking), the host tells joiners, and a player flying it loses it with a notice.
 

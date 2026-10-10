@@ -40,18 +40,32 @@ final class SystemWatch {
     // crashes while setting the battle up, before any of this mod's code runs again. Those known to do so
     // are never made on a joiner; a plain stand-in marks the spot instead. Any other mod's kind is noted
     // here before it is made, as for ship systems, and blocked from the next start if the game died.
-    /** Effect scripts (or packages, ending in a dot) known to need a running campaign. */
-    static final String[] CAMPAIGN_ONLY_OBJECTIVES = {
-            "data.scripts.combat.obj.SotfReinforcerEffect",   // Secrets of the Frontier: reads the player fleet's AI cores
-            "SOTFECO.combatObj.SOTFECO_derelictFleetObj",     // SotF Extra Combat Objectives: campaign rewards
-            "SOTFECO.combatObj.campaign.",
+    /**
+     * Effect scripts (or packages, ending in a dot) known to need the campaign's data: the player fleet, its
+     * cargo and credits, the player's level. The stand-in campaign (CampaignStandIn) provides those, so with
+     * it in place they run, under the same crash safety net as any other mod's kind; without it, a stand-in
+     * objective is made instead.
+     */
+    static final String[] CAMPAIGN_DATA_OBJECTIVES = {
+            "data.scripts.combat.obj.SotfReinforcerEffect",   // Secrets of the Frontier: counts the player fleet's AI cores
+            "SOTFECO.combatObj.campaign.",                    // SotF Extra Combat Objectives: asteroid, credit cache (cargo, credits)
     };
+    /** Effect scripts that need the campaign world itself (the campaign battle, star systems, campaign scripts): never on a joiner. */
+    static final String[] CAMPAIGN_WORLD_OBJECTIVES = {
+            "SOTFECO.combatObj.SOTFECO_derelictFleetObj",     // SotF Extra Combat Objectives: the campaign battle, locations, fleets
+    };
+
+    private static boolean listed(String effectClass, String[] list) {
+        for (String c : list) if (effectClass.equals(c) || (c.endsWith(".") && effectClass.startsWith(c))) return true;
+        return false;
+    }
     private final Set<String> objectivesTrying = new HashSet<String>();
 
     /** May a mod's objective of this kind, run by this effect script, be made in a joiner's battle? */
-    boolean allowObjective(String type, String effectClass) {
+    boolean allowObjective(String type, String effectClass, boolean campaignStandIn) {
         if (effectClass == null || effectClass.isEmpty() || effectClass.startsWith("com.fs.starfarer.")) return true;
-        for (String c : CAMPAIGN_ONLY_OBJECTIVES) if (effectClass.equals(c) || (c.endsWith(".") && effectClass.startsWith(c))) return false;
+        if (listed(effectClass, CAMPAIGN_WORLD_OBJECTIVES)) return false;
+        if (!campaignStandIn && listed(effectClass, CAMPAIGN_DATA_OBJECTIVES)) return false;
         String id = "objective:" + type;
         if (blocked.contains(id)) return false;
         if (trusted.contains(id) || broken) return true;

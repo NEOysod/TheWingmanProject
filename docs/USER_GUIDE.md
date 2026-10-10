@@ -302,9 +302,10 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   mirrored on that PC from the next launch on. Ships still move and take damage correctly; only its effects
   are missing (an objective is shown as a plain Sensor Array at the same spot). The CO-OP panel lists what was
   switched off this way, and **F5** switches it all back on.
-- Battle objectives whose scripts are known to need a campaign (Secrets of the Frontier's reinforcement
-  beacons; the derelict-fleet, asteroid and credit-cache objectives from its Extra Combat Objectives add-on)
-  are never made on a joiner's PC: a Sensor Array marks the spot instead.
+- Battle objectives whose scripts need the campaign's data (Secrets of the Frontier's reinforcement
+  beacons; the asteroid and credit-cache objectives from its Extra Combat Objectives add-on) run on a joiner's
+  PC using the stand-in campaign (see below). Those that need the campaign world itself (the add-on's
+  derelict-fleet objective), or any that crash anyway, are shown as a plain Sensor Array at the same spot.
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 

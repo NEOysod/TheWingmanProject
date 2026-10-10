@@ -883,3 +883,13 @@ living tracked ship, calls `checkSide`: a change to 0 or 1 updates the cached SP
 the new side) and broadcasts `SIDE` (47: int id, byte side). `checkPilotedShips` takes a ship from a player when
 it is no longer on side 0 (NOTICE "Your ship went over to the other side"). The joiner sets `pp.owner` and
 `pp.info.owner` and calls `setSide`; `apply()` keeps it there every frame.
+
+**Objectives and the stand-in.** `SystemWatch` splits the known campaign-needing objective scripts in two.
+`CAMPAIGN_DATA_OBJECTIVES` (`SotfReinforcerEffect`; `SOTFECO.combatObj.campaign.*`, which only touch the
+player fleet's cargo, credits and the player's level) are made when `CampaignStandIn.isInstalled()`, as an
+untried mod kind (pending in the safety file until a battle with them ends normally), else replaced.
+`CAMPAIGN_WORLD_OBJECTIVES` (`SOTFECO_derelictFleetObj`: the player fleet's campaign battle, containing
+location, current location, campaign scripts) are always replaced. Checked against the classes' bytecode for
+`SectorAPI`/`CampaignFleetAPI` calls. Still unchecked for the reinforcer: `commander.getFaction()` for each
+fleet commander in `setUpRemoteAIForSide`, and `Misc.getAllowedRecoveryTags()`; a crash there blocks the kind
+after one try.
