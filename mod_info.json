@@ -2,7 +2,7 @@
     "id": "wingman_project",
     "name": "The Wingman Project",
     "author": "NEOysod",
-    "version": "0.1-beta",
+    "version": "0.2-beta",
     "description": "Co-op multiplayer for battles. One player hosts a battle, up to three friends join and each fly a ship in the host's fleet. Combat only; the campaign stays single-player.",
     "gameVersion": "0.98a",
     "jars": ["jars/Wingman.jar"],

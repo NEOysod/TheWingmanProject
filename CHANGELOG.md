@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2-beta
+Protocol 41: everyone in a game needs 0.2.
+
+From the mod compatibility review: three kinds of mod that could crash a joiner or leave screens out of step.
+- **Stand-in campaign on joiners.** A joiner's battle starts from the title screen, with no campaign loaded,
+  so mods' battle scripts that look at the player fleet, its cargo, the player's skills or campaign flags
+  found nothing and could crash the game. The host now sends its campaign facts with the battlefield
+  (cargo commodities, credits, level, skills, story points, and up to 600 simple campaign flags), and the
+  join mission sets up a stand-in player fleet from them before the battle is built. It is taken away when
+  the joiner leaves. A setting turns it off ("Stand-in campaign for mod scripts", joiner).
+- **Ships belong to fleets on joiners.** Copies of ships now join stand-in fleets, one per side, so scripts
+  that ask a ship for its fleet get one instead of crashing.
+- **Side changes are followed.** When a mod switches a ship to the other side mid-battle (boarding,
+  hacking), the host tells joiners, and a player flying it loses it with a notice.
+
 ## 0.1-beta
 First release. Protocol 40: everyone in a game needs the same version.
 

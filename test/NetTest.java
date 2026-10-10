@@ -496,6 +496,17 @@ public class NetTest {
         BattleInfo badObj = new BattleInfo(); badObj.objectiveTypes.add("nav_buoy"); badObj.objectiveX.add(Float.NaN); badObj.objectiveY.add(0f);
         boolean objRefused = false; try { BattleInfo.decode(badObj.encode()); } catch (java.io.IOException e) { objRefused = true; }
         check("an objective at an impossible place is refused", objRefused);
+        BattleInfo camp = new BattleInfo(); camp.hasCampaign = true; camp.credits = 123456789f; camp.storyPoints = 7; camp.playerLevel = 15;
+        camp.playerFirst = "Ada"; camp.playerLast = "Lovelace"; camp.playerPortrait = "graphics/portraits/x.png";
+        camp.skillIds.add("helmsmanship"); camp.skillLevels.add(2f); camp.cargoIds.add("alpha_core"); camp.cargoAmounts.add(3f);
+        camp.addFlag("$sotf_metSierra", true); camp.addFlag("$someCount", 42); camp.addFlag("$someName", "Ludd"); camp.addFlag("$tooBig", new int[3]);
+        BattleInfo cb = BattleInfo.decode(camp.encode());
+        check("the host's campaign facts travel for the joiner's stand-in (credits, skills, cargo, flags)", cb.hasCampaign && cb.credits == 123456789f && cb.storyPoints == 7
+                && cb.playerLevel == 15 && cb.playerLast.equals("Lovelace") && cb.skillIds.get(0).equals("helmsmanship") && cb.cargoAmounts.get(0) == 3f
+                && cb.flagKeys.size() == 3 && Boolean.TRUE.equals(cb.flagValue(0)) && ((Double) cb.flagValue(1)) == 42.0 && "Ludd".equals(cb.flagValue(2)));
+        BattleInfo badCamp = new BattleInfo(); badCamp.hasCampaign = true; badCamp.cargoIds.add("x"); badCamp.cargoAmounts.add(Float.NaN);
+        boolean campRefused = false; try { BattleInfo.decode(badCamp.encode()); } catch (java.io.IOException e) { campRefused = true; }
+        check("impossible campaign values are refused", campRefused);
         check("battlefield round trip", bg.width == 18000f && bg.height == 14000f && bg.background.endsWith("background4.jpg") && bg.hasGlowColor
                 && bg.glowColor == 0x50FF8040 && !bg.hasBackgroundColor && !bg.renderStarfield && bg.hyperspace && bg.hasPlanet
                 && bg.planetType.equals("terran") && bg.planetRadius == 312.5f && bg.planetYOffset == -512f && bg.planetBgWidth == 1400f);

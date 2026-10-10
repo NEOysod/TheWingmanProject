@@ -666,8 +666,36 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (moduleIds != null) sp.moduleIds.addAll(moduleIds);
         byte[] msg = sp.encode();
         spawnMsgs.put(id, msg);
+        sides.put(id, sp.owner);
         session.broadcast(Msg.SPAWN, msg);
         return id;
+    }
+
+    /** The side each ship was last reported on. */
+    private final Map<Integer, Integer> sides = new HashMap<Integer, Integer>();
+
+    /**
+     * A ship that changed sides mid-battle (a mod's boarding, hacking or mind control): joiners are told, and
+     * the description a late joiner gets says the new side. A player flying it loses it if it left the
+     * players' side (see checkPilotedShips).
+     */
+    private void checkSide(int id, ShipAPI s) {
+        int now = s.getOwner();
+        Integer was = sides.get(id);
+        if (was == null || was == now || (now != 0 && now != 1)) return;
+        sides.put(id, now);
+        try {
+            byte[] old = spawnMsgs.get(id);
+            if (old != null) {
+                ShipSpawn sp = ShipSpawn.decode(old);
+                sp.owner = now;
+                spawnMsgs.put(id, sp.encode());
+            }
+        } catch (Throwable t) { /* a late joiner sees the old side until the SIDE below reaches it */ }
+        Msg.W w = new Msg.W();
+        try { w.out.writeInt(id); w.out.writeByte(now); } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+        session.broadcast(Msg.SIDE, w.done());
+        Dbg.info(WingmanHostPlugin.class, "Wingman: ship " + id + " (" + s.getHullSpec().getHullId() + ") changed to side " + now);
     }
 
     private void trackShips() {
@@ -704,7 +732,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = e.getValue();
             boolean gone = !present.contains(s);
             boolean dead = !gone && (s.isHulk() || !s.isAlive());
-            if (!gone && !dead) continue;
+            if (!gone && !dead) { checkSide(e.getKey(), s); continue; }
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle (see below), unless
             // there are already more wrecks than are worth keeping track of.
             boolean part = false;
@@ -717,6 +745,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
             session.broadcast(Msg.DESPAWN, w.done());
             byte[] description = spawnMsgs.remove(e.getKey());
+            sides.remove(e.getKey());
             ids.remove(s);
             it.remove();
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle: it drifts, it blocks
@@ -1579,7 +1608,10 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 p.conn.send(Msg.NOTICE, Msg.utf("Your controls stopped working on the host for that ship (an error, see the host's log). Take another ship."));
                 Ui.say(engine, "Co-op: " + p.name + "'s controls failed on their ship; it is back with its own AI (see starsector.log).");
             }
-            if (s == null || (!pilotFailed && ids.containsKey(s) && s != hostShip)) continue;
+            if (s == null || (!pilotFailed && ids.containsKey(s) && s != hostShip && s.getOwner() == 0)) continue;
+            if (!pilotFailed && s != hostShip && ids.containsKey(s) && s.getOwner() != 0) {
+                p.conn.send(Msg.NOTICE, Msg.utf("Your ship went over to the other side. Take another ship."));
+            }
             if (s == hostShip) { p.ship = null; p.savedAI = null; } else releaseShip(p);
             p.shipNetId = -1;
             p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, -1));

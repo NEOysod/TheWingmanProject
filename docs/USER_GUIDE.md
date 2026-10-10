@@ -1,4 +1,4 @@
-# The Wingman Project 0.1 — User Guide
+# The Wingman Project 0.2 — User Guide
 
 Co-op for Starsector battles. One player hosts a battle and up to three friends join it, each flying a ship
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong
@@ -312,10 +312,10 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
 
 | Risk | Kind of mod | What can happen | Covered? |
 | --- | --- | --- | --- |
-| **Crash (joiner)** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign memory or flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign, so the script finds nothing and the joiner's game crashes, at battle setup or the first time the script runs. | Ship systems and objectives: yes, after one crash (or never, for the known ones). Hullmods, weapon scripts and combat plugins: no. |
-| **Crash (joiner)** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`, the captain's fleet). | A joiner's copies belong to no fleet, so a script that doesn't check for that crashes. | No. Fleet-wide skills themselves are handled; a mod's own script reading the fleet is not. |
+| **Was a crash, now covered** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign loaded. It now gets a stand-in copied from the host's (cargo, credits, level, skills, story points, simple flags), so these scripts find something. | Mostly. Not copied: the player character itself (if the game has none on the title screen), faction standings, markets, and flags holding anything other than yes/no, numbers or short text. Ship systems and objectives that still crash are switched off on that PC after one crash. |
+| **Was a crash, now covered** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`). | A joiner's copies now belong to stand-in fleets, one per side; the players' side is led by a copy of the host's character. | Yes. Fleet-size bonuses a script works out from that fleet may differ a little from the host's; the key stats are kept equal anyway. |
 | **Crash (joiner)** | Combat scripts that assume the player's ship is a real, armed ship. | A joiner without a ship sits in an invisible stand-in with no weapons; a script that reads its weapons or officer may fail. | Partly: the stand-in is a normal small ship, so most scripts are fine. |
-| **Out of step** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | Joiners keep showing the ship on its old side. Damage and positions are still the host's. | No. |
+| **Covered** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | The host notices and tells joiners; a player flying that ship loses it and is told. | Yes. |
 | **Out of step** | Mods that create ship types or variants at runtime from the campaign (procedural hulls, generated skins). | The joiner's game doesn't have that ship type, so the ship is invisible there (it still counts for the ready check). | Reported in the log; the ship is skipped. |
 | **Out of step** | Combat scripts that pick at random (random variant, random proc, random target). | Each PC picks differently, so visuals can differ. Damage, positions and deaths are always the host's. | Damage and deaths: yes. Visuals: no. |
 | **Out of step** | Mods that keep setting their own AI on every ship during battle. | On a joiner it would override the do-nothing AI that puppets use, so ships twitch and fire on their own between updates. | No. Mods that choose an AI when a ship is created are fine. |

@@ -560,6 +560,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         leaveAtMillis = 0;
         watch.objectivesSurvived();
         watch.battleEnded();
+        CampaignStandIn.remove();
         compat.save();
         WingmanTitlePlugin.rejoinRequested = rejoin;
         // Back on the title screen: if the host's battle is over, wait for the next; if we walked out of one
@@ -1022,6 +1023,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 sentBuilt = -1;
                 lobby = null;
                 break;
+            case Msg.SIDE: {
+                // A ship changed sides on the host (boarded, hacked, taken over by a script).
+                In in = Msg.reader(p.data);
+                int id = in.readInt(), side = in.readByte();
+                if (side != 0 && side != 1) break;
+                Puppet pp = puppets.get(id);
+                if (pp == null) break;
+                pp.owner = side;
+                if (pp.info != null) pp.info.owner = side;
+                setSide(pp.ship, side);
+                Dbg.info(WingmanClientPlugin.class, "Wingman: " + describe(pp) + " is now on side " + side + " (as on the host)");
+                break;
+            }
             case Msg.SPAWN:
                 spawn(ShipSpawn.decode(p.data));
                 if (!hintShown && !puppets.isEmpty()) {
@@ -2151,6 +2165,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
         } // a new fleet member defaults to the player's side whichever fleet spawns it
         underCommander(member, sp);
+        CampaignStandIn.enlist(member, sp.owner); // a fleet of its own side, for scripts that ask
         CombatFleetManagerAPI fm = engine.getFleetManager(sp.owner);
         fm.setSuppressDeploymentMessages(true);
         ShipAPI ship = fm.spawnFleetMember(member, new Vector2f(sp.x, sp.y), sp.facing, 0f);

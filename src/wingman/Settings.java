@@ -90,6 +90,8 @@ final class Settings {
                 "Speed, turn rate, flux, ranges, rate of fire. The host sends them, the joiner applies them: needed on both."));
         ITEMS.add(new Item(2, "syncScriptMemory", "Script memory follows the host", BOTH, true, YES_NO,
                 "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
+        ITEMS.add(new Item(2, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
+                "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
         ITEMS.add(new Item(2, "damageReports", "Damage reports", BOTH, true, YES_NO,
                 "The host reports damage that no weapon accounts for; a joiner plays out what its own game missed. Needed on both."));
 

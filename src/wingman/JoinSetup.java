@@ -142,7 +142,25 @@ public final class JoinSetup {
                 + "or the map will be a large default one.";
     }
 
+    /** The battlefield the join mission is being set up from (for the stand-in campaign). */
+    private static volatile BattleInfo lastBattle;
+
+    /**
+     * Called by the join mission while it is set up, before any objective or ship exists: put the host's
+     * campaign in place for mods' scripts to find (see CampaignStandIn).
+     */
+    public static void prepareCampaign() {
+        try {
+            BattleInfo b = lastBattle;
+            if (b == null || !WingmanConfig.load().campaignStandIn) return;
+            CampaignStandIn.install(b);
+        } catch (Throwable t) {
+            com.fs.starfarer.api.Global.getLogger(JoinSetup.class).warn("Wingman: could not set up the stand-in campaign", t);
+        }
+    }
+
     private static void fill(Info info, BattleInfo b) {
+        lastBattle = b;
         {
             info.width = b.width;
             info.height = b.height;

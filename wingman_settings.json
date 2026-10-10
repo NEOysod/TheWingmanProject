@@ -117,6 +117,12 @@
     # the battle are copied from the host. Set on the host to send them and on the joiner to apply them.
     "syncScriptMemory": true,
 
+    # Stand-in campaign (joiner): a joiner's game has no campaign loaded, and some mods' battle scripts read the
+    # player fleet, its cargo, the player's skills or campaign flags anyway, and crash when they find nothing.
+    # With this on, the joiner sets up a copy of the host's (cargo, credits, skills, story points, simple
+    # flags) for the battle, and puts the copies of ships in stand-in fleets. Turn off if a mod misbehaves.
+    "campaignStandIn": true,
+
     # Damage reports: the host reports damage as it happens; a joiner plays out (harmlessly) any damage its
     # own game did not produce, so scripts that react to a ship being hit still react.
     "damageReports": true,

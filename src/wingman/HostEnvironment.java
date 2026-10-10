@@ -37,6 +37,53 @@ final class HostEnvironment {
     private float lastAsteroidBattleTime;
     private boolean asteroidsBroken;
 
+    /**
+     * What a joiner's stand-in campaign needs (see CampaignStandIn): the player fleet's cargo and credits, the
+     * player's level, skills and story points, and the campaign's simple flags. Only in a campaign battle.
+     */
+    private static void campaignFacts(CombatEngineAPI engine, BattleInfo b) {
+        if (!engine.isInCampaign()) return;
+        com.fs.starfarer.api.campaign.SectorAPI sector = Global.getSector();
+        if (sector == null || sector.getPlayerFleet() == null) return;
+        com.fs.starfarer.api.campaign.CampaignFleetAPI pf = sector.getPlayerFleet();
+        b.hasCampaign = true;
+        try {
+            b.credits = pf.getCargo().getCredits().get();
+            for (com.fs.starfarer.api.campaign.CargoStackAPI st : pf.getCargo().getStacksCopy()) {
+                if (b.cargoIds.size() >= BattleInfo.MAX_CARGO) break;
+                if (!st.isCommodityStack() || st.getCommodityId() == null) continue;
+                b.cargoIds.add(st.getCommodityId());
+                b.cargoAmounts.add(st.getSize());
+            }
+        } catch (Throwable t) { /* no cargo then */ }
+        try {
+            com.fs.starfarer.api.characters.PersonAPI me = sector.getPlayerPerson();
+            if (me != null) {
+                if (me.getName() != null) {
+                    b.playerFirst = String.valueOf(me.getName().getFirst());
+                    b.playerLast = String.valueOf(me.getName().getLast());
+                }
+                if (me.getPortraitSprite() != null) b.playerPortrait = me.getPortraitSprite();
+                b.playerLevel = me.getStats().getLevel();
+                for (com.fs.starfarer.api.characters.MutableCharacterStatsAPI.SkillLevelAPI sl : me.getStats().getSkillsCopy()) {
+                    if (b.skillIds.size() >= BattleInfo.MAX_SKILLS) break;
+                    if (sl.getSkill() == null || sl.getLevel() <= 0) continue;
+                    b.skillIds.add(sl.getSkill().getId());
+                    b.skillLevels.add(sl.getLevel());
+                }
+            }
+            if (sector.getPlayerStats() != null) b.storyPoints = sector.getPlayerStats().getStoryPoints();
+        } catch (Throwable t) { /* no person then */ }
+        try {
+            com.fs.starfarer.api.campaign.rules.MemoryAPI mem = sector.getMemoryWithoutUpdate();
+            for (String key : mem.getKeys()) {
+                if (key == null || key.startsWith("$wingman")) continue;
+                if (b.flagKeys.size() >= BattleInfo.MAX_FLAGS) break;
+                b.addFlag(key, mem.get(key));
+            }
+        } catch (Throwable t) { /* no flags then */ }
+    }
+
     /** Map size and backdrop. A joiner needs this before their mission starts, to set up the same battlefield. */
     byte[] battleInfo(CombatEngineAPI engine) {
         BattleInfo b = new BattleInfo();
@@ -63,6 +110,11 @@ final class HostEnvironment {
             }
         } catch (Throwable t) {
             Global.getLogger(HostEnvironment.class).warn("Wingman: could not list the objectives for joiners", t);
+        }
+        try {
+            campaignFacts(engine, b);
+        } catch (Throwable t) {
+            Global.getLogger(HostEnvironment.class).warn("Wingman: could not read the campaign for joiners' stand-in", t);
         }
         try {
             campaignBackdrop(engine, b);

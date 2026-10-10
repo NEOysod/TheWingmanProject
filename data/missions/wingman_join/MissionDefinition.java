@@ -47,6 +47,8 @@ public class MissionDefinition implements MissionDefinitionPlugin {
         // own scripts then run here as on the host. Objectives can only be made now, before the battle starts.
         // A kind whose script needs a running campaign gets a stand-in instead (see JoinSetup.kindToMake).
         JoinSetup.standIns.clear();
+        // Mods' scripts that look at the campaign find a copy of the host's (see CampaignStandIn).
+        JoinSetup.prepareCampaign();
         for (int i = 0; i < info.objectiveTypes.size(); i++) {
             try {
                 api.addObjective(((Float) info.objectiveX.get(i)).floatValue(), ((Float) info.objectiveY.get(i)).floatValue(),

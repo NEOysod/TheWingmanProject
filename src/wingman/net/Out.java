@@ -25,6 +25,7 @@ public final class Out {
         buf[n++] = (byte) (v >>> 24); buf[n++] = (byte) (v >>> 16); buf[n++] = (byte) (v >>> 8); buf[n++] = (byte) v;
     }
     public void writeLong(long v) throws IOException { writeInt((int) (v >>> 32)); writeInt((int) v); }
+    public void writeDouble(double v) throws IOException { writeLong(Double.doubleToLongBits(v)); }
     /** A whole number in as few bytes as it needs: 1 byte below 128, 2 below 16384, and so on. */
     public void writeVarLong(long v) throws IOException {
         while ((v & ~0x7FL) != 0) { writeByte((int) ((v & 0x7F) | 0x80)); v >>>= 7; }

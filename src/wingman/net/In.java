@@ -21,6 +21,7 @@ public final class In {
         return ((buf[p++] & 0xFF) << 24) | ((buf[p++] & 0xFF) << 16) | ((buf[p++] & 0xFF) << 8) | (buf[p++] & 0xFF);
     }
     public long readLong() throws IOException { long hi = readInt(); return (hi << 32) | (readInt() & 0xFFFFFFFFL); }
+    public double readDouble() throws IOException { return Double.longBitsToDouble(readLong()); }
     public long readVarLong() throws IOException {
         long v = 0;
         for (int shift = 0; shift < 64; shift += 7) {

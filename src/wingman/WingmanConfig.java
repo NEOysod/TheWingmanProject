@@ -60,6 +60,8 @@ public final class WingmanConfig {
     public boolean syncStats = true;
     /** Copy the simple values scripts keep on ships (flags, counters, short text) from the host's ships to the joiner's. */
     public boolean syncScriptMemory = true;
+    /** Joiner: give mods' battle scripts a stand-in campaign and stand-in fleets copied from the host's (see CampaignStandIn). */
+    public boolean campaignStandIn = true;
     /** Report damage as it happens, and play out on a joiner any that its own game did not produce. */
     public boolean damageReports = true;
     /** Joiner: fire each weapon as many times as the host's fired, not for as long as it "is firing". */
@@ -127,6 +129,7 @@ public final class WingmanConfig {
             c.useUdp = j.optBoolean("useUdp", c.useUdp);
             c.syncStats = j.optBoolean("syncStats", c.syncStats);
             c.syncScriptMemory = j.optBoolean("syncScriptMemory", c.syncScriptMemory);
+            c.campaignStandIn = j.optBoolean("campaignStandIn", c.campaignStandIn);
             c.damageReports = j.optBoolean("damageReports", c.damageReports);
             c.shotCounts = j.optBoolean("shotCounts", c.shotCounts);
             c.trimUnseen = j.optBoolean("trimUnseen", c.trimUnseen);
@@ -166,6 +169,7 @@ public final class WingmanConfig {
         if ("trimUnseen".equals(key)) return String.valueOf(trimUnseen);
         if ("syncStats".equals(key)) return String.valueOf(syncStats);
         if ("syncScriptMemory".equals(key)) return String.valueOf(syncScriptMemory);
+        if ("campaignStandIn".equals(key)) return String.valueOf(campaignStandIn);
         if ("damageReports".equals(key)) return String.valueOf(damageReports);
         if ("shotCounts".equals(key)) return String.valueOf(shotCounts);
         if ("password".equals(key)) return password;
@@ -205,6 +209,7 @@ public final class WingmanConfig {
             else if ("trimUnseen".equals(key)) trimUnseen = yes(value);
             else if ("syncStats".equals(key)) syncStats = yes(value);
             else if ("syncScriptMemory".equals(key)) syncScriptMemory = yes(value);
+            else if ("campaignStandIn".equals(key)) campaignStandIn = yes(value);
             else if ("damageReports".equals(key)) damageReports = yes(value);
             else if ("shotCounts".equals(key)) shotCounts = yes(value);
             else if ("password".equals(key)) password = value;

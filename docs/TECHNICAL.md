@@ -854,3 +854,32 @@ caught. The joiner's game is at the title screen: `Global.getSector()` exists bu
 any unused objective whose mission spot is the host's exact spot (`standInAt`), so the stand-in is placed,
 owned and ordered like the real one. On the host nothing changes: the real objective and the ships its
 script brings are the host's, and joiners see those ships as usual.
+
+## Stand-in campaign, stand-in fleets, side changes (protocol 41)
+
+**Campaign facts.** `BattleInfo` carries, when the host is in a campaign battle (`engine.isInCampaign()` and a
+player fleet): credits, commodity stacks of the player fleet's cargo (at most 300), the player character's
+name, portrait, level and skills (at most 120), story points, and the sector memory's simple values
+(`addFlag`: boolean, number, text of at most 64 characters; keys of at most 80; at most 600; `$wingman*`
+skipped). Read by `HostEnvironment.campaignFacts`; decoding refuses NaN, infinite or negative amounts.
+
+**`CampaignStandIn.install`**, from `MissionDefinition` through `JoinSetup.prepareCampaign` before any objective
+is added (objective effects run their `init` during the engine's set-up): if this PC's sector has no player
+fleet (it never does at the title screen; a real campaign is left alone), and `campaignStandIn` is on, make
+`createEmptyFleet("player", …, true)`, add the commodities and credits, give it a commander built from the
+host's character (name, portrait, level, skills), `sector.setPlayerFleet` it, set story points on
+`getPlayerStats()` if there are any, and set every host flag the sector's memory lacks (remembering which).
+`remove()` undoes all of it; called from `leaveBattle`, and from the title plugin when a stand-in is found more
+than 15 s old (a battle left by another way; the delay because the join mission, and the mission list's
+preview, set the mission up on the title screen just before its battle). Not possible: a player character
+where the game has none (no setter), faction relations, markets.
+
+**Stand-in fleets.** `CampaignStandIn.enlist(member, owner)` in `spawnShip`, before `spawnFleetMember`: the
+member is added to the players' stand-in fleet (side 0) or a lazily made `independent` one (side 1), so
+`getFleetData()` is never null for a puppet. Fighters (made a wing at a time) are left out.
+
+**Side changes.** The host remembers each tracked ship's side (`sides`, set in `announce`). `trackShips`, for every
+living tracked ship, calls `checkSide`: a change to 0 or 1 updates the cached SPAWN (so late joiners build it on
+the new side) and broadcasts `SIDE` (47: int id, byte side). `checkPilotedShips` takes a ship from a player when
+it is no longer on side 0 (NOTICE "Your ship went over to the other side"). The joiner sets `pp.owner` and
+`pp.info.owner` and calls `setSide`; `apply()` keeps it there every frame.

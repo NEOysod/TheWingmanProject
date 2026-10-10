@@ -137,6 +137,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (broken || !onTitle()) return;
+        CampaignStandIn.removeIfLeft(); // back on the title screen however the battle was left
         try {
             if (!firstRunChecked) { // the very first time: show the how-to pages without being asked
                 firstRunChecked = true;

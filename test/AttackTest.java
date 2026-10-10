@@ -417,7 +417,7 @@ public class AttackTest {
         samples.put("ShipSpawn", sp.encode()); decs.put("ShipSpawn", new Dec() { public void run(byte[] b) throws Exception { ShipSpawn.decode(b); } });
         Lobby lob = new Lobby(); Lobby.Entry le = new Lobby.Entry(); le.name = "P"; lob.players.add(le);
         samples.put("Lobby", lob.encode()); decs.put("Lobby", new Dec() { public void run(byte[] b) throws Exception { Lobby.decode(b); } });
-        BattleInfo bi = new BattleInfo(); bi.background = "x.jpg"; bi.hasPlanet = true; bi.planetType = "terran"; bi.objectiveTypes.add("sotf_objective_reinf"); bi.objectiveX.add(10f); bi.objectiveY.add(20f);
+        BattleInfo bi = new BattleInfo(); bi.background = "x.jpg"; bi.hasPlanet = true; bi.planetType = "terran"; bi.objectiveTypes.add("sotf_objective_reinf"); bi.objectiveX.add(10f); bi.objectiveY.add(20f); bi.hasCampaign = true; bi.credits = 5f; bi.skillIds.add("s"); bi.skillLevels.add(1f); bi.cargoIds.add("c"); bi.cargoAmounts.add(2f); bi.addFlag("$f", 3); bi.addFlag("$g", "t");
         samples.put("BattleInfo", bi.encode()); decs.put("BattleInfo", new Dec() { public void run(byte[] b) throws Exception { BattleInfo.decode(b); } });
         DamageState dst = new DamageState(); DamageState.Ship dsh = new DamageState.Ship(); dsh.netId = 1; dsh.ammo = new short[] {1, 2}; dsh.gridWidth = 4; dsh.gridHeight = 5; dsh.armor = new byte[20]; dst.ships.add(dsh);
         samples.put("DamageState", dst.encode()); decs.put("DamageState", new Dec() { public void run(byte[] b) throws Exception { DamageState.decode(b); } });
