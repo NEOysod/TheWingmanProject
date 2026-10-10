@@ -45,6 +45,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   is exempt as "the player's ship"; a joiner's isn't). Now, while a joiner flies a fighter from their own carrier,
   the host holds the carrier as they left it, systems untouched, slowing to a stop, until they come back to it or
   take another ship.
+- **Fixed: drones from a system that makes them without a fighter wing were never sent to joiners** (UAF's
+  Rafflesya launches such drones). Joiners only saw drones their own copy of the system made, which stop once
+  they fly the ship. The host now sends these drones like any other; a joiner's own unattributed drones are kept
+  out of sight, as its other local drones already were.
 - Fixed: a Rafflesya a joiner flies didn't fire its bomb on the host. Its carrier's dock script tells it to hold
   fire while it means to bring it home; the player's own ship ignores that, and a joiner's fighter now does too.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is

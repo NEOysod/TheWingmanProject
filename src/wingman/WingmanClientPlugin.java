@@ -894,7 +894,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     ghostDrone(s);
                     continue;
                 }
-                if (from == null) continue;
+                // A drone whose launcher can't be told (some drone systems, on fighters too, leave it unset): the host
+                // sends its own drones as copies, so this one of ours is kept out of sight and out of the way as well.
+                if (from == null) { ghostDrone(s); continue; }
             } else if (!s.isFighter()) {
                 if (localShip(s)) {
                     if (strays == null) strays = new ArrayList<CombatEntityAPI>();

@@ -712,7 +712,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (s == null || s.isHulk() || !s.isAlive() || s.isShuttlePod()) return false;
         // Neutral ships (side 100) too: a mod's objective can park ships there (derelicts waiting to be captured).
         if (s.getOwner() != 0 && s.getOwner() != 1 && s.getOwner() != 100) return false;
-        return !s.isFighter() || s.getWing() != null; // fighters are sent too, as long as they belong to a wing
+        // Fighters are sent too, as long as they belong to a wing; and drones a system launched, which have none
+        // (a drone launcher on a fighter, like UAF's Rafflesya, makes fighter-sized drones without a wing).
+        return !s.isFighter() || s.getWing() != null || s.isDrone();
     }
 
     /** Reused every frame for "which of the ones we know are still on the field?", instead of a new set each time. */
