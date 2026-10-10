@@ -1,7 +1,17 @@
 # Changelog
 
 ## 0.5-beta
-Protocol 44: everyone in a game needs 0.5. Includes everything in 0.4.2.
+Protocol 45: everyone in a game needs 0.5. Includes everything in 0.4.2.
+
+- **Arma Armatura strikecraft land and repair for joiners.** On the host, Arma Armatura treated a joiner's
+  strikecraft as an AI ship: when it was damaged or low on ammo the mod took it over, flew it to a carrier and,
+  on relaunch, gave it a fresh AI, so the joiner lost control twice. Now a joiner's strikecraft goes to refit
+  only when the joiner turns on autopilot (U), as in single player, and is repaired and rearmed on the host as
+  usual (hull, armour, CR and ammo follow). The landing and the launch are shown on everyone's screens, and the
+  joiner has the controls back as soon as the ship is out.
+- **Controls kept after a mod resets a ship's AI.** If any mod's script gives a joiner's ship a new AI on the
+  host, Wingman puts the joiner back in control within half a second (not while the ship is landing, landed,
+  retreating or locked by the game).
 
 - **Carriers own their fighters on joiners' screens.** A joiner's copy of a carrier never launches fighters
   itself; the host's fighters were shown as wings of their own, so the copy's hangars looked empty: the

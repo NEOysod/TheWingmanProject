@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 44;
+    public static final int PROTOCOL_VERSION = 45;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -72,6 +72,8 @@ public final class Msg {
     public static final byte COMBAT_MSG = 49;
     /** joiner -> host: int ship net id, UTF subsystem class: the player switched on a MagicLib subsystem (see Subsystems). */
     public static final byte SUBSYSTEM = 50;
+    /** host -> joiner: int ship id, int carrier id (or -1), byte 1 = landing on that carrier, 2 = launched again. */
+    public static final byte LANDING = 51;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */

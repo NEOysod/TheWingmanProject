@@ -322,6 +322,10 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   longer fires it by itself while a player flies it. Setting: "Extra abilities follow the joiner" (both).
 - **Scripts that hand the player another ship** (UAF's Isenoria Manual Override, which passes control to one
   of its fighters) work for joiners: the joiner is given that fighter, and the host stays in their own ship.
+- **Arma Armatura strikecraft** land on a carrier for repairs and ammo when the joiner turns on autopilot (U),
+  as in single player, and not by themselves while the joiner flies. Everyone sees the landing and the launch,
+  and the joiner has the controls back once the ship is out. If any other mod's script takes the controls of a
+  joiner's ship on the host, they are given back within half a second.
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 
@@ -333,6 +337,7 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
 | **Was a crash, now covered** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`). | A joiner's copies now belong to stand-in fleets, one per side; the players' side is led by a copy of the host's character. | Yes. Fleet-size bonuses a script works out from that fleet may differ a little from the host's; the key stats are kept equal anyway. |
 | **Crash (joiner)** | Combat scripts that assume the player's ship is a real, armed ship. | A joiner without a ship sits in an invisible stand-in with no weapons; a script that reads its weapons or officer may fail. | Partly: the stand-in is a normal small ship, so most scripts are fine. |
 | **Covered** | Carrier scripts that look at the carrier's own fighters (`getAllWings()`), and carrier panels. | Used to find no fighters on a joiner's copy (greyed carrier panel, effects missing). | Yes: the host's fighters sit in the copy's hangars. |
+| **Covered** | Mods that put their own AI on a ship (Arma Armatura's carrier refit, scripted manoeuvres). | Used to take a joiner's ship away from them on the host: docked it for repairs and gave it a new AI. | Yes: a strikecraft refits only on the joiner's autopilot, and the joiner's controls are put back after a mod resets the AI. |
 | **Covered** | MagicLib subsystems on a joiner's ship. | Used to be fired by the ship's AI on the host whatever the joiner pressed. | Yes: they follow the joiner's key. |
 | **Covered** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | The host notices and tells joiners; a player flying that ship loses it and is told. | Yes. |
 | **Out of step** | Mods that create ship types or variants at runtime from the campaign (procedural hulls, generated skins). | The joiner's game doesn't have that ship type, so the ship is invisible there (it still counts for the ready check). | Reported in the log; the ship is skipped. |

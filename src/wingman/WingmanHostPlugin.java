@@ -340,6 +340,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         checkPilotedShips();
         handleClaims();
         runSubsystems();
+        keepPilots();
+        watchLandings();
         handleRetreats();
         syncTargets();
         sendCheck();
@@ -1717,6 +1719,81 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         for (ShipAPI s : heldShips) if (!flown.contains(s)) Subsystems.release(s); // nobody flies it now: its AI may use them
         heldShips.clear();
         heldShips.addAll(flown);
+    }
+
+    /** Arma Armatura's "don't go and refit" mark: a ship whose mark is in the future isn't sent to a carrier. */
+    static final String ARMAA_NO_REFIT = "armaa_refitSuppressedUntil";
+
+    /**
+     * A joiner flies their ship by its AI slot (RemotePilotAI). Some mods put their own AI in that slot: Arma
+     * Armatura sends a strikecraft that needs repairs to a carrier with a docking AI, and resets the AI when it
+     * launches again. On the host a joiner's ship isn't "the player's ship", so such a mod treats it as AI-flown.
+     * - Arma Armatura's refit: the mod's own off switch (a custom data mark it reads) is kept on for ships a
+     *   joiner flies themselves; on autopilot (U) the mod may send it to a carrier, as it does for the player.
+     * - Any mod: if the joiner's controls haven't flown their ship for half a second of battle time, and the ship
+     *   isn't landing, landed or held still by a script, the joiner's controls are put back.
+     */
+    private void keepPilots() {
+        float now = engine.getTotalElapsedTime(false);
+        for (HostSession.Player p : session.getPlayers()) {
+            ShipAPI s = (ShipAPI) p.ship;
+            if (s == null || !s.isAlive() || s.isHulk() || onAutopilot.contains(p.id)) continue;
+            try { s.getCustomData().put(ARMAA_NO_REFIT, now + 1f); } catch (Throwable t) { /* no custom data: nothing to switch off */ }
+            if (!(p.savedAI instanceof RemotePilotAI)) continue;
+            RemotePilotAI pilot = (RemotePilotAI) p.savedAI;
+            if (pilot.failed || pilot.lastFlown < 0f || now - pilot.lastFlown < 0.5f) continue;
+            if (s.isLanding() || s.isFinishedLanding() || s.controlsLocked() || s.isRetreating()) continue;
+            pilot.lastFlown = now; // give it a moment before trying again
+            s.setShipAI(pilot);
+            Dbg.info(WingmanHostPlugin.class, "Wingman: a script took the controls of " + p.name + "'s ship; they are given back");
+        }
+    }
+
+    /** Landing state of tracked ships: 1 landing or landed on a carrier. */
+    private final Map<ShipAPI, Integer> landed = new IdentityHashMap<ShipAPI, Integer>();
+
+    /**
+     * Ships that land on a carrier and take off again (Arma Armatura's strikecraft refit at carriers): joiners are
+     * told, so their copies play the same landing and launch. (Fighters land and vanish; those are just removed.)
+     */
+    private void watchLandings() {
+        for (Map.Entry<ShipAPI, Integer> e : ids.entrySet()) {
+            ShipAPI s = e.getKey();
+            if (s.getWing() != null) continue; // a wing's fighters: not this
+            boolean down = s.isLanding() || s.isFinishedLanding();
+            boolean was = landed.containsKey(s);
+            if (down == was) continue;
+            int carrier = -1;
+            if (down) {
+                landed.put(s, 1);
+                ShipAPI c = nearestCarrier(s);
+                Integer cid = c == null ? null : ids.get(c);
+                if (cid != null) carrier = cid;
+            } else {
+                landed.remove(s);
+            }
+            Msg.W w = new Msg.W();
+            try {
+                w.out.writeInt(e.getValue());
+                w.out.writeInt(carrier);
+                w.out.writeByte(down ? 1 : 2);
+            } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+            session.broadcast(Msg.LANDING, w.done());
+            Dbg.info(WingmanHostPlugin.class, "Wingman: ship " + e.getValue() + (down ? " lands on carrier " + carrier : " takes off again"));
+        }
+        if (landed.size() > 200) landed.keySet().retainAll(ids.keySet());
+    }
+
+    private ShipAPI nearestCarrier(ShipAPI s) {
+        ShipAPI best = null;
+        float bestD = Float.MAX_VALUE;
+        for (ShipAPI c : ids.keySet()) {
+            if (c == s || c.getOwner() != s.getOwner() || !c.hasLaunchBays() || c.isFighter()) continue;
+            float dx = c.getLocation().x - s.getLocation().x, dy = c.getLocation().y - s.getLocation().y;
+            float d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = c; }
+        }
+        return best;
     }
 
     /** A piloted ship that died, retreated, or was taken over by the host goes back to nobody. */

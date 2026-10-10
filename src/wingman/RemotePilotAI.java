@@ -44,7 +44,11 @@ public class RemotePilotAI implements ShipAIPlugin {
     /** Set if flying by a player's controls failed: the ship then coasts and the host plugin takes it back. */
     public volatile boolean failed;
 
+    /** Battle time of the last frame the game asked this AI to fly (see WingmanHostPlugin.keepPilots). */
+    public volatile float lastFlown = -1f;
+
     public void advance(float amount) {
+        try { lastFlown = Global.getCombatEngine().getTotalElapsedTime(false); } catch (Throwable t) { /* no engine: not stale either */ }
         if (failed) { ship.giveCommand(ShipCommand.DECELERATE, null, 0); return; }
         try {
             fly(amount);

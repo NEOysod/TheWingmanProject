@@ -265,7 +265,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         };
     }
 
-    private int badLines;
+    private int badLines, landingFailed;
 
     /** A script's line from the host's game: shown here as written there. */
     private void showHostLine(byte[] data) {
@@ -957,6 +957,25 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.OBJECTIVES:
                 orders.onObjectives(p.data);
                 break;
+            case Msg.LANDING: {
+                // A ship of the host's lands on a carrier, or takes off again (Arma Armatura's strikecraft refit).
+                In in = Msg.reader(p.data);
+                int id = in.readInt(), carrierId = in.readInt();
+                byte what = in.readByte();
+                Puppet pp = puppets.get(id);
+                if (pp == null) break;
+                try {
+                    if (what == 1) {
+                        Puppet c = carrierId < 0 ? null : puppets.get(carrierId);
+                        if (c != null && !pp.ship.isLanding() && !pp.ship.isFinishedLanding()) pp.ship.beginLandingAnimation(c.ship);
+                    } else if (what == 2 && (pp.ship.isLanding() || pp.ship.isFinishedLanding())) {
+                        pp.ship.setAnimatedLaunch();
+                    }
+                } catch (Throwable t) {
+                    if (landingFailed++ == 0) Global.getLogger(WingmanClientPlugin.class).warn("Wingman: a landing on a carrier could not be shown here", t);
+                }
+                break;
+            }
             case Msg.COMBAT_MSG:
                 showHostLine(p.data);
                 break;
@@ -2258,6 +2277,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         fm.setSuppressDeploymentMessages(true);
         ShipAPI ship = fm.spawnFleetMember(member, new Vector2f(sp.x, sp.y), sp.facing, 0f);
         fm.setSuppressDeploymentMessages(false);
+        // Arma Armatura sends a strikecraft that needs repairs to a carrier by itself. Here that is the host's
+        // decision (a LANDING message says when): its own off switch is set for good on every copy.
+        try { if (ship != null) ship.getCustomData().put(WingmanHostPlugin.ARMAA_NO_REFIT, 1e9f); } catch (Throwable t) { /* no such mod: nothing to do */ }
         return ship;
     }
 

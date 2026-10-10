@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 44 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 45 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -209,8 +209,9 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 44 / 45 / 46 | UDP_OFFER / UDP_READY / UDP_MODE | TCP | UDP setup (inside `ClientLink`) |
 | 47 | SIDE | host → joiner | id, new side (0, 1 or neutral 100) |
 | 48 | OBJECTIVE_TEXT | host → joiner | objective index, its tooltip text (≤ 4,000 characters), on change |
-| 50 | SUBSYSTEM | joiner → host | ship id, MagicLib subsystem class (≤ 200 characters); host keeps ≤ 10 a second |
 | 49 | COMBAT_MSG | host → joiner | a script's line in the message feed: indent, ≤ 40 parts (colour, text ≤ 1,000, ship id, objective index); ≤ 30/s |
+| 50 | SUBSYSTEM | joiner → host | ship id, MagicLib subsystem class (≤ 200 characters); host keeps ≤ 10 a second |
+| 51 | LANDING | host → joiner | ship id, carrier id (or −1), byte 1 landing / 2 launched |
 
 ---
 
@@ -693,6 +694,27 @@ subsystems are the values of the ship's custom data entry `magicSubsystems`.
   grants it under the same rule.
 
 Setting `joinerSubsystems` (both).
+
+### 8.8 Ships that land on carriers, and mods that take the AI slot (`keepPilots`, `watchLandings`)
+
+A joiner flies their ship on the host through its AI slot (`RemotePilotAI`), so a mod that puts its own AI in
+that slot takes the ship from the joiner. Arma Armatura does this on purpose: its `armaa_strikeCraft` hullmod
+sends a damaged or empty strikecraft to a carrier with a docking AI (`setShipAI`, then `beginLandingAnimation`),
+repairs and rearms it while landed, and on take-off calls `setAnimatedLaunch` and `resetDefaultAI`. For the
+local player it does this only on autopilot; any other ship it treats as AI-flown.
+
+- **Host, `keepPilots` (each frame):** for every ship a joiner flies themselves (not on autopilot) the custom data
+  mark `armaa_refitSuppressedUntil` (Float, battle time) is set to now + 1 s; Arma Armatura's `isRefitSuppressed`
+  then skips it, unless it is already landing. With the joiner on autopilot the mark runs out and the mod refits
+  the ship as it would the player's. `RemotePilotAI.lastFlown` is the battle time of its last `advance`; if it is
+  0.5 s old while the joiner flies the ship and the ship is not landing, landed, retreating or `controlsLocked`,
+  the pilot is put back with `setShipAI` (this covers `resetDefaultAI` after take-off and any other mod's AI swap).
+- **Host, `watchLandings`:** ships with an id and no wing are watched for `isLanding() || isFinishedLanding()`; a
+  change sends `LANDING` (ship id, nearest own carrier with launch bays or −1, 1 landing / 2 launched).
+- **Joiner:** every copy carries the mark at 10⁹, so the joiner's copy of the mod never docks a ship itself.
+  `LANDING` plays `beginLandingAnimation(carrier copy)` or `setAnimatedLaunch()` on the copy; positions keep
+  following the host as usual. Hull, armour, CR and ammo restored on the host reach the joiner through the
+  normal damage state.
 
 ## 9. Title screen and joining
 
