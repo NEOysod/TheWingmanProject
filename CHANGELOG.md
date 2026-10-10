@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2-beta
+Same protocol as 0.4 (43): 0.4.x versions play together.
+
+- **Fixed: the settings page vanished at the first key press** (Up/Down, or any key). It read a key after
+  handing it back to the game, which the game refuses; on the title screen that switched the whole CO-OP button
+  off until restart, in battle it closed the page.
+- Panels no longer disappear silently: a drawing error is logged and that frame skipped, and a failure on the
+  title screen's settings page closes only that page.
+
 ## 0.4.1-beta
 Same protocol as 0.4 (43): 0.4 and 0.4.1 play together.
 

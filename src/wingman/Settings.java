@@ -218,14 +218,19 @@ final class Settings {
             if (!open || events == null) return;
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isKeyboardEvent()) continue;
-                e.consume();
-                if (!e.isKeyDownEvent()) continue;
+                // Read the event before consuming it: the game refuses any read of a consumed event
+                // ("Attempt to access data of a consumed InputEvent").
+                boolean down = e.isKeyDownEvent();
                 int key = e.getEventValue();
+                char ch = e.getEventChar();
+                boolean shift = e.isShiftDown();
+                e.consume();
+                if (!down) continue;
                 List<Item> rows = rows();
                 if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
                 Item it = rows.isEmpty() ? null : rows.get(row);
                 if (key == 1) { open = false; return; }                                              // Escape
-                if (key == 15) { page = (page + (e.isShiftDown() ? PAGES.length - 1 : 1)) % PAGES.length; row = 0; continue; } // Tab
+                if (key == 15) { page = (page + (shift ? PAGES.length - 1 : 1)) % PAGES.length; row = 0; continue; } // Tab
                 if (key == 200) { row = (row + rows.size() - 1) % Math.max(1, rows.size()); continue; } // up
                 if (key == 208) { row = (row + 1) % Math.max(1, rows.size()); continue; }             // down
                 if (it == null) continue;
@@ -248,7 +253,7 @@ final class Settings {
                 if (key == 14) { // Backspace
                     if (text.length() > 0) put(it, text.substring(0, text.length() - 1));
                 } else {
-                    char c = e.getEventChar();
+                    char c = ch;
                     boolean ok = "port".equals(it.key) ? (c >= '0' && c <= '9') : (c >= ' ' && c < 127 && c != '=');
                     int max = "port".equals(it.key) ? 5 : 32;
                     if (ok && text.length() < max) put(it, text + c);
