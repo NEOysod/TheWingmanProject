@@ -446,6 +446,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         prof.mark(1);
         takeRememberedShip();
         watchPlayerShip(conn);
+        sendSubsystems(conn);
         reportReady(conn);
 
         long nowNanos = System.nanoTime();
@@ -637,12 +638,34 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private void watchPlayerShip(Conn conn) {
         ShipAPI ps = engine.getPlayerShip();
         if (ps == lastPlayerShip) return;
+        ShipAPI was = lastPlayerShip;
         lastPlayerShip = ps;
         // The game hands the ship we left to its own AI; puppets must stay inert.
         for (Puppet pp : puppets.values()) if (pp.ship != ps) pp.ship.setShipAI(new PuppetAI());
         if (ps != placeholder) placeholder.setShipAI(new PuppetAI());
         Puppet now = ps == null ? null : byShip.get(ps);
-        claim(conn, now != null && !now.fighter ? now.netId : -1);
+        // A fighter only when a mod's script handed us one from the ship we flew (UAF's Isenoria does).
+        boolean ok = now != null && (!now.fighter || WingmanHostPlugin.linked(ps, was));
+        claim(conn, ok ? now.netId : -1);
+    }
+
+    /**
+     * MagicLib subsystems of the ship we fly that the player just switched on with their key: tell the host,
+     * where the real ship's subsystems wait for exactly that (see Subsystems).
+     */
+    private void sendSubsystems(Conn conn) {
+        if (cfg == null || !cfg.joinerSubsystems) return;
+        Puppet own = ownId < 0 ? null : puppets.get(ownId);
+        if (own == null || engine.getPlayerShip() != own.ship) return;
+        for (String cls : Subsystems.pressed(own.ship)) {
+            Msg.W w = new Msg.W();
+            try {
+                w.out.writeInt(ownId);
+                w.out.writeUTF(cls.length() > 200 ? cls.substring(0, 200) : cls);
+            } catch (java.io.IOException ex) { continue; }
+            conn.send(Msg.SUBSYSTEM, w.done());
+            Dbg.info(WingmanClientPlugin.class, "Wingman subsystems: used " + cls + " on our ship; the host is told");
+        }
     }
 
     /** Local fighters and missiles that the host never told us about would be lies on screen: drop them. */
@@ -1017,6 +1040,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             case Msg.RESET:
                 hostPaused = false;
+                Subsystems.reset();
                 toPlaceholder();
                 for (Puppet pp : puppets.values()) engine.removeEntity(pp.ship);
                 for (MissilePuppet mp : missiles.values()) engine.removeEntity(mp.missile);
@@ -2401,6 +2425,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             if (group == null || group == own) {
                 hostWings.put(sp.wingNet, own);
+                Puppet carrier = sp.carrierId < 0 ? null : puppets.get(sp.carrierId);
+                if (carrier != null && cfg != null && cfg.fighterHangars) BayLink.attach(carrier.ship, sp.bay, own, fighter, fm);
                 if (hostWings.size() > 400) { // long battle: forget wings that have no fighters left
                     for (Iterator<FighterWingAPI> it = hostWings.values().iterator(); it.hasNext();) {
                         FighterWingAPI w = it.next();

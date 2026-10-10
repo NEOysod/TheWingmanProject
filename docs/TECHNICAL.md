@@ -40,7 +40,7 @@ Three constraints shape almost every detail:
 | --- | --- |
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
 | Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `HostOrders`, `ShipStats` |
-| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `SystemWatch`, `Compat`, `Groups` |
+| Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
 | Campaign | `WingmanModPlugin` |
@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 43 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 44 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -209,6 +209,7 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 44 / 45 / 46 | UDP_OFFER / UDP_READY / UDP_MODE | TCP | UDP setup (inside `ClientLink`) |
 | 47 | SIDE | host → joiner | id, new side (0, 1 or neutral 100) |
 | 48 | OBJECTIVE_TEXT | host → joiner | objective index, its tooltip text (≤ 4,000 characters), on change |
+| 50 | SUBSYSTEM | joiner → host | ship id, MagicLib subsystem class (≤ 200 characters); host keeps ≤ 10 a second |
 | 49 | COMBAT_MSG | host → joiner | a script's line in the message feed: indent, ≤ 40 parts (colour, text ≤ 1,000, ship id, objective index); ≤ 30/s |
 
 ---
@@ -658,6 +659,41 @@ reads the same and held-back objectives still speak.
   1,000 characters per text part. If the swap fails (another Java, a changed game) the feature is off with one
   warning and both screens behave as before.
 
+### 8.6 Carriers' fighters (`BayLink`)
+
+A copy of a carrier never launches anything (its refit time is ×100,000 and anything it launches is removed);
+the host's fighters are built as wings of their own (7.11). `ShipAPI.getAllWings()` goes hangar by hangar
+(`bay.getWing()`), so a copy's hangars looked empty: a greyed carrier panel, and carrier scripts finding no
+fighters. The host sends each fighter's carrier and hangar (`ShipSpawn.carrierId`, `bay`: the index in
+`getLaunchBaysCopy()` of `wing.getSource()`). When a host wing is first built on a joiner (`joinHostWing`),
+`BayLink.attach` tells the wing its carrier and bay (`setSourceShip`, `setSourceBay`) and points the bay at the
+wing's deployed-member record: the private field `Òôôo00` (type `CombatFleetManager$O0`) of the game's bay class
+`combat.entities.ship.A.C`, set through `MethodHandles.privateLookupIn`. `bay.getWing()` then returns the host's
+wing; the bay's own replacements stay held back by the refit time. Setting `fighterHangars` (joiner).
+
+### 8.7 MagicLib subsystems (`Subsystems`)
+
+MagicLib's `MagicSubsystem.advanceInternal` reads the hotkey only when the ship is the engine's player ship;
+otherwise it calls the mod's `shouldActivateAI`. On the host a joiner's ship is never the player ship, so the AI
+logic fired its subsystems. MagicLib is reached by name through `java.lang.invoke` (no build or run dependency):
+subsystems are the values of the ship's custom data entry `magicSubsystems`.
+
+- **Joiner** (`sendSubsystems`): for the ship the player flies, each subsystem's state is compared frame to frame;
+  READY → IN/ACTIVE (or ACTIVE → OUT for a toggle) sends `SUBSYSTEM` (ship id, class name).
+- **Host** (`runSubsystems`, each frame): for every ship a joiner flies (not on autopilot) each READY subsystem is
+  parked: its `state` field set to COOLDOWN and its `stateInterval` to 10⁹ s, without `setState`, so no callback of
+  the mod runs. A request un-parks the named subsystem and calls `activate()` if `canActivateInternal()` and
+  `canActivate()`. Ships no longer flown by a joiner are un-parked (READY), so their AI uses them again.
+- **Scripts that switch "the player" to another ship:** a fired subsystem that changes the host's player ship
+  (Isenoria's override) is undone at once; the subsystems the script just added to the new ship are removed on
+  the host (`dropAddedSince`). Each frame (`guardHostShip`), a switch of the host to a fighter that isn't from
+  the host's previous ship is undone (vanilla Transfer Command never picks a fighter). On the joiner the same
+  script switches the local player ship; `watchPlayerShip` then claims it, and a fighter is claimable when it is
+  from the ship the player flies (`WingmanHostPlugin.linked`: wing source ship, or its parent station). The host
+  grants it under the same rule.
+
+Setting `joinerSubsystems` (both).
+
 ## 9. Title screen and joining
 
 - **The panel** (`WingmanTitlePlugin`): the title screen's drifting ships are a real battle, so a combat plugin can
@@ -716,6 +752,8 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `syncScriptMemory` | true | both | yes | Script memory follows the host |
 | `campaignStandIn` | true | joiner | no | Stand-in campaign and fleets (8.3) |
 | `hostMessages` | true | both | yes | Battle messages follow the host (8.5) |
+| `fighterHangars` | true | joiner | no | Host fighters in the copy's hangars (8.6) |
+| `joinerSubsystems` | true | both | yes | MagicLib subsystems follow the joiner (8.7) |
 | `damageReports` | true | both | yes | Damage reports (7.10) |
 | `debugLog` | false | both | yes | Detailed log lines (`Dbg`), traffic and timing every 30 s |
 | `neverMirrorSystems` | [] | joiner | — | File only: system ids never mirrored |

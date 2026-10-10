@@ -64,6 +64,10 @@ public final class WingmanConfig {
     public boolean campaignStandIn = true;
     /** Scripts' lines in the combat message feed come from the host's game (see MessageTap). */
     public boolean hostMessages = true;
+    /** Joiner: the host's fighters go in the hangars of the copy of their carrier (see BayLink). */
+    public boolean fighterHangars = true;
+    /** MagicLib subsystems on joiners' ships follow the joiner's keys (see Subsystems). */
+    public boolean joinerSubsystems = true;
     /** Report damage as it happens, and play out on a joiner any that its own game did not produce. */
     public boolean damageReports = true;
     /** Joiner: fire each weapon as many times as the host's fired, not for as long as it "is firing". */
@@ -133,6 +137,8 @@ public final class WingmanConfig {
             c.syncScriptMemory = j.optBoolean("syncScriptMemory", c.syncScriptMemory);
             c.campaignStandIn = j.optBoolean("campaignStandIn", c.campaignStandIn);
             c.hostMessages = j.optBoolean("hostMessages", c.hostMessages);
+            c.fighterHangars = j.optBoolean("fighterHangars", c.fighterHangars);
+            c.joinerSubsystems = j.optBoolean("joinerSubsystems", c.joinerSubsystems);
             c.damageReports = j.optBoolean("damageReports", c.damageReports);
             c.shotCounts = j.optBoolean("shotCounts", c.shotCounts);
             c.trimUnseen = j.optBoolean("trimUnseen", c.trimUnseen);
@@ -174,6 +180,8 @@ public final class WingmanConfig {
         if ("syncScriptMemory".equals(key)) return String.valueOf(syncScriptMemory);
         if ("campaignStandIn".equals(key)) return String.valueOf(campaignStandIn);
         if ("hostMessages".equals(key)) return String.valueOf(hostMessages);
+        if ("fighterHangars".equals(key)) return String.valueOf(fighterHangars);
+        if ("joinerSubsystems".equals(key)) return String.valueOf(joinerSubsystems);
         if ("damageReports".equals(key)) return String.valueOf(damageReports);
         if ("shotCounts".equals(key)) return String.valueOf(shotCounts);
         if ("password".equals(key)) return password;
@@ -215,6 +223,8 @@ public final class WingmanConfig {
             else if ("syncScriptMemory".equals(key)) syncScriptMemory = yes(value);
             else if ("campaignStandIn".equals(key)) campaignStandIn = yes(value);
             else if ("hostMessages".equals(key)) hostMessages = yes(value);
+            else if ("fighterHangars".equals(key)) fighterHangars = yes(value);
+            else if ("joinerSubsystems".equals(key)) joinerSubsystems = yes(value);
             else if ("damageReports".equals(key)) damageReports = yes(value);
             else if ("shotCounts".equals(key)) shotCounts = yes(value);
             else if ("password".equals(key)) password = value;

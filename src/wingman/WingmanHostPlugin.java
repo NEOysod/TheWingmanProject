@@ -177,6 +177,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         wingman.net.Conn.compression = cfg.compressLink;
         wingman.net.Conn.udp = cfg.useUdp;
         readyPhase = cfg.readyCheck ? 0 : 2;
+        Subsystems.reset();
+        lastHostShip = engine.getPlayerShip();
         tapMessages();
         started = true;
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
@@ -334,8 +336,10 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             environment.resendAsteroids();
         }
 
+        guardHostShip();
         checkPilotedShips();
         handleClaims();
+        runSubsystems();
         handleRetreats();
         syncTargets();
         sendCheck();
@@ -909,8 +913,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 Integer cid = carrier == null ? null : ids.get(carrier);
                 if (cid != null) {
                     sp.carrierId = cid;
-                    List<FighterWingAPI> bays = carrier.getAllWings();
-                    sp.bay = bays == null ? -1 : bays.indexOf(wing);
+                    // Which hangar, counting every hangar the carrier has (empty ones too), as on a joiner's copy.
+                    List<com.fs.starfarer.api.combat.FighterLaunchBayAPI> bays = carrier.getLaunchBaysCopy();
+                    sp.bay = bays == null || wing.getSource() == null ? -1 : bays.indexOf(wing.getSource());
                 }
             } catch (Throwable t) { /* a wing without a carrier is still shown */ }
         }
@@ -1643,6 +1648,77 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         return id;
     }
 
+    /** The ship the host flies, as of last frame (see guardHostShip). */
+    private ShipAPI lastHostShip;
+
+    /**
+     * Keep the host's own controls on the host's ship. A mod's script may hand "the player" a different ship:
+     * UAF's Isenoria passes control to one of its fighters, and back. When a joiner's ship does that here, the
+     * script runs on the host, where "the player" is the host, so the host would suddenly be flying a joiner's
+     * fighter. A switch to a fighter that isn't from the host's own ship is undone (the game's own Transfer
+     * Command never picks a fighter, so only a script does that). Switches made by a subsystem fired for a joiner
+     * are undone where it is fired (runSubsystems). The host's own switches stay, Transfer Command included.
+     */
+    private void guardHostShip() {
+        ShipAPI now = engine.getPlayerShip();
+        if (now == lastHostShip) return;
+        ShipAPI was = lastHostShip;
+        lastHostShip = now;
+        if (now == null || was == null || !was.isAlive() || was.isHulk()) return;
+        if (!now.isFighter() || linked(now, was)) return;
+        engine.setPlayerShipExternal(was);
+        lastHostShip = was;
+        Dbg.info(WingmanHostPlugin.class, "Wingman: a script handed the host a fighter not from the host's ship; the host stays in their own ship");
+    }
+
+    /** This fighter is from that ship (its carrier, or a hangar module of it). */
+    static boolean linked(ShipAPI fighter, ShipAPI ship) {
+        if (fighter == null || ship == null || !fighter.isFighter() || fighter.getWing() == null) return false;
+        ShipAPI src = fighter.getWing().getSourceShip();
+        return src != null && (src == ship || src.getParentStation() == ship);
+    }
+
+    /** Ships whose MagicLib subsystems are held for a joiner (see Subsystems), as of last frame. */
+    private final java.util.Set<ShipAPI> heldShips = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+
+    /** Joiners' MagicLib subsystems: fire the ones they switched on, and keep the AI logic off the rest. */
+    private void runSubsystems() {
+        if (!cfg.joinerSubsystems) {
+            for (ShipAPI s : heldShips) Subsystems.release(s);
+            heldShips.clear();
+            for (HostSession.Player p : session.getPlayers()) p.subsystemPresses.clear();
+            return;
+        }
+        java.util.Set<ShipAPI> flown = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+        for (HostSession.Player p : session.getPlayers()) {
+            ShipAPI s = (ShipAPI) p.ship;
+            for (Object[] press : p.subsystemPresses) {
+                if (s == null || ((Integer) press[0]).intValue() != p.shipNetId) continue;
+                java.util.Map<ShipAPI, java.util.Set<Object>> beforeSubs = Subsystems.snapshotAll(engine);
+                ShipAPI before = engine.getPlayerShip();
+                boolean fired = Subsystems.fire(s, (String) press[1]);
+                ShipAPI after = engine.getPlayerShip();
+                if (after != before && before != null) {
+                    // It handed "the player" another ship (Isenoria's override passes control to a fighter): that
+                    // is the joiner's business, done on their PC. The host stays put, and the switch-back
+                    // abilities the script just gave that ship here are taken off again, so they can't later
+                    // pull the host into it.
+                    engine.setPlayerShipExternal(before);
+                    lastHostShip = before;
+                    Subsystems.dropAddedSince(after, beforeSubs);
+                }
+                Dbg.info(WingmanHostPlugin.class, "Wingman subsystems: " + p.name + " used " + press[1] + (fired ? "" : " (not ready here)"));
+            }
+            p.subsystemPresses.clear();
+            if (s == null || onAutopilot.contains(p.id) || !s.isAlive()) continue;
+            Subsystems.hold(s);
+            flown.add(s);
+        }
+        for (ShipAPI s : heldShips) if (!flown.contains(s)) Subsystems.release(s); // nobody flies it now: its AI may use them
+        heldShips.clear();
+        heldShips.addAll(flown);
+    }
+
     /** A piloted ship that died, retreated, or was taken over by the host goes back to nobody. */
     private void checkPilotedShips() {
         ShipAPI hostShip = engine.getPlayerShip();
@@ -1675,7 +1751,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 p.shipNetId = -1;
             } else if (s != null && s == p.ship) {
                 // already theirs
-            } else if (s == null || s.getOwner() != 0 || s.isFighter() || s.isStationModule() || s.isDrone()) {
+            } else if (s == null || s.getOwner() != 0 || (s.isFighter() && !linked(s, (ShipAPI) p.ship)) || s.isStationModule() || s.isDrone()) {
+                // (A fighter only from the ship they fly: a mod may hand its pilot one, as UAF's Isenoria does.)
                 p.conn.send(Msg.NOTICE, Msg.utf("That ship can't be flown."));
             } else if (s == hostShip) {
                 p.conn.send(Msg.NOTICE, Msg.utf("That is the host's ship."));

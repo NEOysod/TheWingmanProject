@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5-beta
+Protocol 44: everyone in a game needs 0.5. Includes everything in 0.4.2.
+
+- **Carriers own their fighters on joiners' screens.** A joiner's copy of a carrier never launches fighters
+  itself; the host's fighters were shown as wings of their own, so the copy's hangars looked empty: the
+  carrier panel was greyed out, and carrier scripts that ask a carrier for its fighters found none (UAF's
+  Rafflesya Control and Isenoria). Each host wing is now put in the right hangar of the copy. The host now
+  also says which hangar by its real number (it counted only hangars with fighters out). New setting
+  "Fighters in their carriers' hangars" (joiner, on).
+- **MagicLib subsystems follow the joiner.** MagicLib reads the keyboard only for the local player's ship, so on
+  the host a joiner's subsystems were fired by the ship's AI whatever the joiner pressed. Now the joiner's PC
+  tells the host when the player switches one on, the host fires it on the real ship, and holds the rest so the
+  AI can't fire them while a player flies the ship. New setting "Extra abilities follow the joiner" (both, on).
+- **Taking control of a fighter.** A script that hands the player one of their carrier's fighters (Isenoria's
+  Manual Override) now works for a joiner: their game asks for that fighter and the host grants it (a fighter
+  only from the ship the player flies). On the host such a switch never moves the host's own controls; a
+  script handing the host a fighter that isn't from the host's ship is undone.
+
 ## 0.4.2-beta
 Same protocol as 0.4 (43): 0.4.x versions play together.
 

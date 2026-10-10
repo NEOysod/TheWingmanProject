@@ -106,6 +106,7 @@ public class AttackTest {
         passwordGuessing();
         connectionFlood(baseThreads);
         afterJoinJunk();
+        subsystemFlood();
         messageFlood();
         udpJunk();
         decoderFuzz();
@@ -347,18 +348,44 @@ public class AttackTest {
             evil.send(Msg.INPUT, w.done());
             // claims for ships that don't exist
             for (int id : new int[] {-1, 0, Integer.MAX_VALUE, Integer.MIN_VALUE}) { Msg.W cw = new Msg.W(); cw.out.writeInt(1); cw.out.writeInt(id); evil.send(Msg.CLAIM, cw.done()); }
+            // subsystem presses: a flood of them, and class names far too long
+            for (int i = 0; i < 60; i++) {
+                Msg.W sw = new Msg.W(); sw.out.writeInt(i); StringBuilder nm = new StringBuilder(); for (int k = 0; k < (i % 2 == 0 ? 20 : 5000); k++) nm.append('x');
+                sw.out.writeUTF(nm.toString()); evil.send(Msg.SUBSYSTEM, sw.done());
+            }
             // ready with absurd counts
             Msg.W rw = new Msg.W(); rw.out.writeBoolean(true); rw.out.writeInt(-5); rw.out.writeInt(Integer.MAX_VALUE); evil.send(Msg.READY, rw.done());
             pumpFor(600);
         } catch (Throwable t) { crash = t; }
         info(sent + " junk messages of 127 types in " + (System.currentTimeMillis() - t0) + " ms; attacker " + (evil.isClosed() || find("Evil") == null ? "dropped" : "still connected") + (ep != null ? ", bad messages counted " + ep.badMessages : ""));
         check("host survives junk of every message type without an error escaping", crash == null);
+        if (ep != null) check("subsystem presses are capped (" + ep.subsystemPresses.size() + " queued, none with an overlong name)",
+                ep.subsystemPresses.size() <= 20 && noLongNames(ep));
         if (ep != null && find("Evil") != null) {
             check("controls with NaN/infinity are ignored (mouse " + ep.input.mouseX + "," + ep.input.mouseY + " facing " + ep.input.facing + ")",
                     !Float.isNaN(ep.input.mouseX) && !Float.isInfinite(ep.input.mouseX) && !Float.isNaN(ep.input.facing));
         }
         check("...and the honest player is still served", goodStillServed());
         evil.close("test"); pumpFor(300);
+    }
+
+    static void subsystemFlood() throws Exception {
+        Conn sc = join("Keys", "");
+        check("subsystem presser joins", waitFor(sc, Msg.WELCOME, 3000) != null);
+        HostSession.Player sp = find("Keys");
+        for (int i = 0; i < 60 && !sc.isClosed(); i++) {
+            Msg.W sw = new Msg.W(); sw.out.writeInt(i); StringBuilder nm = new StringBuilder(); for (int k = 0; k < (i % 2 == 0 ? 20 : 5000); k++) nm.append('x');
+            sw.out.writeUTF(nm.toString()); sc.send(Msg.SUBSYSTEM, sw.done());
+        }
+        pumpFor(500);
+        check("subsystem presses are capped: " + (sp == null ? "?" : sp.subsystemPresses.size()) + " queued of 60 sent, no overlong names, player still in",
+                sp != null && find("Keys") != null && sp.subsystemPresses.size() > 0 && sp.subsystemPresses.size() <= 10 && noLongNames(sp));
+        sc.close("test"); pumpFor(300);
+    }
+
+    static boolean noLongNames(HostSession.Player p) {
+        for (Object[] pr : p.subsystemPresses) if (((String) pr[1]).length() > 200) return false;
+        return true;
     }
 
     // 9. A player who floods messages as fast as the link takes them.

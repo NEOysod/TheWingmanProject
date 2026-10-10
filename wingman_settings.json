@@ -130,6 +130,15 @@
     # are made by each PC as before. Needed on both.
     "hostMessages": true,
 
+    # Fighters in their carriers' hangars (joiner): the host's fighters are put in the hangars of your copy of
+    # their carrier, so the carrier panel shows them and carrier scripts (UAF's Rafflesya Control, Isenoria)
+    # find them. Turn off if carriers misbehave on your PC.
+    "fighterHangars": true,
+
+    # MagicLib subsystems follow the joiner: extra abilities on their own keys (UAF and many others) are used
+    # by the joiner's key on the host, instead of by the ship's AI. Needed on both.
+    "joinerSubsystems": true,
+
     # Damage reports: the host reports damage as it happens; a joiner plays out (harmlessly) any damage its
     # own game did not produce, so scripts that react to a ship being hit still react.
     "damageReports": true,

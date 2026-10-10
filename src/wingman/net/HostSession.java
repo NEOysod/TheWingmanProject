@@ -31,6 +31,10 @@ public final class HostSession {
         /** Set when the player transferred command; the plugin decides whether the ship is free. */
         public boolean hasClaim;
         public int claim = -1, claimSeq;
+        /** MagicLib subsystems this player switched on, waiting for the game thread: ship net id, subsystem class. */
+        public final java.util.List<Object[]> subsystemPresses = new java.util.ArrayList<Object[]>();
+        long subsystemWindow;
+        int subsystemsInWindow;
         /** Ready-check report from this player. */
         public boolean ready;
         public int built, skipped;
@@ -283,6 +287,7 @@ public final class HostSession {
             p.savedAI = null;
             p.prevFlags = 0;
             p.hasClaim = false;
+            p.subsystemPresses.clear();
             p.ready = false;
             p.built = 0;
             p.skipped = 0;
@@ -465,6 +470,17 @@ public final class HostSession {
                         pl.built = in.readInt();
                         pl.skipped = in.readInt();
                         lobbyDirty = true;
+                    }
+                    else if (p.type == Msg.SUBSYSTEM) {
+                        In in = Msg.reader(p.data);
+                        int ship = in.readInt();
+                        String cls = in.readUTF();
+                        long now = System.currentTimeMillis();
+                        if (now - pl.subsystemWindow > 1000) { pl.subsystemWindow = now; pl.subsystemsInWindow = 0; }
+                        // Guard rail: a class name, not a book; and no more presses than fingers can make.
+                        if (cls.length() <= 200 && ++pl.subsystemsInWindow <= 10 && pl.subsystemPresses.size() < 20) {
+                            pl.subsystemPresses.add(new Object[] { ship, cls });
+                        }
                     }
                     else if (p.type == Msg.CLAIM) {
                         In in = Msg.reader(p.data);

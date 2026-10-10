@@ -94,6 +94,10 @@ final class Settings {
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
         ITEMS.add(new Item(2, "hostMessages", "Battle messages follow the host", BOTH, true, YES_NO,
                 "Lines mods' scripts write to the message feed (an objective's hail, a system's warning) come from the host's game, so every screen reads the same. Needed on both."));
+        ITEMS.add(new Item(2, "fighterHangars", "Fighters in their carriers' hangars", JOINER, false, YES_NO,
+                "The host's fighters are put in the hangars of your copy of their carrier: the carrier panel shows them, and carrier scripts find them. Off: if carriers misbehave."));
+        ITEMS.add(new Item(2, "joinerSubsystems", "Extra abilities follow the joiner", BOTH, true, YES_NO,
+                "MagicLib subsystems (extra abilities on their own keys, as on many UAF ships) fire on the host when the joiner presses the key, not by the ship's AI. Needed on both."));
         ITEMS.add(new Item(2, "damageReports", "Damage reports", BOTH, true, YES_NO,
                 "The host reports damage that no weapon accounts for; a joiner plays out what its own game missed. Needed on both."));
 

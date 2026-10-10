@@ -1,4 +1,4 @@
-# The Wingman Project 0.4.2-beta — Release Notes
+# The Wingman Project 0.5-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -156,6 +156,14 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   are sent from the host's game, and a joiner shows those instead of its own scripts' copies, so every screen
   reads the same. The game's own lines (ship destroyed, objective taken) are made on each PC as before. A
   setting turns it off ("Battle messages follow the host", needed on both).
+- **Carriers own their fighters on every screen.** The host's fighters are put in the hangars of the joiner's
+  copy of their carrier, so the carrier panel shows them and carrier scripts (UAF's Rafflesya Control and
+  Isenoria) find them. Setting: "Fighters in their carriers' hangars" (joiner).
+- **MagicLib subsystems** (extra abilities on their own keys, used by UAF and many other mods) follow the
+  joiner: pressing the key on a joiner's PC fires the ability on the host's real ship, and the ship's AI no
+  longer fires it by itself while a player flies it. Setting: "Extra abilities follow the joiner" (both).
+- **Scripts that hand the player another ship** (UAF's Isenoria Manual Override, which passes control to one
+  of its fighters) work for joiners: the joiner is given that fighter, and the host stays in their own ship.
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 
@@ -166,6 +174,8 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
 | **Was a crash, now covered** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign loaded. It now gets a stand-in copied from the host's (cargo, credits, level, skills, story points, simple flags), so these scripts find something. | Mostly. Not copied: the player character itself (if the game has none on the title screen), faction standings, markets, and flags holding anything other than yes/no, numbers or short text. Ship systems and objectives that still crash are switched off on that PC after one crash. |
 | **Was a crash, now covered** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`). | A joiner's copies now belong to stand-in fleets, one per side; the players' side is led by a copy of the host's character. | Yes. Fleet-size bonuses a script works out from that fleet may differ a little from the host's; the key stats are kept equal anyway. |
 | **Crash (joiner)** | Combat scripts that assume the player's ship is a real, armed ship. | A joiner without a ship sits in an invisible stand-in with no weapons; a script that reads its weapons or officer may fail. | Partly: the stand-in is a normal small ship, so most scripts are fine. |
+| **Covered** | Carrier scripts that look at the carrier's own fighters (`getAllWings()`), and carrier panels. | Used to find no fighters on a joiner's copy (greyed carrier panel, effects missing). | Yes: the host's fighters sit in the copy's hangars. |
+| **Covered** | MagicLib subsystems on a joiner's ship. | Used to be fired by the ship's AI on the host whatever the joiner pressed. | Yes: they follow the joiner's key. |
 | **Covered** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | The host notices and tells joiners; a player flying that ship loses it and is told. | Yes. |
 | **Out of step** | Mods that create ship types or variants at runtime from the campaign (procedural hulls, generated skins). | The joiner's game doesn't have that ship type, so the ship is invisible there (it still counts for the ready check). | Reported in the log; the ship is skipped. |
 | **Out of step** | Combat scripts that pick at random (random variant, random proc, random target). | Each PC picks differently, so visuals can differ. Damage, positions and deaths are always the host's. | Damage and deaths: yes. Visuals: no. |
