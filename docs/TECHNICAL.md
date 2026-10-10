@@ -748,6 +748,11 @@ values (`Snapshot.bad`: beyond ±10⁷) refused or clamped; controls with bad nu
 **Limits on load:** joiner shows at most 2,000 missiles, 800 fighters, 200 wrecks, 600 asteroids; host tracks 150
 wrecks; scripted shot reports 120/s; damage reports 120 per message.
 
+**Not matched on purpose:** wreck break lines. The host's game works out all of a dying ship's pieces at once
+(the obfuscated break-up helper `combat.entities.H`, dice from `Tesselator`'s private static `Random`); a
+joiner's `splitShip()` cuts its own line on demand. Matching them would mean driving `H` on joiners with replayed
+dice; judged not worth the crash risk for a cosmetic difference.
+
 **Not covered:** encryption (all traffic is plain; play over a private VPN); objectives created mid-battle; mods that
 keep overriding every ship's AI; ship types created at runtime from the campaign.
 

@@ -119,6 +119,8 @@ needs editing by hand, and every setting has a short explanation on the settings
   with the host.
 - Fleet-wide skills whose strength depends on fleet size come out at full strength on a joiner's copy. Speed,
   range, flux and the other kept-equal stats are corrected to the host's either way.
+- Wrecks break up at the same moment on every screen, but the break lines are the game's own random pick on
+  each PC, so the pieces can be shaped a little differently. Where pieces are and which exist follow the host.
 - Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. If a game update breaks it,
   the mission **Wingman: Join Game** still works.
 
