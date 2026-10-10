@@ -1,0 +1,13 @@
+# Build output (the released jar in jars/ IS committed, so the mod works straight from a download)
+/build/
+
+# Editors and operating systems
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Never commit the game's own files
+starfarer*.jar
+fs.*.jar

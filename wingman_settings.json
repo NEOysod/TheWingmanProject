@@ -1,0 +1,146 @@
+{
+    # Nobody needs to edit this file. Your name and the host's address are typed into the CO-OP panel on the
+    # title screen, and every setting below can be changed in game: F3 in the CO-OP panel, or Ctrl+Shift+O
+    # during a battle. What is changed there is remembered and takes the place of the value in this file
+    # (Delete on a setting there goes back to this file's value). These are the defaults.
+
+    # Your name as other players see it, until you type one into the CO-OP panel. Also the host's name.
+    "playerName": "Player",
+
+    # ---- HOSTING ----
+    # true: every battle you start (mission, simulator, campaign) is open for friends to join.
+    # false: the mod does nothing in your own battles.
+    "hostEnabled": true,
+
+    # Total players including the host. 4 is what the mod is built and tuned for.
+    # You can go up to 16, but more players means more bandwidth and it is not recommended.
+    "maxPlayers": 4,
+
+    # true: once you have deployed, the battle is held paused until every joined player has loaded
+    # all ships and pressed ready, and you press Enter. false: battles start immediately.
+    "readyCheck": true,
+
+    # Mod list check when someone joins. Joiners whose mods differ from yours are refused and told why.
+    #   "content": mods must match in id and version, except mods marked as utility (UI and tools)
+    #   "all":     every enabled mod must match, utility mods included
+    #   "off":     no check
+    "modCheck": "content",
+
+    # How many times per second the host sends positions, at most (never more than the host's own frame
+    # rate). 60 is the smoothest and uses the most bandwidth; 20-30 is plenty on a weak connection.
+    "snapshotRate": 60,
+
+    # true: every ship, fighter and missile in view is sent in every update: smoothest, most bandwidth.
+    # false: things that are simply carrying on as before are skipped, and fighters go in every other
+    # update: about a third of the bandwidth, a little less smooth.
+    "sendEverything": true,
+
+    # true: each position update carries only what has changed since the one before (a ship's position by a
+    # few units, its heading by a degree), instead of every value in full. About a third of the size, and
+    # nothing is lost: joiners rebuild exactly the host's numbers. false: the older, larger format.
+    "compactUpdates": true,
+
+    # true: the whole connection is compressed, in each direction, if the other side can read it. Roughly
+    # halves what is left after "compactUpdates". Costs a little processor time off the game's own thread.
+    "compressLink": true,
+
+    # true: position updates (host to joiner) and controls (joiner to host) travel by UDP where it gets
+    # through, on the same port number as below. A lost packet then costs one update instead of freezing
+    # everything behind it. Everything else stays on TCP, and so do updates whenever UDP is blocked or stops
+    # working: the mod finds that out by itself. Set on both PCs. false: TCP only, as before.
+    "useUdp": true,
+
+    # true: enemy ships, fighters and missiles that nobody on your side can see (they are in the fog of war,
+    # not on anyone's radar) are only reported to joiners about once a second instead of constantly, and in
+    # full again the moment they come into view. Saves bandwidth in big battles. An enemy that is firing or
+    # being hit is always reported. false: everything is reported all the time.
+    "trimUnseen": true,
+
+    # Join password. Empty: anyone who can reach this PC on the port below can join.
+    # Set one if you host on a shared virtual LAN (a public Radmin or Hamachi network, for example).
+    # Joiners type it into the CO-OP panel.
+    "password": "",
+
+    # The largest ship a joiner may fly: "FRIGATE", "DESTROYER", "CRUISER" or "CAPITAL_SHIP" (no limit).
+    "maxShipSize": "CAPITAL_SHIP",
+
+    # ---- JOINING ----
+    # Only used until an address has been typed into the CO-OP panel, which then takes over.
+    # 127.0.0.1 is this PC itself (two copies of the game on one machine).
+    "hostAddress": "127.0.0.1",
+
+    # true: while you are connected and sitting on the title screen, you are taken into each battle the host
+    # starts, after a three-second countdown (Esc skips that one battle). false: press Enter yourself.
+    "autoJoin": true,
+
+    # true: at the start of a battle you are seated in the ship you flew last time, if it is in the battle and
+    # nobody else has it. You can still choose another in the ready check. false: you always choose.
+    "rememberShip": true,
+
+    # true: P1 (the host, green), P2 (blue), P3 (yellow), P4 (white) next to the ship each player flies.
+    "playerTags": true,
+
+    # true: a thin diamond in the player's colour around the ship each player flies.
+    "playerOutlines": true,
+
+    # Host: true also shows your addresses in the battle's message feed when a battle starts. Off by default
+    # so they don't end up on a stream; they are always in the CO-OP panel and in starsector.log.
+    "announceAddresses": false,
+
+    # Must be the same for everyone. The host needs this TCP port reachable.
+    "port": 24816,
+
+    # Ship systems (by id) that are never switched on from the host's state on this PC. Their ships still
+    # move and take damage as on the host; only the system's own visual effect is missing here. The mod adds
+    # to its own list automatically when a mod's system appears to
+    # have crashed the game (the CO-OP panel shows that list; F5 there clears it). Use this one to rule a
+    # system out by hand. Example: ["some_mod_system_id"]
+    "neverMirrorSystems": [],
+
+    # true: the ship you fly as a joiner moves under your own controls straight away, the way it does in
+    # single player, and is quietly kept in step with the real ship on the host. false: your ship only
+    # moves when the host's answer arrives (the old behaviour; steadier on a very bad connection).
+    "predictOwnShip": true,
+
+    # How much difference from the host's positions a joiner leaves alone before correcting it. Ships,
+    # fighters and missiles are carried along by your own game's physics; a small gap to the host's figure
+    # is allowed to fade by itself, and only a larger one is corrected. 1 is normal (a few units, more for
+    # fast things). Raise toward 2 if things still shake; lower toward 0 to follow the host more exactly.
+    "syncTolerance": 1.0,
+
+    # ---- KEEPING THE TWO GAMES ALIKE (each can be switched off if it causes trouble) ----
+    # Ship stats: speed, turn rate, flux, weapon range, rate of fire and the like are kept equal to the
+    # host's on every copy of a ship. Set on the host to send them and on the joiner to apply them.
+    "syncStats": true,
+
+    # Script memory: the simple values (yes/no, numbers, short text) that mods' scripts keep on a ship or on
+    # the battle are copied from the host. Set on the host to send them and on the joiner to apply them.
+    "syncScriptMemory": true,
+
+    # Damage reports: the host reports damage as it happens; a joiner plays out (harmlessly) any damage its
+    # own game did not produce, so scripts that react to a ship being hit still react.
+    "damageReports": true,
+
+    # Shot counts (joiner): each weapon on a copy of a ship fires exactly as many times as the host's did.
+    "shotCounts": true,
+
+    # Hits by shots from guns that have an on-hit script (an arc, a blast, a mod's special effect), on a joiner:
+    #   "match": this PC's own shots hit by themselves and their script runs at once. When the host reports a
+    #            hit, it is compared with this PC's own: if this PC made the same hit (same gun, same target)
+    #            at about the same moment, nothing more happens; if not, the host's hit is played out here.
+    #   "host":  only the host's hits are shown. This PC's own copies of those shots pass through ships.
+    #            Exactly the host's effects and no others, but each appears a moment late.
+    #   "local": each PC judges those hits itself, as it does for ordinary bullets.
+    "scriptedHits": "match",
+
+    # With "match": how long (milliseconds) a hit the host reports waits for this PC's own shot to land before
+    # it is played out from the host's report instead. 30 is about two frames. A weapon on a joiner's screen may
+    # fire up to about a tenth of a second off the host's, which is why the default is 100.
+    "matchWindowMs": 100,
+
+    # ---- TROUBLESHOOTING ----
+    # true: write detailed co-op diagnostics to starsector.log (traffic, targeting, fighters, missiles).
+    # Turn it on (on both PCs) before reproducing a problem you want to report; it costs a few lines of log a
+    # second. Off by default.
+    "debugLog": false
+}

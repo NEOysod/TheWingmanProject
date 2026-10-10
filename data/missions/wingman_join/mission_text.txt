@@ -1,0 +1,10 @@
+Location: wherever the host is fighting
+Date: now
+
+Join a friend's battle.
+
+The host starts their battle first. Then click this mission: it contacts the host at that moment to copy the battlefield's size, and the first briefing line tells you what it found. If it says the host is not in a battle yet, click another mission and then this one again once they are.
+
+Deploy the single stand-in ship. It is invisible; you start as a spectator. Target any friendly ship and use Transfer Command to take the helm, and again whenever you want a different ship.
+
+The first time, a join screen asks for the host's address and your name once the battle loads: type them and press Enter. They are remembered, so from then on this mission connects by itself; the screen only comes back if the host can't be reached. After typing a new address, start this mission once more so it can copy that host's battlefield.
