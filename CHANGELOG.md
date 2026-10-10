@@ -38,7 +38,13 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   player's fighter; on the host that took the joiner's controls away for half a second at a time, long enough to be
   recalled. A fighter a joiner flies now gets their controls back the same frame, and if the carrier's script
   took them before the fighter moved (the game moves ships in its own order), the joiner's commands are given to
-  the fighter directly at the start of the next frame, so it never drifts ("parked") or flies home by itself. (Use "Switch back to Isenoria"
+  the fighter directly at the start of the next frame, so it never drifts ("parked") or flies home by itself.
+- **Fixed: a joiner in a Rafflesya could shoot but not move.** When a joiner took a fighter, the host gave their
+  carrier to its AI, and Isenoria's AI switches Rafflesya Control off whenever it has no target; the carrier's dock
+  script then recalls every Rafflesya and holds it on the landing pad (in single player the player's own fighter
+  is exempt as "the player's ship"; a joiner's isn't). Now, while a joiner flies a fighter from their own carrier,
+  the host holds the carrier as they left it, systems untouched, slowing to a stop, until they come back to it or
+  take another ship. (Use "Switch back to Isenoria"
   to send it home to rearm, as in single player.)
 - **Speed bursts look and feel right** (Super Nakiha's Dimensional Drift and other systems that multiply speed).
   Other ships: while a system runs, a copy is no longer carried on along its (wild) acceleration, and is held close

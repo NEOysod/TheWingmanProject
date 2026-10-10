@@ -24,6 +24,8 @@ public final class HostSession {
         public int shipNetId = -1;
         /** Game-side scratch space (the assigned ship and its original AI). */
         public Object ship, savedAI;
+        /** The carrier held for this player while they fly one of its fighters (see CarrierHoldAI), or null. */
+        public Object heldCarrier;
         public int prevFlags;
         /** The retreat requests seen in this player's controls last frame, to act on each one once. */
         public int retreatFlags;

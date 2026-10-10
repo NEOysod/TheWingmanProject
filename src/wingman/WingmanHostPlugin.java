@@ -1871,7 +1871,17 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             } else if (pilotOf(s) != null) {
                 p.conn.send(Msg.NOTICE, Msg.utf(pilotOf(s).name + " is already flying that ship."));
             } else {
-                releaseShip(p);
+                ShipAPI from = (ShipAPI) p.ship;
+                if (s.isFighter() && from != null && linked(s, from) && from.isAlive() && !onAutopilot.contains(p.id)) {
+                    // Into a fighter from their own carrier: the carrier is held as they left it (see CarrierHoldAI).
+                    releaseCarrier(p, null);
+                    from.setShipAI(new CarrierHoldAI(from));
+                    p.heldCarrier = from;
+                    p.ship = null;
+                    p.savedAI = null;
+                } else {
+                    releaseShip(p);
+                }
                 p.ship = s;
                 p.shipNetId = p.claim;
                 p.input.flags = 0;
@@ -1936,6 +1946,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     }
 
     private void releaseShip(HostSession.Player p) {
+        releaseCarrier(p, null);
         ShipAPI s = (ShipAPI) p.ship;
         if (s != null && s.isAlive() && !s.isHulk()) {
             // getShipAI() hands back a wrapper, not the original AI, so it can't simply be put back.
@@ -1944,5 +1955,13 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         p.ship = null;
         p.savedAI = null;
         onAutopilot.remove(p.id);
+    }
+
+    /** The carrier held for a player (see CarrierHoldAI) goes back to its own AI, unless it is the ship they now fly. */
+    private void releaseCarrier(HostSession.Player p, ShipAPI keep) {
+        ShipAPI c = (ShipAPI) p.heldCarrier;
+        p.heldCarrier = null;
+        if (c == null || c == keep) return;
+        try { if (c.isAlive() && !c.isHulk() && pilotOf(c) == null) c.resetDefaultAI(); } catch (Throwable t) { /* gone with the battle */ }
     }
 }
