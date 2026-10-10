@@ -159,6 +159,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int skippedShips;
     /** Host ships and fighters that could not be built here (missing content, or over the cap): id -> is a fighter. */
     private final Map<Integer, Boolean> skippedIds = new HashMap<Integer, Boolean>();
+    /** Hulls a mod's script failed to build here (logged once each). */
+    private final java.util.Set<String> spawnErrors = new java.util.HashSet<String>();
     private final SystemWatch watch = SystemWatch.get();
     private boolean halted;
     private final List<MissilePuppet> recentBuilt = new ArrayList<MissilePuppet>();
@@ -1690,7 +1692,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         lastState = ClientLink.State.IDLE;
         link.connect(host, port, name, Mods.enabled(), Mods.gameVersion(), form.password.toString().trim());
         lastSnapshotAt = System.currentTimeMillis();
-        Global.getLogger(WingmanClientPlugin.class).info("Wingman join screen: connecting to " + host + ":" + port + " as " + name);
+        Global.getLogger(WingmanClientPlugin.class).info("Wingman join screen: connecting to the host as " + name);
     }
 
     /**
@@ -2037,7 +2039,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } else {
             ship = isFighter ? null : takeLocalShip(sp);
             if (ship == null) {
-                ship = isFighter ? spawnFighter(sp) : spawnShip(sp);
+                try {
+                    ship = isFighter ? spawnFighter(sp) : spawnShip(sp);
+                } catch (RuntimeException e) {
+                    // A mod's script failed while the ship was being built here (a hullmod reading something a
+                    // joiner's game lacks). It is counted as a ship we can't show, like an unknown hull, so the
+                    // battle check doesn't ask the host for everything again and again over it.
+                    if (spawnErrors.add(sp.hullId)) {
+                        Global.getLogger(WingmanClientPlugin.class).warn("Wingman: a mod's script failed while a " + sp.hullId
+                                + " was being built on this PC; that ship is not shown here", e);
+                    }
+                    ship = null;
+                }
                 if (ship != null && !isFighter && sp.kind == ShipSpawn.SHIP && sp.moduleIds.isEmpty()) builtNow = true;
             }
         }
@@ -3035,9 +3048,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 m.getLocation().set(point.x, point.y);
                 com.fs.starfarer.api.loading.MissileSpecAPI spec = m.getSpec();
                 com.fs.starfarer.api.combat.OnHitEffectPlugin script = spec == null ? null : spec.getOnHitEffect();
-                if (script != null) {
+                // As for shots: the host only names ships. Something else (a missile, an asteroid, a ship not
+                // shown here) is whatever of that sort is at the spot; with nothing there, on-hit scripts (which
+                // expect a target) are not run.
+                CombatEntityAPI struck = mp.hitTarget != null ? mp.hitTarget : nearestSmallThing(point.x, point.y, 90f);
+                if (script != null && struck != null) {
                     try {
-                        script.onHit(m, mp.hitTarget, point, mp.hitShield, new NoDamage(), engine);
+                        script.onHit(m, struck, point, mp.hitShield, new NoDamage(), engine);
                     } catch (Throwable t) {
                         if (!hitScriptWarned) {
                             hitScriptWarned = true;

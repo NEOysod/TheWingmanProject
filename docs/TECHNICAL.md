@@ -397,8 +397,8 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 
 - **`spawn`:** modules are held until their ship arrives and then set into its variant, so the game builds the
   whole ship at once; children are matched to their spawns by slot. Fighters beyond 800 are dropped. A ship that
-  can't be built (missing mod content) is counted in `skippedIds` with its modules, so the ready check and drift
-  check still balance.
+  can't be built (missing mod content, or a mod's script throwing while it is built: logged once per hull) is
+  counted in `skippedIds` with its modules, so the ready check and drift check still balance.
 - **`buildVariant`:** hull spec, vents, capacitors, hullmods the way the host has them (so their scripts give the
   same effects), weapons by slot (forced again where a hullmod or script placed something else), wings, weapon
   groups.

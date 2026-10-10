@@ -356,7 +356,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             lastState = ClientLink.State.IDLE;
             JoinSetup.rejectReason = null;
             link.connect(cfg.hostAddress, cfg.port, cfg.playerName, Mods.enabled(), Mods.gameVersion(), cfg.joinPassword);
-            Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: connecting to " + connectedTo + " as " + cfg.playerName);
+            Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: connecting to the host as " + cfg.playerName);
         } catch (Throwable t) {
             fail(t);
         }

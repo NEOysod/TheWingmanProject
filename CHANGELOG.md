@@ -13,6 +13,16 @@ Protocol 45: everyone in a game needs 0.5. Includes everything in 0.4.2.
   ship was made in battle). The mod asks where the player fleet is, to look for star coronas; the stand-in
   campaign's fleet was nowhere. It is now put in an empty star system of its own (in hyperspace when the host
   fights there), which is taken away with the rest of the stand-in.
+- **Fixed: joiners' battles kept refreshing over one ship.** When a mod's script failed while a ship was being
+  built on a joiner's PC (the Arma Armatura crash above), the ship was missing there, the battle check saw one
+  ship too few and asked the host for the whole battle again every ~27 seconds, five times. A ship that fails to
+  build is now counted as one that can't be shown (logged once per hull), like a ship from a mod the joiner
+  lacks, so it causes no refreshes.
+- **Fixed: missile on-hit scripts run with no target on joiners** (UAF's Chorus nuke error in the log). When the
+  host's missile hit something that isn't a ship here, the script was handed nothing; it now gets the missile or
+  asteroid at that spot, or is not run.
+- **No IP address in the log, again:** the "connecting to" line on the title screen and join screen still wrote
+  the host's address (missed in 0.4.1).
 - **Controls kept after a mod resets a ship's AI.** If any mod's script gives a joiner's ship a new AI on the
   host, Wingman puts the joiner back in control within half a second (not while the ship is landing, landed,
   retreating or locked by the game).
