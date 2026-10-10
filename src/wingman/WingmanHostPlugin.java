@@ -182,13 +182,11 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
         if (cfg.password.isEmpty()) Ui.say(engine, "Co-op: no join password is set, so anyone who can reach this PC on port " + cfg.port
                 + " can join. Set a join password in the settings (Ctrl+Shift+O) to change that.");
-        // The addresses go to the log only: a battle on screen (or on a stream) is no place to show them.
-        // Players find them in the CO-OP panel on the title screen.
-        // (Unless the host asks for it: then they are shown in the feed, as before.)
-        String mine = myAddresses();
-        if (!mine.isEmpty()) {
-            Global.getLogger(WingmanHostPlugin.class).info("Wingman: this PC's addresses for joiners: " + mine);
-            if (cfg.announceAddresses) Ui.say(engine, "Co-op: friends type one of these into the join screen: " + mine);
+        // Addresses are never written to the log, so a log can be shared without them. Players find them in the
+        // CO-OP panel on the title screen; the host can also have them shown in the feed (never logged).
+        if (cfg.announceAddresses) {
+            String mine = myAddresses();
+            if (!mine.isEmpty()) Ui.show(engine, "Co-op: friends type one of these into the join screen: " + mine);
         }
         Global.getLogger(WingmanHostPlugin.class).info("Wingman network: " + wingman.net.Transport.describe());
         return true;

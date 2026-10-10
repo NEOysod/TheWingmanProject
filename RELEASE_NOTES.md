@@ -1,4 +1,4 @@
-# The Wingman Project 0.4-beta — Release Notes
+# The Wingman Project 0.4.1-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -200,8 +200,9 @@ you play.
 - **The connection is not encrypted, and players are not verified.** A name is just text. The join password
   crosses the network as plain text, so anyone on the same network could see it. Playing over a private
   virtual LAN (Radmin VPN, Tailscale, ZeroTier) is much safer than forwarding a port on your router.
-- **Your addresses are shared.** Joiners know the host's address and the host sees theirs. Log files
-  (`starsector.log`) contain addresses and player names: check them before posting them anywhere public.
+- **Your addresses are shared.** Joiners know the host's address and the host's PC sees theirs. Wingman keeps
+  IP addresses out of `starsector.log` (player names are in it), but other mods may not: glance over a log
+  before posting it anywhere public.
 - **In a campaign battle, ships flown by friends are at stake.** A ship a joiner loses, by accident or on
   purpose, is lost for real.
 - **Built-in guard rails** (tested with a hostile fake player): nothing received over the network is

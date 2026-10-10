@@ -58,7 +58,7 @@ final class Settings {
         ITEMS.add(new Item(0, "playerOutlines", "Outline around players' ships", BOTH, true, YES_NO,
                 "On: a thin diamond in the player's colour around each player's ship (shown with the tags)."));
         ITEMS.add(new Item(0, "announceAddresses", "Show my addresses in battle", HOST, false, YES_NO,
-                "On: when a battle starts, your addresses are shown in the message feed. Off: only in the CO-OP panel and the log (safer on a stream)."));
+                "On: when a battle starts, your addresses are shown in the message feed. Off: only in the CO-OP panel (safer on a stream). Never written to the log."));
         ITEMS.add(new Item(0, "port", "Port", BOTH, false, null,
                 "Type a number. Must be the same for everyone; the host needs this TCP port reachable. Normally 24816."));
 

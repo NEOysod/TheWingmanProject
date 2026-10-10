@@ -84,7 +84,8 @@
     "playerOutlines": true,
 
     # Host: true also shows your addresses in the battle's message feed when a battle starts. Off by default
-    # so they don't end up on a stream; they are always in the CO-OP panel and in starsector.log.
+    # so they don't end up on a stream; they are always in the CO-OP panel. They are never written to
+    # starsector.log.
     "announceAddresses": false,
 
     # Must be the same for everyone. The host needs this TCP port reachable.

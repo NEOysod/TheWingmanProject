@@ -43,6 +43,7 @@ public final class ClientLink {
     public synchronized void connect(final String address, final int port, final String playerName,
             final ModList mods, final String gameVersion, final String password) {
         if (state == State.CONNECTING) return;
+        Redact.alsoHide(address); // a host name typed in stays out of the log too
         disconnect();
         state = State.CONNECTING;
         Thread t = new Thread(new Runnable() {
@@ -75,10 +76,10 @@ public final class ClientLink {
                     conn = c;
                     state = State.CONNECTED;
                 } catch (IOException e) {
-                    error = "Could not reach " + address + ":" + port + " (" + e.getMessage() + ")";
+                    error = "Could not reach the host (" + Redact.scrub(String.valueOf(e.getMessage())) + ")";
                     state = State.FAILED;
                 } catch (Throwable e) { // anything else, such as the game's sandbox refusing a class
-                    error = "Could not connect: " + e;
+                    error = "Could not connect: " + Redact.scrub(String.valueOf(e));
                     state = State.FAILED;
                 }
             }

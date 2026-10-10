@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1-beta
+Same protocol as 0.4 (43): 0.4 and 0.4.1 play together.
+
+- **No IP addresses in the log.** The host's own addresses are no longer written to `starsector.log` (they are
+  still in the CO-OP panel), connection messages say "the host" instead of the address, and anything else
+  logged has addresses (and the host name typed into the join form) replaced with `[address]`. Logs can be
+  shared for bug reports without giving away anyone's address.
+
 ## 0.4-beta
 Protocol 43: everyone in a game needs 0.4.
 

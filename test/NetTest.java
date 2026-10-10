@@ -553,6 +553,13 @@ public class NetTest {
                 && og.assignments.size() == 2 && og.assignments.get(0).members.get(1) == 9 && og.assignments.get(1).x == 1234.5f
                 && og.assignments.get(1).key().equals(near.key()) && !og.assignments.get(0).key().equals(og.assignments.get(1).key()));
 
+        // addresses never reach the log
+        wingman.net.Redact.alsoHide("friend.ddns.net");
+        String red = wingman.net.Redact.scrub("Could not reach 26.14.3.7:24816 or [fe80::1%eth0]:24816 or 2001:db8:85a3::8a2e:370:7334, host friend.ddns.net, at 12:30, 4 ships");
+        check("addresses scrubbed: " + red, !red.contains("26.14") && !red.contains("fe80") && !red.contains("2001:db8") && !red.contains("ddns")
+                && red.contains("12:30") && red.contains("4 ships"));
+        wingman.net.Redact.alsoHide("");
+
         // new battle -> everyone told to reset
         host.beginBattle();
         check("new battle sends reset and clears ready", waitFor(clients.get(2), Msg.RESET, host) != null && host.getPlayers().get(2).needsSync && !host.getPlayers().get(1).ready);

@@ -339,7 +339,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (state != lastState) {
             if (state == ClientLink.State.CONNECTED && joinScreen) {
                 joinScreen = false;
-                Ui.say(engine, "Co-op: connected to " + form.address + ".");
+                Ui.say(engine, "Co-op: connected to the host.");
             }
             if (state == ClientLink.State.FAILED && !welcomed && !rejected) {
                 // Could not get through: back to the join screen with the reason, to correct the address and retry.
@@ -360,7 +360,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     engine.setPaused(true);
                     lobby = null;
                     Ui.say(engine, "Co-op: connection to the host lost (" + link.getError() + "). Trying to reconnect...");
-                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: connection lost (" + link.getError() + "); reconnecting");
+                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: connection lost (" + wingman.net.Redact.scrub(link.getError()) + "); reconnecting");
                     showReconnect(true);
                 }
                 nextReconnectAt = System.currentTimeMillis() + 3000;

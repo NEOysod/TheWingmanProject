@@ -14,6 +14,6 @@ final class Dbg {
     private Dbg() {}
 
     static void info(Class<?> where, String text) {
-        if (on) Global.getLogger(where).info(text);
+        if (on) Global.getLogger(where).info(wingman.net.Redact.scrub(text));
     }
 }

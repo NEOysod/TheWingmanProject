@@ -1,4 +1,4 @@
-# The Wingman Project 0.4 — User Guide
+# The Wingman Project 0.4.1 — User Guide
 
 Co-op for Starsector battles. One player hosts a battle and up to three friends join it, each flying a ship
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong

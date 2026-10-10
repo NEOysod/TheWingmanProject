@@ -745,6 +745,12 @@ per address); password lockout; names cleaned; counts capped in every decoder (s
 notes 5,000; objectives 64; skills 120; cargo 300; flags 600; armor changes ≤ cells); NaN, infinity and absurd
 values (`Snapshot.bad`: beyond ±10⁷) refused or clamped; controls with bad numbers ignored whole.
 
+**Addresses stay out of the log.** No Wingman log line names an IP address: this PC's addresses are shown only
+in the CO-OP panel (and, with `announceAddresses`, in the feed through `Ui.show`, which never logs); connection
+errors say "the host". As a safety net `Redact.scrub` (`wingman.net`) replaces IPv4 and IPv6 addresses, and
+the host name typed into the join form (`Redact.alsoHide`), with `[address]` in everything `Ui.say` and `Dbg`
+log and in connection errors.
+
 **Limits on load:** joiner shows at most 2,000 missiles, 800 fighters, 200 wrecks, 600 asteroids; host tracks 150
 wrecks; scripted shot reports 120/s; damage reports 120 per message.
 

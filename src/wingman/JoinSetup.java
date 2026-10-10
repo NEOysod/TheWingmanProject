@@ -125,7 +125,7 @@ public final class JoinSetup {
             while (link.getState() == ClientLink.State.CONNECTING && System.currentTimeMillis() < until) Thread.sleep(20);
         }
         if (link.getState() != ClientLink.State.CONNECTED) {
-            info.status = "Host not reachable at " + cfg.hostAddress + ":" + cfg.port + ". Using a large default map.";
+            info.status = "Host not reachable at the address in the CO-OP panel. Using a large default map.";
             return;
         }
         Conn c = link.getConn();

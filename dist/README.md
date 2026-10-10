@@ -1,4 +1,4 @@
-# The Wingman Project 0.4-beta
+# The Wingman Project 0.4.1-beta
 
 **Co-op multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and each
 fly a ship from the host's fleet, side by side, in real time.
@@ -62,8 +62,8 @@ explanation on the settings page.
 - **"Wrong password" / "Too many wrong passwords":** check the password with the host. After 3 wrong tries,
   wait 30 seconds.
 - **Anything else:** turn on "Detailed log for bug reports" in the settings (Troubleshooting page) on both
-  PCs, make it happen again, and send both `starsector.log` files (in the `starsector-core` folder). Logs
-  contain IP addresses, so send them privately.
+  PCs, make it happen again, and send both `starsector.log` files (in the `starsector-core` folder). Wingman
+  keeps IP addresses out of the log; player names are in it.
 
 ## Safety
 
