@@ -501,6 +501,11 @@ firing bit clears.
   (it winds down and starts its real cooldown), `forceState` only after 0.3 s more. A forced COOLDOWN is given the
   system's full cooldown if it came with none, so it doesn't read as idle at once (UAF's Isenoria ends its fighter
   hand-over when Rafflesya Control is neither on nor cooling down).
+- **Teleporters on other ships** (spec type containing `DISPLACER` or `TELEPORTER`, e.g. Phase Skimmer, or the
+  game's teleporter class) are never run on the copy. Their look is drawn instead (`teleportLook`,
+  `teleportTrail`): the spec's jitter (colour, copies, range; defaults if none) while the host's stage is IN, ACTIVE
+  or OUT, its use sound when that starts, and when the copy snaps on a detected jump (over 100 units) an afterimage
+  where it stood (0.5 s fade; the sound too if the stages were missed).
 - **Starting from rest:** `useSystem()` first (a teleporter decides its destination at that moment), `forceState`
   only as a fallback and never for teleporter-class systems; teleporters and drone systems on other ships are left
   alone (their positions come from the host).

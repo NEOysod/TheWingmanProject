@@ -95,6 +95,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean[] counted;      // per weapon: the host has sent a shot count for it at least once
         float[] lastCooldown, lastShotAt, aheadSince;
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
+        boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
+        float blinkSeen = -100f; // when it last was
         boolean probing;        // diagnostics: leave this puppet completely alone for a frame
     }
 
@@ -1834,7 +1836,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -3695,6 +3697,68 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         return 0f;
     }
     private int systemsForced, systemsStarted, systemsStopped;
+
+    // ---- How a teleport looks on someone else's ship ----
+    // A teleporter (vanilla Phase Skimmer, mods' blinks) is never run on a copy of someone else's ship: the copy
+    // can't know where the real one is going, and the game fails if one is pushed into its stages. So none of its
+    // look appeared either: the copy simply turned up where the host's was. It is drawn here instead, from the
+    // system's own description: its shimmer while the host's system runs, its sound when it starts, and a fading
+    // image left where the ship jumped from.
+    private static final Object BLINK = new Object();
+    private static final java.awt.Color BLINK_COLOR = new java.awt.Color(150, 110, 255, 170);
+    private boolean blinkBroken;
+
+    private void teleportLook(Puppet pp, Snapshot.ShipState t) {
+        if (blinkBroken) return;
+        try {
+            ShipSystemAPI sys = pp.ship.getSystem();
+            if (sys == null || !teleports(sys)) return;
+            boolean on = t.system >= 1 && t.system <= 3; // charging up, on, or charging down on the host
+            com.fs.starfarer.api.combat.ShipSystemSpecAPI spec = sys.getSpecAPI();
+            if (on) {
+                if (!pp.blinking) {
+                    String sound = spec == null ? null : spec.getUseSound();
+                    if (sound != null && !sound.isEmpty()) Global.getSoundPlayer().playSound(sound, 1f, 1f, pp.ship.getLocation(), pp.ship.getVelocity());
+                }
+                java.awt.Color c = spec == null ? null : spec.getJitterEffectColor();
+                if (c == null && spec != null) c = spec.getEffectColor1();
+                if (c == null) c = BLINK_COLOR;
+                int copies = spec == null || spec.getJitterCopies() <= 0 ? 5 : spec.getJitterCopies();
+                float range = spec == null || spec.getJitterRange() <= 0f ? 10f : spec.getJitterRange();
+                float level = t.system == 2 ? 1f : Math.max(0.2f, t.systemLevel);
+                pp.ship.setJitter(BLINK, c, level, copies, range);
+                pp.blinkSeen = clock;
+            }
+            pp.blinking = on;
+        } catch (Throwable th) {
+            blinkBroken = true;
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman: teleport effects on other ships can't be drawn here", th);
+        }
+    }
+
+    /** The copy of a teleporting ship has just been moved to where the host's arrived: leave an image where it was. */
+    private void teleportTrail(Puppet pp, float offX, float offY) {
+        if (blinkBroken || offX * offX + offY * offY < 100f * 100f) return;
+        try {
+            ShipSystemAPI sys = pp.ship.getSystem();
+            if (sys == null || !teleports(sys)) return; // some other jump (a script moved it): nothing to draw
+            com.fs.starfarer.api.combat.ShipSystemSpecAPI spec = sys.getSpecAPI();
+            java.awt.Color c = spec == null ? null : spec.getJitterEffectColor();
+            if (c == null && spec != null) c = spec.getEffectColor1();
+            if (c == null) c = BLINK_COLOR;
+            // offset from where the ship now is, standing still, fading out over half a second
+            pp.ship.addAfterimage(c, offX, offY, 0f, 0f, 5f, 0f, 0.1f, 0.5f, true, true, false);
+            if (clock - pp.blinkSeen > 1f) { // its system's stages were missed (a short one): its sound at least
+                String sound = spec == null ? null : spec.getUseSound();
+                if (sound != null && !sound.isEmpty()) Global.getSoundPlayer().playSound(sound, 1f, 1f, pp.ship.getLocation(), pp.ship.getVelocity());
+            }
+            blinksDrawn++;
+        } catch (Throwable th) {
+            blinkBroken = true;
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman: teleport effects on other ships can't be drawn here", th);
+        }
+    }
+    private int blinksDrawn;
     private final LocalDamage localDamage = new LocalDamage();
     private boolean statsBroken, hurtsBroken, damageListening;
     private int frame, statFixes, notesApplied, hurtsSeen, hurtsPlayed, shotsMadeUp, shotsHeld;
@@ -3716,8 +3780,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (known != null) return known;
             boolean yes = teleporters.contains(sys.getClass().getName());
             try {
-                String type = sys.getSpecAPI().getSpecJson().optString("type", "");
-                if ("DISPLACER".equalsIgnoreCase(type) || "TELEPORTER".equalsIgnoreCase(type)) yes = true;
+                // The game's own kinds are PHASE_DISPLACER (Phase Skimmer) and PHASE_TELEPORTER; mods may use those or others.
+                String type = sys.getSpecAPI().getSpecJson().optString("type", "").toUpperCase(java.util.Locale.ROOT);
+                if (type.contains("DISPLACER") || type.contains("TELEPORTER")) yes = true;
             } catch (Throwable th) { /* the class name decides */ }
             if (yes) teleporters.add(sys.getClass().getName());
             if (id != null) teleportsById.put(id, yes);
@@ -3930,8 +3995,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
             float tol = pp.fighter ? 5f + speed * 0.06f : 3f + speed * 0.05f;
             k = err > 500f || pp.jumped ? 1f : closing(err, tol * slack, amount, pp.fighter ? 14f : 10f);
+            boolean leapt = pp.jumped && k >= 1f;
             pp.jumped = false;
+            float fromX = loc.x, fromY = loc.y;
             if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
+            if (leapt) teleportTrail(pp, fromX - loc.x, fromY - loc.y);
             Vector2f vel = ship.getVelocity();
             float vb = amount <= 0f ? 1f : Math.min(1f, amount * 25f); // speed changes are taken up over a few frames
             float wvx = t.vx + t.ax * aa, wvy = t.vy + t.ay * aa;
@@ -4015,6 +4083,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (!systemsBroken) {
             try {
                 pp.systemOff = followSystem(ship, ship.getSystem(), t.system, t.systemLevel, own, pp.systemOff, amount);
+                if (!own && !pp.module) teleportLook(pp, t);
                 pp.cloakOff = followSystem(null, ship.getPhaseCloak(), t.cloak, t.cloakLevel, own, pp.cloakOff, amount);
                 // Backstop for "can it be hit": phased or not is the host's call for every ship but the one in our hands.
                 boolean phased = (t.flags & Snapshot.F_PHASED) != 0;

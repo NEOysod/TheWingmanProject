@@ -22,6 +22,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   copies are now switched off the proper way, with their real cooldown. A note goes in the joiner's log if a
   hand-over still ends within 5 seconds.
 - Fixed: a joiner flying a fighter could send the host a retreat order for it.
+- **Teleports show on joiners' screens.** Other ships' Phase Skimmers (the Wolf's) and other teleporters are not
+  run on a joiner's copy (it can't know where the real ship goes), so the copy just popped to its new place. Their
+  look is now drawn: the system's shimmer while it runs, its sound, and a fading image where the ship jumped from.
+  The game's own teleporter kinds (PHASE_DISPLACER, PHASE_TELEPORTER) are also recognised by name now.
 - **Traffic in the log.** The host and joiners now write one short line every two minutes with what the mod sent
   and received (and, on joiners, how unevenly updates arrived), so playtest logs show real figures.
 - For developers: `test/SyncBench.java` measures bandwidth and smoothness on a simulated battle.
