@@ -311,7 +311,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 }
             }
             if (settings.open) {
-                settings.keys(events);
+                try {
+                    settings.keys(events);
+                } catch (Throwable t) { // close the page, keep the CO-OP button
+                    settings.open = false;
+                    Global.getLogger(WingmanTitlePlugin.class).error("Wingman: the settings page failed and was closed", t);
+                }
                 settings.changed.clear();
                 if (!settings.open) cfg = WingmanConfig.load(); // closed: the panel shows the new state of things
                 return;
@@ -429,8 +434,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
             if (settings.open) {
-                settings.lines(lines, colors);
-                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), settings.title(), lines, colors, settings.footer());
+                try {
+                    settings.lines(lines, colors);
+                    panel.renderBelow(bx() + W, by() - 6f, boxWidth(), settings.title(), lines, colors, settings.footer());
+                } catch (Throwable t) { // close the page, keep the CO-OP button
+                    settings.open = false;
+                    Global.getLogger(WingmanTitlePlugin.class).error("Wingman: the settings page could not be shown and was closed", t);
+                }
                 return;
             }
             if (helpPage >= 0) {

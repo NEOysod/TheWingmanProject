@@ -1892,7 +1892,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             try {
                 settings.lines(lines, colors);
                 panel.render(settings.title(), lines, colors, settings.footer());
-            } catch (Throwable t) { settings.open = false; }
+            } catch (Throwable t) {
+                settings.open = false;
+                Global.getLogger(Panel.class).error("Wingman: the settings page could not be shown and was closed", t);
+            }
             return;
         }
         if (alertTitle != null) {

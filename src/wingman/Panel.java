@@ -24,6 +24,9 @@ final class Panel {
 
     private final Map<String, LabelAPI> cache = new HashMap<String, LabelAPI>();
     private boolean broken;
+    /** Drawing failures in a row; one bad frame is skipped and logged, only a run of them switches panels off. */
+    private int failures;
+    private String lastFailure;
     private String bodyFont;
 
     /** Enter on the main keyboard or the numpad. */
@@ -101,10 +104,23 @@ final class Panel {
             cy = draw(t, x + PAD, cy) - GAP * 2f;
             for (LabelAPI l : body) cy = draw(l, x + PAD, cy) - GAP;
             draw(f, x + PAD, y + PAD + f.getPosition().getHeight());
+            failures = 0;
         } catch (Throwable e) {
             // Drawing is a nicety: the same information also goes to the message feed, so never let it break co-op.
+            failed("panel '" + title + "'", e);
+        }
+    }
+
+    private void failed(String what, Throwable e) {
+        cache.clear(); // a bad label may be what failed: make them afresh
+        String sig = String.valueOf(e);
+        if (!sig.equals(lastFailure)) {
+            lastFailure = sig;
+            Global.getLogger(Panel.class).error("Wingman: drawing the " + what + " failed (skipped this frame)", e);
+        }
+        if (++failures >= 60) {
             broken = true;
-            Global.getLogger(Panel.class).error("Wingman: panel drawing failed, panels disabled", e);
+            Global.getLogger(Panel.class).error("Wingman: drawing keeps failing, panels switched off for this session");
         }
     }
 
@@ -130,8 +146,7 @@ final class Panel {
             top = draw(t, x + 10f, top) - 2f;
             if (u != null) draw(u, x + 10f, top);
         } catch (Throwable e) {
-            broken = true;
-            Global.getLogger(Panel.class).error("Wingman: button drawing failed, panels disabled", e);
+            failed("button", e);
         }
     }
 
