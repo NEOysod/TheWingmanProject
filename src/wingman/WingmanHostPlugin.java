@@ -1780,9 +1780,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                     + ": AI " + ai + ", controls locked " + s.controlsLocked() + ", landing " + (s.isLanding() || s.isFinishedLanding())
                     + ", docked " + docked + ", drones out " + drones + ", system " + (sys == null ? "none" : sys.getId() + " " + sys.getState())
                     + ", ammo [" + ammo + "], wing returning " + (s.getWing() != null && s.getWing().isReturning(s))
-                    + (p.savedAI instanceof RemotePilotAI ? ", weapon groups " + ((RemotePilotAI) p.savedAI).liveGroups + ", joiner's group "
-                        + (((RemotePilotAI) p.savedAI).reportGroup + 1) + (((RemotePilotAI) p.savedAI).lastFire ? " firing" : "")
-                        + ", fired from the loadout " + ((RemotePilotAI) p.savedAI).loadoutFires + " times" + ", fire presses " + ((RemotePilotAI) p.savedAI).pressesSeen + " (last: " + ((RemotePilotAI) p.savedAI).lastPress + "), shots launched by hand " + ((RemotePilotAI) p.savedAI).shotsLaunched : ""));
+                    + (p.savedAI instanceof RemotePilotAI ? ", weapon groups " + ((RemotePilotAI) p.savedAI).guns.liveGroups + ", joiner's group "
+                        + (((RemotePilotAI) p.savedAI).guns.reportGroup + 1) + (((RemotePilotAI) p.savedAI).guns.lastFire ? " firing" : "")
+                        + ", fired from the loadout " + ((RemotePilotAI) p.savedAI).guns.loadoutFires + " times" + ", fire presses " + ((RemotePilotAI) p.savedAI).guns.pressesSeen + " (last: " + ((RemotePilotAI) p.savedAI).guns.lastPress + "), shots launched by hand " + ((RemotePilotAI) p.savedAI).guns.shotsLaunched : ""));
         } catch (Throwable t) { /* a report is not worth an error */ }
     }
     private int fightersFlownHere;

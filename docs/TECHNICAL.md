@@ -365,8 +365,24 @@ frame:
     the ship will coast (relaying turn keys fought the game's own steering in strafe mode);
   - the cursor becomes the ship's mouse target (read by teleporters, omni shields and mod scripts), and the
     system-target AI flags are answered for vanilla system scripts;
-  - the selected weapon group is requested every frame until it holds; its turrets track the cursor within their
-    arcs; fire through the group, or `setForceFireOneFrame` if the ship ignores fire for 0.35 s;
+  - **weapons** (`GroupFire`), modelled on the game's own code (`combat.systems.WeaponGroup`, `Ship`):
+    - the FIRE order fires the ship's *selected* group, so the joiner's group in hand is selected every frame
+      until it holds (selection is carried out before the same frame's fire order); its turrets track the cursor
+      within their arcs (`trackCursor`);
+    - a group with autofire on is fired by its weapon AI and ignores the button, except on the local player's
+      ship; so the group in hand has its autofire switch off here, the other groups follow the joiner's switches;
+    - linked: every weapon whose arc covers the cursor or that always fires (turret, arc over 10 degrees, not
+      DO_NOT_AIM/GUIDED_POOR); if none, the closest one;
+    - alternating: the active weapon fires; it moves on at release, and while held every (burst + refire +
+      charge-up, or a burst beam's burst + cooldown + charge-up/down) / weapons / rate-of-fire bonus seconds;
+      the game does that held rotation only for the local player's ship, so the host does it
+      (`WeaponGroup.setCurrentActive`, public on the game's class, through `MethodHandles.publicLookup`);
+    - each press counts for weapons with ammo: each one the press fires is told to fire until it has (0.6 s, or
+      1.5 s while charging up); a fighter's weapon that still won't fire has its shot spawned by hand, using its
+      ammo and cooldown;
+    - a hold that makes nothing happen for 0.35 s (not overloaded, venting or phased) fires the weapons the game
+      would have fired directly, until release; a group the ship won't select for 0.25 s likewise;
+    - a ship with no groups (an AI-flown fighter) fires its loadout's group of that number, by slot;
   - shield or phase toggled to match (at most every 0.3 s); vent on the rising edge; fighters pull back or engage;
   - **ship system:** the joiner sends a running count of uses; new uses (at most 4, dropped after 1.5 s) are issued
     0.1 s apart at the cursor; drone orders stepped to match; toggles switched off when released.

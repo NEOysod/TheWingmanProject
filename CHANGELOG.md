@@ -62,10 +62,15 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
 - A joiner flying a fighter from their own carrier (UAF's Rafflesya from the Isenoria) is put back in the carrier
   when the fighter is done: lost, landing, retreating or gone from the battle. Before, they were left with no ship
   and had to use Transfer Command. The host hands the carrier back to them and their game sits them down in it.
-- Alternating weapon groups fired directly by the host (when the ship's own fire order doesn't take) now take
-  turns: only the first weapon fired before (a weapon counts as firing through its whole cooldown, so it was
-  picked every time). Shots are spaced over the weapons' refire time as the game does. Seen with the
-  Isenoria's main guns.
+- Weapon groups on a joiner's ship are now fired the way the game fires the player's own (worked out from the
+  game's code; see TECHNICAL.md, GroupFire). Holding fire on an alternating group takes turns again: the game
+  moves an alternating group on to its next weapon while the button is held only for the local player's ship,
+  so on the host only the first weapon fired (the Isenoria's main guns); the host now does that rotation with
+  the game's own timing. Linked groups fire the weapons whose arc covers the cursor, as in the game, also when
+  the host has to fire them directly. Presses that fire ammo weapons follow only those weapons, so an
+  alternating missile group no longer fires every launcher at once on a press. The 0.35 s watchdog lasts one
+  hold instead of the rest of the battle. The "system weapons" extra fire is gone (the game doesn't treat them
+  differently in a group).
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
