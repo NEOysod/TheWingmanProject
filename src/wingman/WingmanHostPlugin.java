@@ -1877,6 +1877,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI hostShip = engine.getPlayerShip();
         for (HostSession.Player p : session.getPlayers()) {
             ShipAPI s = (ShipAPI) p.ship;
+            // A fighter flown from the player's own carrier that is done (lost, landed, gone): back to the carrier.
+            if (s != null && p.heldCarrier != null && fighterDone(s) && backToCarrier(p)) continue;
             boolean pilotFailed = s != null && p.savedAI instanceof RemotePilotAI && ((RemotePilotAI) p.savedAI).failed;
             if (pilotFailed) {
                 p.conn.send(Msg.NOTICE, Msg.utf("Your controls stopped working on the host for that ship (an error, see the host's log). Take another ship."));
@@ -1998,6 +2000,40 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         p.ship = null;
         p.savedAI = null;
         onAutopilot.remove(p.id);
+    }
+
+    /** A fighter a player flies from their carrier is done with once it is lost, landing or gone from the battle. */
+    private boolean fighterDone(ShipAPI f) {
+        try {
+            return !f.isAlive() || f.isHulk() || !engine.isEntityInPlay(f) || f.isLanding() || f.isFinishedLanding() || f.isRetreating();
+        } catch (Throwable t) { return false; }
+    }
+
+    /**
+     * Puts a player back in the carrier they flew a fighter from (as UAF's Isenoria does in single player when its
+     * fighter's flight is over): the carrier gets their controls again and they are told it is theirs.
+     * False if the carrier can't take them (lost, or someone else flies it); they are then released as usual.
+     */
+    private boolean backToCarrier(HostSession.Player p) {
+        ShipAPI c = (ShipAPI) p.heldCarrier;
+        Integer id = c == null ? null : ids.get(c);
+        if (c == null || id == null || !c.isAlive() || c.isHulk() || c.getOwner() != 0 || pilotOf(c) != null) return false;
+        ShipAPI f = (ShipAPI) p.ship;
+        p.heldCarrier = null;
+        try { if (f != null && f.isAlive() && !f.isHulk() && engine.isEntityInPlay(f)) f.resetDefaultAI(); } catch (Throwable t) { /* gone */ }
+        p.ship = c;
+        p.shipNetId = id;
+        p.input.flags = 0;
+        RemotePilotAI pilot = new RemotePilotAI(c, p.input);
+        p.savedAI = pilot;
+        c.setShipAI(pilot);
+        onAutopilot.remove(p.id);
+        p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, id));
+        String shipName = c.getName() == null ? c.getHullSpec().getHullId() : c.getName();
+        Ui.say(engine, "Co-op: " + p.name + " is back in " + shipName + ".");
+        session.broadcastNotice(p.name + " is back in " + shipName + ".", p);
+        session.lobbyDirty = true;
+        return true;
     }
 
     /** The carrier held for a player (see CarrierHoldAI) goes back to its own AI, unless it is the ship they now fly. */

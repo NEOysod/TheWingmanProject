@@ -1266,6 +1266,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         Ui.say(engine, "Co-op: to leave with your ship, give it the Retreat order, or fly to the bottom edge and press Enter.");
                     }
                 }
+                // The host moved us to another ship of its own accord (back to our carrier when the fighter we
+                // flew from it is done): sit down in it, if we are still in that fighter or have nothing to fly.
+                if (id >= 0 && id != ownId && puppets.containsKey(id)) {
+                    ShipAPI now = engine.getPlayerShip();
+                    Puppet there = puppets.get(id);
+                    if (there.ship != null && there.ship != now && (now == null || now == placeholder || now.isFighter() || !now.isAlive())) {
+                        engine.setPlayerShipExternal(there.ship); // (and the usual change of ship follows, see watchPlayerShip)
+                    }
+                }
                 ownId = id;
                 if (id >= 0) { pickId = id; rememberShip(puppets.get(id)); }
                 // Back after a dropped connection, and the battle has been loaded again: sit down in the ship we

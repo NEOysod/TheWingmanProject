@@ -59,6 +59,9 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   one in the pressed group to fire until it has (up to 0.6 s, 1.5 s while charging up), so a quick click is
   enough. On a fighter, a weapon that still won't fire is fired by hand: its shot is launched from the weapon,
   using its ammo and cooldown. The host's fighter report shows the presses it saw and what each asked for.
+- A joiner flying a fighter from their own carrier (UAF's Rafflesya from the Isenoria) is put back in the carrier
+  when the fighter is done: lost, landing, retreating or gone from the battle. Before, they were left with no ship
+  and had to use Transfer Command. The host hands the carrier back to them and their game sits them down in it.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
