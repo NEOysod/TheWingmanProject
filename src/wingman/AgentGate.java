@@ -19,7 +19,11 @@ final class AgentGate {
         if (state == 0) {
             try {
                 Class.forName("wingman.agent.Hooks");
-                state = 1;
+                // The classes alone can be there without the agent running (WingmanAgent.jar on the class path for
+                // wingman.agent.Launch, which then failed): only an agent that started sets this.
+                String prop = null;
+                try { prop = System.getProperty("wingman.agent"); } catch (Throwable t) { /* as unset */ }
+                state = prop == null ? 2 : 1;
             } catch (Throwable t) {
                 state = 2;
             }
@@ -34,7 +38,7 @@ final class AgentGate {
         if ("off".equals(prop)) return "Wingman agent: started with the 'off' option, so it changes nothing";
         if (prop != null) return "Wingman agent: started, but Wingman's code can't reach it (a mod that loads mods' jars its own way?); "
                 + "mods' player-ship scripts see only this PC's own player. Please report this with your mod list";
-        return "Wingman agent: not started (optional; the -javaagent setting isn't in the game's launch settings), "
+        return "Wingman agent: not started (optional; the -javaagent setting, or wingman.agent.Launch, isn't in the game's launch settings), "
                 + "mods' player-ship scripts see only this PC's own player";
     }
 

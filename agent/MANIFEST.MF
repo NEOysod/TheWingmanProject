@@ -1,3 +1,5 @@
 Premain-Class: wingman.agent.Agent
+Agent-Class: wingman.agent.Agent
+Launcher-Agent-Class: wingman.agent.Agent
 Can-Redefine-Classes: false
 Can-Retransform-Classes: false

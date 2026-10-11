@@ -121,6 +121,7 @@ final class HostEnvironment {
         } catch (Throwable t) {
             Global.getLogger(HostEnvironment.class).warn("Wingman: could not work out the backdrop planet", t);
         }
+        Backdrop.read(engine, b); // the planets the battle really has, when they can be read (replaces the guess)
         return b.encode();
     }
 

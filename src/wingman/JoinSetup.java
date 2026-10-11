@@ -167,6 +167,19 @@ public final class JoinSetup {
         }
     }
 
+    /**
+     * The host's planets, exactly as its battle has them (called from the join mission). False when they aren't
+     * known: the mission then adds the one planet guessed from the host's position.
+     */
+    public static boolean addPlanets(com.fs.starfarer.api.mission.MissionDefinitionAPI api, Info info) {
+        try {
+            return info != null && info.found && Backdrop.addPlanets(api, lastBattle);
+        } catch (Throwable t) {
+            com.fs.starfarer.api.Global.getLogger(JoinSetup.class).warn("Wingman: could not add the host's planets", t);
+            return false;
+        }
+    }
+
     private static void fill(Info info, BattleInfo b) {
         lastBattle = b;
         {

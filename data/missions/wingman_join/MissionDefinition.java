@@ -38,7 +38,8 @@ public class MissionDefinition implements MissionDefinitionPlugin {
         if (info.hasGlow && info.glow != null) {
             api.setBackgroundGlowColor(info.glow);
         }
-        if (info.hasPlanet && info.planetType != null && info.planetType.length() > 0) {
+        // The host's planets as its battle has them; if they aren't known, the one it would most likely show.
+        if (!JoinSetup.addPlanets(api, info) && info.hasPlanet && info.planetType != null && info.planetType.length() > 0) {
             api.setPlanetBgSize(info.planetBgWidth, info.planetBgHeight);
             api.addPlanet(0f, info.planetYOffset, info.planetRadius, info.planetType, 0f, true);
         }

@@ -1,4 +1,4 @@
-# The Wingman Project 0.6.4-beta — Release Notes
+# The Wingman Project 0.7-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -70,17 +70,25 @@ a `Co-op:` message, and the game keeps running.
 1. Open the CO-OP panel on the title screen and give friends one of the addresses listed there (for Radmin,
    the one starting with 26).
 2. **Set a password** (F3 in the CO-OP panel, "Join password") if anyone else can reach your PC.
-3. Start any battle. After you deploy, a **ready check** holds the battle until everyone has loaded and
-   pressed ready. **Enter** starts it; **Ctrl+Enter** starts without waiting.
+3. **Load your save.** Friends can connect while you are still on the campaign map: they see your fleet and pick
+   the ship they want to fly, and their picks show in your campaign messages. (Setting "Friends can connect on
+   the campaign map", on by default.)
+4. Start any battle. A picked ship that you deploy is that friend's at once. After you deploy, a **ready check**
+   holds the battle until everyone has chosen a ship and pressed ready. **Enter** starts it; **Ctrl+Enter**
+   starts without waiting.
 
 ### Joining
 
 1. Click **CO-OP** on the title screen, type the host's address, your name and the password (if any), and
    press **Enter**. You stay connected for the whole session.
-2. **Stay on the title screen.** When the host's battle begins you are taken into it after a short countdown.
-3. **Choose your ship in the ready check**: Up/Down to pick, **F** to take it. If you flew one of these ships
-   last time, you are already in it. Then press **Enter** for ready.
-4. When the battle ends you return to the title screen, still connected, and join the next one the same way.
+2. **The lobby.** While the host is on the campaign map, the **LOBBY** page shows their fleet (ship, class, size,
+   CR, officer), who is connected and who picked what. Up/Down and **F** pick the ship you want; **Delete**
+   drops your pick.
+3. **Stay on the title screen.** When the host's battle begins you are taken into it after a short countdown.
+4. **Step 1: choose your ship.** If the host deployed the ship you picked, you are already in it. Otherwise
+   Up/Down and **Enter** or **F** take one, or **W** watches without a ship.
+5. **Step 2: ready.** **Enter** for ready; **Backspace** goes back to step 1 to change ship.
+6. When the battle ends you return to the title screen, still connected, and join the next one the same way.
 
 ### In the battle
 
@@ -97,7 +105,9 @@ a `Co-op:` message, and the game keeps running.
 | Anyone, title screen | Click **CO-OP**, then F1 / F2 / F3 | How-to / mod compatibility report / settings |
 | Anyone, battle | **Ctrl+Shift+O** | Settings |
 | Anyone, battle | **F3** | Hide / show player tags |
-| Joiner, ready check | Up / Down, **F**, Enter | Choose a ship, take it, ready |
+| Joiner, lobby (title screen) | Up / Down, **F**, Delete | Choose a ship in the host's fleet, pick it, drop the pick |
+| Joiner, step 1 | Up / Down, **Enter** or **F**, **W** | Choose a ship, take it, watch without one |
+| Joiner, step 2 | **Enter** / Backspace | Ready / back to step 1 |
 | Host, battle | Enter / Ctrl+Enter | Start after the ready check / start without waiting |
 | Host, battle | Ctrl+Shift+**2–9** | Remove that player (by their P number) |
 | Host, battle | Ctrl+Shift+T | Take back the ship you have targeted |
@@ -174,6 +184,15 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   joiner's ship on the host, they are given back within half a second.
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
+
+- **Optional: Wingman's agent.** Many mods' scripts do something only for "the player's ship" (an ability, an
+  override, a status line). On the host a joiner's ship is an AI ship, so without help those never happen for a
+  joiner. Wingman's agent (`jars/WingmanAgent.jar`, added to the game's launch settings) makes such scripts treat
+  each player's ship as that player's own, for every mod at once, on the host and on joiners' PCs. It also works
+  with custom launchers such as Fast Rendering's. Setup steps are in the user guide ("Optional: Wingman's agent").
+  Without it Wingman works as before.
+- **The backdrop matches the host's**: the joiner shows the planets the host's battle really has (including
+  ones a mod's battle setup adds, such as Secrets of the Frontier's), each with its own look.
 
 ### What kind of mod can cause problems
 

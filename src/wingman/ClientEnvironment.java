@@ -56,6 +56,7 @@ final class ClientEnvironment {
         } catch (Throwable t) {
             Global.getLogger(ClientEnvironment.class).warn("Wingman: could not apply the backdrop colours", t);
         }
+        Backdrop.apply(engine, b); // the planets' own look, and the background image if it differs
         Dbg.info(ClientEnvironment.class, "Wingman backdrop: host has " + (b.hasPlanet ? "planet " + b.planetType
                 : "no planet") + (b.hyperspace ? ", hyperspace" : "") + ", image " + (b.background.isEmpty() ? "default" : b.background));
         sameMap = Math.abs(engine.getMapWidth() - w) < 2f && Math.abs(engine.getMapHeight() - h) < 2f;

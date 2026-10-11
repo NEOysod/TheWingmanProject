@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 51;
+    public static final int PROTOCOL_VERSION = 52;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList

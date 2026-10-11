@@ -93,10 +93,10 @@ public class AgentRun {
         final List<String> moves = new ArrayList<String>();
         Hooks.setBridge(new Bridge() {
             public boolean live() { return live; }
-            public boolean moveRemote(ShipAPI from, ShipAPI to) { moves.add(from + "->" + to); return to != host; }
-            public float[] cursor(ShipAPI s) { return s == joiner ? new float[] { 100f, 60f } : null; }
-            public boolean keyDown(ShipAPI s, int key) { return s == joiner && key == 30; }
-            public boolean manual(ShipAPI s) { return s != joiner || !joinerAuto; }
+            public boolean moveRemote(Object from, Object to) { moves.add(from + "->" + to); return to != host; }
+            public float[] cursor(Object s) { return s == joiner ? new float[] { 100f, 60f } : null; }
+            public boolean keyDown(Object s, int key) { return s == joiner && key == 30; }
+            public boolean manual(Object s) { return s != joiner || !joinerAuto; }
         });
         realAnswers("bridge, outside");
         Hooks.runAs(host, new Runnable() { public void run() { realAnswers("bridge, host's frame"); } });
@@ -161,17 +161,17 @@ public class AgentRun {
         // 6c. A joiner's bridge: it never moves anyone; the script carries on for the same ship.
         final Bridge hostBridge = new Bridge() {
             public boolean live() { return live; }
-            public boolean moveRemote(ShipAPI from, ShipAPI to) { return to != host; }
-            public float[] cursor(ShipAPI s) { return s == joiner ? new float[] { 100f, 60f } : null; }
-            public boolean keyDown(ShipAPI s, int key) { return s == joiner && key == 30; }
-            public boolean manual(ShipAPI s) { return s != joiner || !joinerAuto; }
+            public boolean moveRemote(Object from, Object to) { return to != host; }
+            public float[] cursor(Object s) { return s == joiner ? new float[] { 100f, 60f } : null; }
+            public boolean keyDown(Object s, int key) { return s == joiner && key == 30; }
+            public boolean manual(Object s) { return s != joiner || !joinerAuto; }
         };
         Hooks.setBridge(new Bridge() {
             public boolean live() { return true; }
-            public boolean moveRemote(ShipAPI from, ShipAPI to) { return false; }
-            public float[] cursor(ShipAPI s) { return null; }
-            public boolean keyDown(ShipAPI s, int key) { return false; }
-            public boolean manual(ShipAPI s) { return s != joiner || !joinerAuto; }
+            public boolean moveRemote(Object from, Object to) { return false; }
+            public float[] cursor(Object s) { return null; }
+            public boolean keyDown(Object s, int key) { return false; }
+            public boolean manual(Object s) { return s != joiner || !joinerAuto; }
         });
         engineCalls.clear();
         Hooks.runAs(joiner, new Runnable() { public void run() {
@@ -180,6 +180,38 @@ public class AgentRun {
             check(ModScript.mx() == 0, "joiner's bridge: no cursor known: this PC's mouse");
         } });
         Hooks.setBridge(hostBridge);
+
+        // 6d. Mods' per-ship methods, called straight (not from inside a ship's frame): wrapped, they run for
+        // their ship all the same. (On Java 22+ this is how a ship's frame is known; the game can't be changed.)
+        testmod.Hull hull = new testmod.Hull();
+        hull.advanceInCombat(joiner, 0.016f);
+        check(hull.saw == joiner, "hullmod for the joiner's ship sees the joiner, got " + hull.saw);
+        hull.advanceInCombat(host, 0.016f);
+        check(hull.saw == host, "hullmod for the host's ship sees the host");
+        check(ModScript.who(Global.getCombatEngine()) == host, "after a hullmod: the real answer");
+        testmod.Hull.Sub sub = new testmod.Hull.Sub();
+        sub.advanceInCombat(joiner, 0.016f);
+        check(sub.saw == joiner && sub.sawToo == joiner, "a subclass calling super: no loop, the joiner's both times");
+        hull.fail = true;
+        try { hull.advanceInCombat(joiner, 0.016f); check(false, "the mod's exception came through"); } catch (IllegalStateException expected) { /* passed on */ }
+        check(ModScript.who(Global.getCombatEngine()) == host, "after a mod's exception: the real answer again");
+        hull.fail = false;
+        final ShipAPI joinerApi = joiner;
+        com.fs.starfarer.api.combat.WeaponAPI gunOnJoiner = (com.fs.starfarer.api.combat.WeaponAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(),
+                new Class<?>[] { com.fs.starfarer.api.combat.WeaponAPI.class }, new InvocationHandler() {
+            public Object invoke(Object p, Method m, Object[] a) { return m.getName().equals("getShip") ? joinerApi : null; }
+        });
+        testmod.Gun gun = new testmod.Gun();
+        gun.advance(0.016f, Global.getCombatEngine(), gunOnJoiner);
+        check(gun.saw == joiner, "weapon script on the joiner's ship sees the joiner, got " + gun.saw);
+        com.fs.starfarer.api.combat.MutableShipStatsAPI statsOfJoiner = (com.fs.starfarer.api.combat.MutableShipStatsAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(),
+                new Class<?>[] { com.fs.starfarer.api.combat.MutableShipStatsAPI.class }, new InvocationHandler() {
+            public Object invoke(Object p, Method m, Object[] a) { return m.getName().equals("getEntity") ? joinerApi : null; }
+        });
+        testmod.Gun.Sys sys = new testmod.Gun.Sys();
+        sys.apply(statsOfJoiner, "id", com.fs.starfarer.api.plugins.ShipSystemStatsScript.State.ACTIVE, 1f);
+        check(sys.saw == joiner, "ship system script of the joiner's ship sees the joiner, got " + sys.saw);
+        check(ModScript.who(Global.getCombatEngine()) == host, "after them: the real answer");
 
         // 7a. A bridge left from an earlier battle (not live): real answers.
         live = false;

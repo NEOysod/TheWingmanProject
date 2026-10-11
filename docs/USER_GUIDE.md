@@ -380,6 +380,17 @@ If you start the game with a custom Java launcher (a `.bat` file that runs `java
 newer-Java packs do), the settings are in that `.txt` file and `vmparams` isn't read: put
 `-javaagent:../mods/Wingman/jars/WingmanAgent.jar` on a line of its own at the top of the `.txt` file.
 
+**If the game then won't start** and the console says *"the system class loader does not define the
+appendToClassPathForInstrumentation method"*, your launch settings replace Java's own class loader (a line
+`-Djava.system.class.loader=...`, as the Fast Rendering mod's setup has). Java refuses `-javaagent` then, but
+Wingman can start its agent another way. Instead of the `-javaagent` line, make three changes in the same file:
+1. add `;../mods/Wingman/jars/WingmanAgent.jar` to the end of the `-classpath` list;
+2. add a line `--add-exports=java.instrument/sun.instrument=ALL-UNNAMED` (next to the other `--add-opens` lines);
+3. replace the last line, `com.fs.starfarer.StarfarerLauncher`, with `wingman.agent.Launch`.
+
+The game starts as usual (Wingman's launcher starts the agent, then the game's own launcher). If the agent can't
+be started that way, the game starts without it and says why in the console.
+
 (If you renamed the mod folder, use your folder's name instead of `Wingman`.) To check it works, look in
 `starsector.log`: "Wingman agent: running" when the game starts, and "Wingman agent: on" when a co-op battle starts; "not started" means the
 setting isn't being read. To turn it off, delete the setting again.

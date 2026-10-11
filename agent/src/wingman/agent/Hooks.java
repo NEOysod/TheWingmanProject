@@ -21,42 +21,36 @@ import com.fs.starfarer.api.combat.ViewportAPI;
  * joiner's ship; on a joiner: the host's ship and the other joiners'). So scripts that do something for "the
  * player's ship" never do it for that ship here, and every PC disagrees about who the player is. While the
  * game runs a frame of a ship a person on another PC flies (its hullmods, ship system, weapons' scripts,
- * MagicLib subsystems), that ship is the <i>acting</i> ship, and in code running for it:
+ * MagicLib subsystems), that ship is the <i>((ShipAPI) Shared.acting)</i> ship, and in code running for it:
  * <ul>
- * <li>{@code engine.getPlayerShip()} answers the acting ship, so "if this is the player's ship" is true for
+ * <li>{@code engine.getPlayerShip()} answers the ((ShipAPI) Shared.acting) ship, so "if this is the player's ship" is true for
  * it, as it is on its pilot's own screen;</li>
- * <li>{@code engine.setPlayerShipExternal(s)} goes to the bridge: on the host the joiner is moved into s
+ * <li>{@code engine.setPlayerShipExternal(s)} goes to the Shared.bridge: on the host the joiner is moved into s
  * (Wingman claims it for them); on a joiner nothing happens here (the host decides);</li>
  * <li>the mouse is that person's cursor (where they point, on this screen), and no key is ever this PC's;</li>
  * <li>things only meant for one player's own screen and game speed do nothing here: the status line in the
  * corner, the camera, interface sounds, and the battle's time multiplier (a script slowing time for "the
  * player" would slow the battle for everyone).</li>
  * </ul>
- * Everything else, and everything outside an acting ship's frame (screen-wide plugins, this PC's own player's
- * ship), gets the real answer. With no Wingman bridge set (not in a co-op battle), nothing is changed.
+ * Everything else, and everything outside an ((ShipAPI) Shared.acting) ship's frame (screen-wide plugins, this PC's own player's
+ * ship), gets the real answer. With no Wingman Shared.bridge set (not in a co-op battle), nothing is changed.
  *
  * All of this is on the game thread; the one static field is fine.
  */
 public final class Hooks {
     private Hooks() {}
 
-    /** Set by Wingman's host plugin; null when not hosting. */
-    private static volatile Bridge bridge;
-    /** The ship whose frame is running, if a joiner flies it (or what it belongs to). Null otherwise. */
-    private static ShipAPI acting;
-    /** Diagnostics: how often each hook changed an answer. */
-    public static volatile long playerShipAnswers, moves, mouseAnswers, keyAnswers, statusDropped, timeDropped, contexts, pluginsOwned, screenDropped;
 
-    public static void setBridge(Bridge b) { bridge = b; acting = null; owners.clear(); }
+    public static void setBridge(Bridge b) { Shared.bridge = b; Shared.acting = null; Shared.owners.clear(); }
     public static boolean installed() { return true; }
-    public static ShipAPI acting() { return acting; }
+    public static Object acting() { return Shared.acting; }
 
     /** The mark Wingman's host writes on a ship a joiner flies (see wingman.PilotMarks). */
     static final String REMOTE = "wingman_remote";
 
     /** Whose frame this is: the ship itself if a joiner flies it; for a module or a fighter, the ship it belongs to. */
     static ShipAPI actingFor(ShipAPI s) {
-        Bridge b = bridge;
+        Bridge b = Shared.bridge;
         if (s == null || b == null) return null;
         try {
             if (!b.live()) return null;
@@ -76,35 +70,35 @@ public final class Hooks {
         return d != null && d.containsKey(REMOTE);
     }
 
-    /** Run something with this ship acting (Wingman uses it when it fires a joiner's ability itself). */
+    /** Run something with this ship ((ShipAPI) Shared.acting) (Wingman uses it when it fires a joiner's ability itself). */
     public static void runAs(ShipAPI ship, Runnable r) {
-        ShipAPI prev = acting;
-        acting = actingFor(ship);
-        try { r.run(); } finally { acting = prev; }
+        ShipAPI prev = ((ShipAPI) Shared.acting);
+        Shared.acting = actingFor(ship);
+        try { r.run(); } finally { Shared.acting = prev; }
     }
 
     /**
      * Run something for a ship Wingman knows a joiner flies (it fires their ability itself): that ship acts, even
      * if its mark isn't written yet (they got it this frame).
      */
-    public static void runAsPilot(ShipAPI ship, Runnable r) {
-        Bridge b = bridge;
-        ShipAPI prev = acting;
+    public static void runAsPilot(Object ship, Runnable r) {
+        Bridge b = Shared.bridge;
+        Object prev = Shared.acting;
         boolean live = false;
         try { live = b != null && ship != null && b.live(); } catch (Throwable t) { /* as not live */ }
-        acting = live ? ship : null;
-        try { r.run(); } finally { acting = prev; }
+        Shared.acting = live ? ship : null;
+        try { r.run(); } finally { Shared.acting = prev; }
     }
 
     // ---- the engine's per-ship frame ----
 
     public static void shipAdvance(com.fs.starfarer.combat.entities.Ship ship, float amount) {
-        if (bridge == null) { ship.advance(amount); return; }
-        ShipAPI prev = acting;
+        if (Shared.bridge == null) { ship.advance(amount); return; }
+        ShipAPI prev = ((ShipAPI) Shared.acting);
         ShipAPI now = actingFor(ship);
-        if (now != null) contexts++;
-        acting = now;
-        try { ship.advance(amount); } finally { acting = prev; }
+        if (now != null) Shared.contexts++;
+        Shared.acting = now;
+        try { ship.advance(amount); } finally { Shared.acting = prev; }
     }
 
     private static Method advanceInternal;
@@ -122,9 +116,9 @@ public final class Hooks {
                 subsystemShip.setAccessible(true);
             }
         } catch (RuntimeException e) { throw e; } catch (Exception e) { throw new IllegalStateException(e); }
-        ShipAPI prev = acting;
-        if (bridge != null) {
-            try { acting = actingFor((ShipAPI) subsystemShip.get(subsystem)); } catch (Throwable t) { acting = null; }
+        ShipAPI prev = ((ShipAPI) Shared.acting);
+        if (Shared.bridge != null) {
+            try { Shared.acting = actingFor((ShipAPI) subsystemShip.get(subsystem)); } catch (Throwable t) { Shared.acting = null; }
         }
         try {
             advanceInternal.invoke(subsystem, amount);
@@ -136,28 +130,27 @@ public final class Hooks {
         } catch (IllegalAccessException e) {
             throw new IllegalStateException(e);
         } finally {
-            acting = prev;
+            Shared.acting = prev;
         }
     }
 
     /**
      * Screen-wide plugins a script added while running for a joiner's ship, and that keep hold of that ship (a
-     * "slow time down while the player flies a fighter" script, say): their frames run for that ship too, as
+     * "slow time down while the player flies a fighter" script, say): their Shared.frames run for that ship too, as
      * long as a joiner still flies it. A plugin that holds no such ship is left alone: that is how a mod's
      * battle-wide manager looks when it happens to be added from the first ship whose frame runs, and it must
      * stay the host's. Weak keys: a plugin removed from the battle is forgotten with it.
      */
-    private static final Map<EveryFrameCombatPlugin, ShipAPI> owners = Collections.synchronizedMap(new WeakHashMap<EveryFrameCombatPlugin, ShipAPI>());
 
     public static void addPlugin(CombatEngineAPI engine, EveryFrameCombatPlugin plugin) {
-        ShipAPI a = acting;
-        if (a != null && plugin != null && holds(plugin, a)) { owners.put(plugin, a); pluginsOwned++; }
+        ShipAPI a = ((ShipAPI) Shared.acting);
+        if (a != null && plugin != null && holds(plugin, a)) { Shared.owners.put(plugin, a); Shared.pluginsOwned++; }
         engine.addPlugin(plugin);
     }
 
     private static boolean same(ShipAPI x, ShipAPI y) { return x != null && x == y; }
 
-    /** Does this object keep, in a field of its own, the acting ship (or one of its modules or fighters)? */
+    /** Does this object keep, in a field of its own, the ((ShipAPI) Shared.acting) ship (or one of its modules or fighters)? */
     static boolean holds(Object o, ShipAPI a) {
         try {
             for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
@@ -174,44 +167,87 @@ public final class Hooks {
     }
 
     public static void pluginAdvance(EveryFrameCombatPlugin plugin, float amount, List events) {
-        ShipAPI owner = bridge == null || owners.isEmpty() ? null : owners.get(plugin);
+        ShipAPI owner = Shared.bridge == null || Shared.owners.isEmpty() ? null : (ShipAPI) Shared.owners.get(plugin);
         if (owner == null) { plugin.advance(amount, events); return; }
-        ShipAPI prev = acting;
-        acting = actingFor(owner);
-        try { plugin.advance(amount, events); } finally { acting = prev; }
+        ShipAPI prev = ((ShipAPI) Shared.acting);
+        Shared.acting = actingFor(owner);
+        try { plugin.advance(amount, events); } finally { Shared.acting = prev; }
+    }
+
+    // ---- mods' per-ship methods, wrapped (Patcher.Frame) ----
+
+    /**
+     * A wrapped method of a mod starts: as long as it runs, the ship it runs for is the ((ShipAPI) Shared.acting) ship (if a person
+     * on another PC flies it; otherwise none). kind: 0 the ship itself, 1 a ship's stats, 2 a weapon, 3 a beam,
+     * 4 a plugin (only one added for a joiner's ship, see addPlugin), 5 a projectile. Returns the ((ShipAPI) Shared.acting) ship
+     * before, for exitFrame. Without a Shared.bridge nothing changes.
+     */
+    public static Object enterFrame(Object ctx, int kind) {
+        ShipAPI prev = ((ShipAPI) Shared.acting);
+        if (Shared.bridge == null || ctx == null) return prev;
+        try {
+            ShipAPI s = null;
+            switch (kind) {
+                case 0: s = (ShipAPI) ctx; break;
+                case 1: {
+                    Object e = ((com.fs.starfarer.api.combat.MutableShipStatsAPI) ctx).getEntity();
+                    s = e instanceof ShipAPI ? (ShipAPI) e : null;
+                    break;
+                }
+                case 2: s = ((com.fs.starfarer.api.combat.WeaponAPI) ctx).getShip(); break;
+                case 3: s = ((com.fs.starfarer.api.combat.BeamAPI) ctx).getSource(); break;
+                case 4: {
+                    if (Shared.owners.isEmpty()) return prev;
+                    s = (ShipAPI) Shared.owners.get(ctx);
+                    if (s == null) return prev; // not a joiner's plugin: as it was
+                    break;
+                }
+                case 5: s = ((com.fs.starfarer.api.combat.DamagingProjectileAPI) ctx).getSource(); break;
+                default: return prev;
+            }
+            if (s == null) return prev;
+            ShipAPI now = actingFor(s);
+            if (now != null) Shared.frames++;
+            Shared.acting = now;
+        } catch (Throwable t) { /* never break the mod's call */ }
+        return prev;
+    }
+
+    public static void exitFrame(Object prev) {
+        Shared.acting = prev;
     }
 
     // ---- what scripts ask ----
 
     public static ShipAPI getPlayerShip(CombatEngineAPI engine) {
-        ShipAPI a = acting;
-        if (a != null) { playerShipAnswers++; return a; }
+        ShipAPI a = ((ShipAPI) Shared.acting);
+        if (a != null) { Shared.playerShipAnswers++; return a; }
         return engine.getPlayerShip();
     }
 
     public static void setPlayerShipExternal(CombatEngineAPI engine, ShipAPI ship) {
-        ShipAPI a = acting;
-        Bridge b = bridge;
+        ShipAPI a = ((ShipAPI) Shared.acting);
+        Bridge b = Shared.bridge;
         if (a != null && b != null) {
             if (ship == a || ship == null) return;
-            moves++;
+            Shared.moves++;
             boolean moved;
             try { moved = b.moveRemote(a, ship); } catch (Throwable t) { moved = false; }
-            if (moved) acting = ship; // the rest of this script runs for the ship the joiner is moving to
+            if (moved) Shared.acting = ship; // the rest of this script runs for the ship the joiner is moving to
             return;
         }
         engine.setPlayerShipExternal(ship);
     }
 
     public static void maintainStatusForPlayerShip(CombatEngineAPI engine, Object key, String sprite, String title, String data, boolean debuff) {
-        if (acting != null) { statusDropped++; return; } // the joiner's own game shows it on their screen
+        if (((ShipAPI) Shared.acting) != null) { Shared.statusDropped++; return; } // the joiner's own game shows it on their screen
         engine.maintainStatusForPlayerShip(key, sprite, title, data, debuff);
     }
 
     public static MutableStat getTimeMult(CombatEngineAPI engine) {
-        if (acting != null) {
+        if (((ShipAPI) Shared.acting) != null) {
             // The host's speed is everyone's: a copy, reading as the real one, that changes nothing.
-            timeDropped++;
+            Shared.timeDropped++;
             float now = 1f;
             try { now = engine.getTimeMult().getModifiedValue(); } catch (Throwable t) { /* 1 then */ }
             return new MutableStat(now);
@@ -225,8 +261,8 @@ public final class Hooks {
      * else's ship, it is that person's autopilot, not this PC's player's.
      */
     public static boolean autopilotOn(CombatEngineAPI engine) {
-        ShipAPI a = acting;
-        Bridge b = bridge;
+        ShipAPI a = ((ShipAPI) Shared.acting);
+        Bridge b = Shared.bridge;
         if (a != null && b != null) {
             try { return b.manual(a); } catch (Throwable t) { return true; }
         }
@@ -236,47 +272,47 @@ public final class Hooks {
     // ---- this PC's own screen: the camera and interface sounds ----
 
     public static void viewSet(ViewportAPI v, float llx, float lly, float w, float h) {
-        if (acting != null) { screenDropped++; return; }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return; }
         v.set(llx, lly, w, h);
     }
 
     public static void viewMult(ViewportAPI v, float zoom) {
-        if (acting != null) { screenDropped++; return; }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return; }
         v.setViewMult(zoom);
     }
 
     public static void viewExternal(ViewportAPI v, boolean external) {
-        if (acting != null) { screenDropped++; return; }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return; }
         v.setExternalControl(external);
     }
 
     public static void viewCenter(ViewportAPI v, org.lwjgl.util.vector.Vector2f c) {
-        if (acting != null) { screenDropped++; return; }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return; }
         v.setCenter(c);
     }
 
     /** Played silently for someone else's ship (a real sound, so a script that holds on to it still works). */
     public static com.fs.starfarer.api.SoundAPI uiSound(com.fs.starfarer.api.SoundPlayerAPI p, String id, float pitch, float volume) {
-        if (acting != null) { screenDropped++; return p.playUISound(id, pitch, 0f); }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return p.playUISound(id, pitch, 0f); }
         return p.playUISound(id, pitch, volume);
     }
 
     public static void uiLoop(com.fs.starfarer.api.SoundPlayerAPI p, String id, float pitch, float volume) {
-        if (acting != null) { screenDropped++; return; }
+        if (((ShipAPI) Shared.acting) != null) { Shared.screenDropped++; return; }
         p.playUILoop(id, pitch, volume);
     }
 
     public static int mouseX() {
-        ShipAPI a = acting;
+        ShipAPI a = ((ShipAPI) Shared.acting);
         if (a != null) {
             float[] c = cursor(a);
-            if (c != null) { mouseAnswers++; return Math.round(view().convertWorldXtoScreenX(c[0])); }
+            if (c != null) { Shared.mouseAnswers++; return Math.round(view().convertWorldXtoScreenX(c[0])); }
         }
         return org.lwjgl.input.Mouse.getX();
     }
 
     public static int mouseY() {
-        ShipAPI a = acting;
+        ShipAPI a = ((ShipAPI) Shared.acting);
         if (a != null) {
             float[] c = cursor(a);
             if (c != null) return Math.round(view().convertWorldYtoScreenY(c[1]));
@@ -285,23 +321,26 @@ public final class Hooks {
     }
 
     public static boolean isKeyDown(int key) {
-        ShipAPI a = acting;
-        Bridge b = bridge;
-        if (a != null && b != null) { keyAnswers++; return b.keyDown(a, key); } // never the host's keys
+        ShipAPI a = ((ShipAPI) Shared.acting);
+        Bridge b = Shared.bridge;
+        if (a != null && b != null) { Shared.keyAnswers++; return b.keyDown(a, key); } // never the host's keys
         return org.lwjgl.input.Keyboard.isKeyDown(key);
     }
 
     private static float[] cursor(ShipAPI a) {
-        Bridge b = bridge;
+        Bridge b = Shared.bridge;
         try { return b == null ? null : b.cursor(a); } catch (Throwable t) { return null; }
     }
 
     private static ViewportAPI view() { return Global.getCombatEngine().getViewport(); }
 
+
     /** One line for the log. */
     public static String report() {
-        return Agent.report() + "; changed answers so far: player ship " + playerShipAnswers + ", ship moves " + moves + ", mouse " + mouseAnswers
-                + ", keys " + keyAnswers + ", status lines dropped " + statusDropped + ", time changes dropped " + timeDropped + ", camera/UI sounds kept off this screen " + screenDropped
-                + ", joiner ship frames " + contexts + ", plugins added for joiners " + pluginsOwned;
+        String agent = "Wingman agent";
+        try { if (Shared.reportSource != null) agent = String.valueOf(Shared.reportSource.call()); } catch (Throwable t) { /* just the counts */ }
+        return agent + "; changed answers so far: player ship " + Shared.playerShipAnswers + ", ship moves " + Shared.moves + ", mouse " + Shared.mouseAnswers
+                + ", keys " + Shared.keyAnswers + ", status lines dropped " + Shared.statusDropped + ", time changes dropped " + Shared.timeDropped + ", camera/UI sounds kept off this screen " + Shared.screenDropped
+                + ", joiner ship frames " + Shared.contexts + " (and from mods' methods " + Shared.frames + ")" + ", plugins added for joiners " + Shared.pluginsOwned;
     }
 }

@@ -22,7 +22,7 @@ final class JoinerAgentLink implements Bridge {
 
     public boolean live() { return joiner.agentLive(); }
 
-    public boolean moveRemote(ShipAPI from, ShipAPI to) {
+    public boolean moveRemote(Object from, Object to) {
         if (movesIgnored++ < 5) {
             Global.getLogger(JoinerAgentLink.class).info("Wingman agent: a script here tried to hand " + nameOf(from)
                     + "'s ship over to another; not done here (the host's game does it for them)");
@@ -30,16 +30,16 @@ final class JoinerAgentLink implements Bridge {
         return false;
     }
 
-    public float[] cursor(ShipAPI ship) { return joiner.aimOf(ship); }
+    public float[] cursor(Object ship) { return ship instanceof ShipAPI ? joiner.aimOf((ShipAPI) ship) : null; }
 
-    public boolean keyDown(ShipAPI ship, int key) { return false; }
+    public boolean keyDown(Object ship, int key) { return false; }
 
     /** Others' autopilot isn't known here; their abilities wait for the host's word anyway (holdOthers). */
-    public boolean manual(ShipAPI ship) { return true; }
+    public boolean manual(Object ship) { return true; }
 
     /** The pilot's name from the ship's mark, for the log. */
-    private static String nameOf(ShipAPI s) {
-        String n = wingman.api.WingmanAPI.pilotOf(s);
+    private static String nameOf(Object s) {
+        String n = s instanceof ShipAPI ? wingman.api.WingmanAPI.pilotOf((ShipAPI) s) : null;
         return n == null ? "another player" : n;
     }
 }

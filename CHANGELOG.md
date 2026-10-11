@@ -1,7 +1,7 @@
 # Changelog
 
-## Since 0.6.4-beta (not released)
-Protocol 51.
+## 0.7-beta
+Protocol 52.
 
 **Lobby and ready check**
 
@@ -15,6 +15,14 @@ Protocol 51.
   given with a ship chosen (or watching). The host's panel shows each player as loading, choosing a ship, or
   flying a ship and ready / not ready, with a count at each stage.
 - New messages `ROSTER` and `PICK`; `READY` and `LOBBY` carry "watching".
+
+**Battlefield**
+
+- **The backdrop matches the host's.** Joiners used to get one planet guessed by the game's own rule, so with a mod
+  that draws battles differently (Secrets of the Frontier draws every nearby planet and jump point) the backdrop
+  didn't match. The host now sends the planets its battle really has, where they are, how big, and how each one
+  looks (a named planet's own texture and colours), and the joiner shows exactly those. The background image is
+  checked too.
 
 **Netcode**
 
@@ -49,6 +57,17 @@ Protocol 51.
   is the joiner's cursor, and `setPlayerShipExternal` moves the joiner instead of the host (with the usual checks;
   the joiner's game follows). Status lines and changes to the battle's speed made for a joiner are dropped on the
   host. Plugins a script adds for a joiner's ship, and that keep hold of it, run for that joiner too.
+- Java 22 and later refuse the game's obfuscated names in any class an agent changes (the battle wouldn't load:
+  `ClassFormatError ... "this.super"`). The agent now finds out at start and leaves such classes alone there; the
+  ship a mod's script runs for comes from wrapping mods' own per-ship methods (hullmods, ship systems, weapon,
+  beam and on-hit scripts, plugins), which works on every Java.
+- With Fast Rendering's loader the agent now changes the game's and mods' classes (it started, but changed 0
+  classes: that loader never hands out a copy of the hooks put into it). Each loader gets its own copy of the hooks,
+  and the state they keep is shared between them (an earlier attempt failed to start a battle with "loader
+  constraint violation" for CombatEngineAPI).
+- Games launched with their own system class loader (Fast Rendering's Java 2x setups) can't take `-javaagent`
+  (Java stops at start); `wingman.agent.Launch` starts the agent another way there (see the user guide). A failing
+  agent never stops the game any more; it starts without it.
 - No bytecode library: each changed call keeps its length, so nothing else in a class moves. Checked against UAF,
   MagicLib, the game's own classes and vanilla scripts (274 calls in 80 classes; the changed mod classes pass the
   JVM's verifier). Without the setting, nothing changes.

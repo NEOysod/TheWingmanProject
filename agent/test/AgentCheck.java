@@ -32,7 +32,7 @@ public class AgentCheck {
                 seen++;
                 byte[] b = read(z.getInputStream(en));
                 Patcher.Result r;
-                try { r = Patcher.patch(b, rules); } catch (Throwable t) { failed++; System.out.println("CANNOT READ " + name + ": " + t); continue; }
+                try { r = Patcher.patch(b, rules, Agent.framesFor(rules), false); } catch (Throwable t) { failed++; System.out.println("CANNOT READ " + name + ": " + t); continue; }
                 if (r == null) continue;
                 changed++;
                 swaps += r.swaps;

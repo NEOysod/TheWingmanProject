@@ -15,6 +15,35 @@ public final class BattleInfo {
     public boolean hasPlanet;
     public String planetType = "";
     public float planetRadius, planetYOffset, planetBgWidth, planetBgHeight;
+
+    /**
+     * The planets the host's battle actually has, read from its engine (the battle's own creation plugin, a mod's
+     * included, decided them): when known, the joiner makes exactly these instead of guessing one from the map.
+     */
+    public boolean planetsKnown;
+    public java.util.List<Planet> planets = new java.util.ArrayList<Planet>();
+    public static final int MAX_PLANETS = 32, MAX_SPEC_VALUES = 64, MAX_TEXT = 200;
+
+    /** One planet of the host's battle: where and how big, its turn, and how its look differs from its type's. */
+    public static final class Planet {
+        public String type = "";
+        public float x, y, radius, gravity, angle, cloudAngle, tilt, pitch, scale = 1f;
+        public boolean background = true;
+        public boolean hasLight;
+        public int light;
+        /** Look differences (the game's own planet spec diff): field name and value. */
+        public java.util.List<String> specKeys = new java.util.ArrayList<String>();
+        public java.util.List<SpecValue> specValues = new java.util.ArrayList<SpecValue>();
+    }
+
+    /** One value of a planet spec field. Kinds: 0 none, 1 text, 2 number, 3 yes/no, 4 colour (ARGB), 5 three numbers. */
+    public static final class SpecValue {
+        public byte kind;
+        public String text = "";
+        public float a, b, c;
+        public boolean flag;
+        public int argb;
+    }
     /**
      * The host's objectives at the start of the battle, kind and place. Objectives can only be made while a
      * mission is being set up, so the joiner's mission makes these same ones then, of whatever kind a mod
@@ -57,6 +86,8 @@ public final class BattleInfo {
         byte k = flagKinds.get(i);
         return k == 1 ? (Object) Boolean.valueOf(flagNumbers.get(i) != 0) : k == 2 ? (Object) flagNumbers.get(i) : flagTexts.get(i);
     }
+
+    private static String cut(String s) { return s == null ? "" : s.length() > MAX_TEXT ? s.substring(0, MAX_TEXT) : s; }
 
     public byte[] encode() {
         Msg.W w = new Msg.W();
@@ -104,6 +135,36 @@ public final class BattleInfo {
                     w.out.writeUTF(flagKeys.get(i));
                     w.out.writeByte(flagKinds.get(i));
                     if (flagKinds.get(i) == 3) w.out.writeUTF(flagTexts.get(i)); else w.out.writeDouble(flagNumbers.get(i));
+                }
+            }
+            w.out.writeBoolean(planetsKnown);
+            if (planetsKnown) {
+                int np = Math.min(planets.size(), MAX_PLANETS);
+                w.out.writeByte(np);
+                for (int i = 0; i < np; i++) {
+                    Planet p = planets.get(i);
+                    w.out.writeUTF(cut(p.type));
+                    w.out.writeFloat(p.x); w.out.writeFloat(p.y); w.out.writeFloat(p.radius); w.out.writeFloat(p.gravity);
+                    w.out.writeFloat(p.angle); w.out.writeFloat(p.cloudAngle); w.out.writeFloat(p.tilt); w.out.writeFloat(p.pitch);
+                    w.out.writeFloat(p.scale);
+                    w.out.writeBoolean(p.background);
+                    w.out.writeBoolean(p.hasLight);
+                    w.out.writeInt(p.light);
+                    int nv = Math.min(Math.min(p.specKeys.size(), p.specValues.size()), MAX_SPEC_VALUES);
+                    w.out.writeByte(nv);
+                    for (int k = 0; k < nv; k++) {
+                        SpecValue v = p.specValues.get(k);
+                        w.out.writeUTF(cut(p.specKeys.get(k)));
+                        w.out.writeByte(v.kind);
+                        switch (v.kind) {
+                            case 1: w.out.writeUTF(cut(v.text)); break;
+                            case 2: w.out.writeFloat(v.a); break;
+                            case 3: w.out.writeBoolean(v.flag); break;
+                            case 4: w.out.writeInt(v.argb); break;
+                            case 5: w.out.writeFloat(v.a); w.out.writeFloat(v.b); w.out.writeFloat(v.c); break;
+                            default: break;
+                        }
+                    }
                 }
             }
         } catch (IOException e) { throw new IllegalStateException(e); }
@@ -173,6 +234,44 @@ public final class BattleInfo {
                 else if (kind == 3) v = in.readUTF();
                 else throw new IOException("unknown flag kind " + kind);
                 if (!b.addFlag(key, v)) throw new IOException("impossible flag");
+            }
+        }
+        b.planetsKnown = in.readBoolean();
+        if (b.planetsKnown) {
+            int np = in.readByte() & 0xFF;
+            if (np > MAX_PLANETS) throw new IOException("too many planets: " + np);
+            for (int i = 0; i < np; i++) {
+                Planet p = new Planet();
+                p.type = in.readUTF();
+                p.x = in.readFloat(); p.y = in.readFloat(); p.radius = in.readFloat(); p.gravity = in.readFloat();
+                p.angle = in.readFloat(); p.cloudAngle = in.readFloat(); p.tilt = in.readFloat(); p.pitch = in.readFloat();
+                p.scale = in.readFloat();
+                p.background = in.readBoolean();
+                p.hasLight = in.readBoolean();
+                p.light = in.readInt();
+                if (p.type.isEmpty() || Snapshot.bad(p.x) || Snapshot.bad(p.y) || Snapshot.bad(p.radius) || Snapshot.bad(p.gravity)
+                        || Snapshot.bad(p.angle) || Snapshot.bad(p.cloudAngle) || Snapshot.bad(p.tilt) || Snapshot.bad(p.pitch)
+                        || Snapshot.bad(p.scale) || p.radius < 0f) throw new IOException("planet with impossible values");
+                int nv = in.readByte() & 0xFF;
+                if (nv > MAX_SPEC_VALUES) throw new IOException("too many planet looks: " + nv);
+                for (int k = 0; k < nv; k++) {
+                    String key = in.readUTF();
+                    SpecValue v = new SpecValue();
+                    v.kind = in.readByte();
+                    switch (v.kind) {
+                        case 0: break;
+                        case 1: v.text = in.readUTF(); break;
+                        case 2: v.a = in.readFloat(); break;
+                        case 3: v.flag = in.readBoolean(); break;
+                        case 4: v.argb = in.readInt(); break;
+                        case 5: v.a = in.readFloat(); v.b = in.readFloat(); v.c = in.readFloat(); break;
+                        default: throw new IOException("unknown planet look kind " + v.kind);
+                    }
+                    if (key.isEmpty() || Snapshot.bad(v.a) || Snapshot.bad(v.b) || Snapshot.bad(v.c)) throw new IOException("impossible planet look");
+                    p.specKeys.add(key);
+                    p.specValues.add(v);
+                }
+                b.planets.add(p);
             }
         }
         // Guard rail: a map with an impossible size is refused, not built.

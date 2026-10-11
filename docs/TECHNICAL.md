@@ -39,7 +39,7 @@ Three constraints shape almost every detail:
 | Area | Classes |
 | --- | --- |
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
-| Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `HostOrders`, `ShipStats` |
+| Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `Backdrop` (planets, both sides), `HostOrders`, `ShipStats` |
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
@@ -171,7 +171,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 51 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 52 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -534,7 +534,7 @@ expected count.
 | --- | --- | --- |
 | `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | 4×/s, at most 40 ships per message. Reads a ship only if hit, touched (ammo), flown, never sent, or on a 1-in-8 rotation; everything again every 10 s. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
 | `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 43 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
-| `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the campaign planet behind the battle, the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
+| `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the planets behind the battle (read from the engine, with each one's look; `Backdrop`), the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
 | `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
 | `ShipStats` | (used by both) | 43 stats: 23 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil…) and 20 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen, peak CR, phase…). Damage-only stats are left out. |
 
@@ -745,6 +745,16 @@ react. Replayed damage is not counted as local.
 - **Map and backdrop** come from `BATTLE_INFO` before the battle (3, step 4). `ClientEnvironment.onBattleInfo` applies
   colours and checks the size and the objectives; a mismatch raises "BATTLEFIELD DIFFERS" with a one-key rejoin
   (not within 30 s of the last one).
+- **Planets** (`Backdrop`). Which planets a campaign battle shows is up to its creation plugin, and mods replace it
+  (Secrets of the Frontier's draws every nearby planet and jump point, at its own scale), so the host doesn't guess:
+  it reads the engine's `Planet` objects (`CombatEngine.getObjects().getList(Planet.class)`) with type, place,
+  radius, turn, tilt, scale, the light colour the battle gave it (private field, `MethodHandles`) and its look as
+  the game's own spec diff (`PlanetSpec.createDiff`: a named planet's texture, colours, tilt...), plus the engine's
+  planet backdrop size. The join mission makes the same planets (`JoinSetup.addPlanets`); in the battle,
+  `Backdrop.apply` matches each to the host's by type and place, gives it a copy of its spec with the host's values
+  (`PlanetSpec.setField`, one field at a time; a planet made from a type shares that type's spec), and sets its turn
+  and light. If the background image differs from the host's, it is replaced (`CombatEngine.replaceBackground`). A
+  host that can't read its planets sends none, and the joiner falls back to one planet by the vanilla rule.
 - **Nebula** is painted from the bitmap when the grids match. **Asteroids** are made by size class (the class whose
   radius is nearest, measured once off-map), snapped when 25 units off, removed when missing from a full list.
 - **Objectives** (`ClientOrders`): the mission makes the host's objectives in place plus 18 vanilla spares. For each
@@ -957,7 +967,33 @@ override, an ability aimed at the cursor, a status line) never does it for that 
 disagree about what the script did. Each such mod could be
 handled one by one (8.7); the agent handles the pattern instead. It is a Java agent in its own jar,
 `jars/WingmanAgent.jar`, not listed in `mod_info.json`: the game can't load an agent itself, so the host adds
-`-javaagent:<path>` to the game's launch settings (USER_GUIDE section 9). Without that line nothing below happens
+`-javaagent:<path>` to the game's launch settings (USER_GUIDE section 9). A launch that replaces the system
+class loader (`-Djava.system.class.loader=...`, as Fast Rendering's `com.genir.renderer.loaders.AppClassLoader`)
+makes Java refuse `-javaagent` and stop (the loader has no `appendToClassPathForInstrumentation`). For that,
+`wingman.agent.Launch` is the main class instead: with WingmanAgent.jar on `-classpath` and
+`--add-exports=java.instrument/sun.instrument=ALL-UNNAMED`, it calls `InstrumentationImpl.loadAgent(jar)` (what
+Java's launcher does for a jar's `Launcher-Agent-Class`, which needs no class path change), then the game's
+`StarfarerLauncher.main` (or `-Dwingman.main`). Such a loader may also load the game's classes itself (Fast
+Rendering's does), while the agent's own classes come from Java's loader below it: a `Hooks` there would see a
+second copy of the game's API (`LinkageError: loader constraint violation` the first time it touches one). And
+such a loader may not hand out anything it didn't load itself: Fast Rendering's passes every `wingman.*` name
+straight to its parent, so a copy defined in it is never what its `loadClass` returns. What a class's own
+references resolve to is different: the JVM looks in the class's loader's own table first, where a class that
+loader defined is found before `loadClass` is ever asked. So the agent works per loader:
+- the state the hooks keep (acting ship, ship owners, bridge, counters) lives in `Shared`, and `Bridge` takes and
+  returns `Object`s, so neither names a game class and one copy of each, in the agent's loader, serves everyone;
+- when the first `com/fs/` class is defined by a loader other than the agent's (mode 2), each loader whose classes
+  are about to be changed gets its own `Hooks` (`Agent.injectInto`: defined from the jar with
+  `ClassLoader.defineClass`, `java.lang` opened to the agent with `Instrumentation.redefineModule`), after checking
+  that the loader reaches the agent's `Shared` and `Bridge`. That copy's game types are the ones its loader sees,
+  which are those of the classes calling it. A loader where any step fails keeps its classes as they are, and the
+  report says why;
+- Wingman calls only `Hooks` methods that name no game class (`setBridge`, `runAsPilot(Object, Runnable)`,
+  `report`), so whichever copy its own references reach is fine.
+Checked on Java 17, 21 and 25 with three kinds of custom loader (one that hands everything to Java's, one that
+loads the game's classes itself and asks `findLoadedClass` first, and one like Fast Rendering's that sends every
+other name straight to its parent), with and without full bytecode verification: the full agent test passes through each. `AgentGate` counts the agent as present only when the `wingman.agent` property is set,
+since with Launch its classes are on the class path even if it didn't start. Without that line nothing below happens
 and Wingman works as before.
 
 **Loading.** `Agent.premain` registers a `ClassFileTransformer`. As each class is defined (by any class loader:
@@ -1001,8 +1037,26 @@ instructions of the rule's opcode that use those entries. `invokespecial` (a `su
 | mod | `ViewportAPI.set/setViewMult/setExternalControl/setCenter` | acting: dropped (this PC's camera is its own player's) |
 | mod | `SoundPlayerAPI.playUISound/playUILoop` | acting: played at volume 0 / not played (interface sounds are for this PC's player) |
 | mod | `MagicSubsystem.advanceInternal(f)` (invokevirtual) | run with the subsystem's ship acting |
-| engine | `Ship.advance(f)` | run with that ship acting |
+| engine | `Ship.advance(f)` | run with that ship acting (not on strict JVMs, below) |
 | engine | `EveryFrameCombatPlugin.advance(f, events)` | a plugin noted as a joiner's runs with that ship acting |
+
+**Mods' per-ship methods, wrapped (`Patcher.Frame`).** In mods' classes (not interfaces; instance methods with
+code), a method matching one of these by name and descriptor is renamed `name$wingman` (made private) and a new
+method of the old name and flags runs it inside `Hooks.enterFrame(context, kind)` / `exitFrame(prev)`
+(try/finally; one exception handler and one full stack map frame, written by hand): `advanceInCombat(ShipAPI,F)`
+(hullmods), `apply` / `unapply` (ship systems, via the stats' entity), `advance(F,CombatEngineAPI,WeaponAPI)` and
+`onFire` (weapons), `onHit` (the projectile's source), `advance(F,CombatEngineAPI,BeamAPI)` (beams),
+`advance(F,List)` (plugins: only one added for a joiner's ship, else nothing changes). The renamed method is
+called with `invokespecial`, so a subclass's override calling `super` doesn't loop. So the ship a mod's code runs
+for is known even when the call doesn't come through `Ship.advance`.
+
+**Strict JVMs (Java 22 and later).** These check every name in a class an agent changed, even with verification
+switched off, and refuse the game's obfuscated names ("this.super"): changing `CombatEngine` stops the game from
+loading a battle (`ClassFormatError`). The agent finds out at start (`Agent.probeStrict`: it defines a tiny class
+with a field "a.b" and hands it back changed); on such a JVM any class with such names (`Patcher.badName`: '.',
+';', '[' or '/' in a member name) is left alone, so the game's own engine is never changed and the per-ship
+context comes from the wrapped mod methods only. Checked on Java 21 (relaxed) and 25 (strict): the engine class
+loads, and the fixture and real-class checks pass on both.
 
 **The acting ship** (`Hooks.acting`, game thread only) is the ship whose frame is running, when a joiner flies it:
 `actingFor(s)` is `s` if it carries `wingman_remote` (6.4, `PilotMarks`), its parent if `s` is a module of such a

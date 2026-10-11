@@ -25,6 +25,8 @@ final class AgentLink implements Bridge {
     static void install(WingmanHostPlugin host) { Hooks.setBridge(new AgentLink(host)); }
     static void uninstall() { Hooks.setBridge(null); }
     static void runAs(ShipAPI ship, Runnable r) { Hooks.runAsPilot(ship, r); }
+
+    private static ShipAPI ship(Object o) { return o instanceof ShipAPI ? (ShipAPI) o : null; }
     static String report() { return Hooks.report(); }
 
     public boolean live() { return host.agentLive(); }
@@ -36,7 +38,9 @@ final class AgentLink implements Bridge {
         return null;
     }
 
-    public boolean moveRemote(ShipAPI from, ShipAPI to) {
+    public boolean moveRemote(Object fromObj, Object toObj) {
+        ShipAPI from = ship(fromObj), to = ship(toObj);
+        if (from == null || to == null) return false;
         HostSession.Player p = playerIn(from);
         Integer id = host.idOf(to);
         if (p == null || id == null) return false;
@@ -53,16 +57,16 @@ final class AgentLink implements Bridge {
         return true;
     }
 
-    public float[] cursor(ShipAPI s) {
-        HostSession.Player p = playerIn(s);
+    public float[] cursor(Object s) {
+        HostSession.Player p = playerIn(ship(s));
         return p == null ? null : new float[] { p.input.mouseX, p.input.mouseY };
     }
 
-    public boolean manual(ShipAPI s) {
-        HostSession.Player p = playerIn(s);
+    public boolean manual(Object s) {
+        HostSession.Player p = playerIn(ship(s));
         return p == null || !host.onAutopilot(p.id);
     }
 
     /** Joiners' own keys aren't sent to the host: a script asking here hears "not pressed" (never the host's keys). */
-    public boolean keyDown(ShipAPI s, int key) { return false; }
+    public boolean keyDown(Object s, int key) { return false; }
 }
