@@ -414,12 +414,33 @@ public class RemotePilotAI implements ShipAIPlugin {
             for (WeaponAPI w : weapons) if (!w.isDisabled()) w.setForceFireOneFrame(true);
             return;
         }
-        // Alternating groups fire one weapon at a time: carry on with one that is mid-shot, else the first ready.
-        WeaponAPI pick = null;
-        for (WeaponAPI w : weapons) if (!w.isDisabled() && w.isFiring()) { pick = w; break; }
-        if (pick == null) for (WeaponAPI w : weapons) if (!w.isDisabled() && w.getCooldownRemaining() <= 0f) { pick = w; break; }
-        if (pick != null) pick.setForceFireOneFrame(true);
+        // Alternating groups fire one weapon at a time, taking turns, spaced out over the weapons' refire time the
+        // way the game spaces them. A weapon still charging up keeps being told to fire until its shot is out.
+        // (A weapon counts as "firing" through its whole cooldown, so going by that would pick the first one
+        // every time and its partners would never fire.)
+        int n = weapons.size();
+        if (n == 0) return;
+        for (WeaponAPI w : weapons) {
+            if (!w.isDisabled() && w.getChargeLevel() > 0f && w.getCooldownRemaining() <= 0f && !w.isInBurst()) { w.setForceFireOneFrame(true); return; }
+        }
+        float now = 0f;
+        try { now = Global.getCombatEngine().getTotalElapsedTime(false); } catch (Throwable t) { /* no spacing then */ }
+        int live = 0;
+        float refire = 0f;
+        for (WeaponAPI w : weapons) if (!w.isDisabled()) { live++; refire = Math.max(refire, w.getCooldown()); }
+        if (live == 0 || now - altLastShot < refire / live - 0.001f) return;
+        for (int i = 0; i < n; i++) {
+            int k = (altNext + i) % n;
+            WeaponAPI w = weapons.get(k);
+            if (w.isDisabled() || w.getCooldownRemaining() > 0f || w.isInBurst() || (w.usesAmmo() && w.getAmmo() <= 0)) continue;
+            w.setForceFireOneFrame(true);
+            altNext = (k + 1) % n;
+            altLastShot = now;
+            return;
+        }
     }
+    private int altNext;
+    private float altLastShot = -100f;
 
     /**
      * Checks that holding the fire button actually makes the real ship's guns fire, writes what happens to the

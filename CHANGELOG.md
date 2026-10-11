@@ -62,6 +62,10 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
 - A joiner flying a fighter from their own carrier (UAF's Rafflesya from the Isenoria) is put back in the carrier
   when the fighter is done: lost, landing, retreating or gone from the battle. Before, they were left with no ship
   and had to use Transfer Command. The host hands the carrier back to them and their game sits them down in it.
+- Alternating weapon groups fired directly by the host (when the ship's own fire order doesn't take) now take
+  turns: only the first weapon fired before (a weapon counts as firing through its whole cooldown, so it was
+  picked every time). Shots are spaced over the weapons' refire time as the game does. Seen with the
+  Isenoria's main guns.
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
