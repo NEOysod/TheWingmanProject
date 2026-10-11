@@ -43,9 +43,10 @@ Three constraints shape almost every detail:
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
-| Campaign | `WingmanModPlugin`, `Hosting` (opens the session with the saved settings, for a battle or another mod) |
+| Campaign | `WingmanModPlugin`, `CampaignLobby` (the pre-battle lobby), `Hosting` (opens the session with the saved settings, for a battle, the lobby or another mod) |
 | For other mods | `wingman.api.WingmanAPI` (see `docs/MOD_API.md`), `PilotMarks` (who flies what, written on ships) |
-| Network (`wingman.net`, no game classes) | `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats`, `ModChannel` (other mods' messages), `InputBuffer` (steady controls), `Budget` (bandwidth limit), `Smoother` (smooth corrections, jitter buffer) |
+| Optional agent (`agent/src`, its own jar; 8.9) | `wingman.agent.Agent`, `Patcher`, `Hooks`, `Bridge`; in Wingman: `AgentGate`, `AgentLink` |
+| Network (`wingman.net`, no game classes) | `Roster` (pre-battle lobby), `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats`, `ModChannel` (other mods' messages), `InputBuffer` (steady controls), `Budget` (bandwidth limit), `Smoother` (smooth corrections, jitter buffer) |
 | Messages (`wingman.net`) | `Snapshot`, `SnapshotCodec`, `InputState`, `ShipSpawn`, `DamageState`, `Extras`, `Orders`, `BattleInfo`, `Lobby`, `ModList` |
 | Build | `build.sh`, `build.bat`, `tools/PatchNew.java`, `tools/PatchPackage.java`, `tools/stub/`, `dist/make.sh` |
 
@@ -170,7 +171,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 49 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 51 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -181,7 +182,7 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 3 | SYNC_REQ | joiner → host | send me everything |
 | 4 | CLAIM | joiner → host | claim number, ship id |
 | 5 | BYE | joiner → host | leaving |
-| 6 | READY | joiner → host | ready, ships built, ships skipped |
+| 6 | READY | joiner → host | ready, ships built, ships skipped, watching (no ship by choice; appended) |
 | 10 | WELCOME | host → joiner | player id, cap, update rate, host name |
 | 11 | REJECT | host → joiner | reason |
 | 12 | SPAWN | host → joiner | `ShipSpawn` |
@@ -217,11 +218,13 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 47 | SIDE | host → joiner | id, new side (0, 1 or neutral 100) |
 | 48 | OBJECTIVE_TEXT | host → joiner | objective index, its tooltip text (≤ 4,000 characters), on change |
 | 49 | COMBAT_MSG | host → joiner | a script's line in the message feed: indent, ≤ 40 parts (colour, text ≤ 1,000, ship id, objective index); ≤ 30/s |
-| 50 | SUBSYSTEM | joiner → host | ship id, MagicLib subsystem class (≤ 200 characters); host keeps ≤ 10 a second |
+| 50 | SUBSYSTEM | both | ship id, MagicLib subsystem class (≤ 200 characters). Joiner → host: the joiner used it (host keeps ≤ 10 a second). Host → joiner: someone else used it on the ship they fly (8.7) |
 | 51 | LANDING | host → joiner | ship id, carrier id (or −1), byte 1 landing / 2 launched |
 | 52 | MOD | both | another mod's message: channel (≤ 64), length, bytes (≤ 60 KB); see `ModChannel`, `docs/MOD_API.md` |
 | 53 | INPUT_MODE | host → joiner | byte 1: send controls as bundles (steady controls, 4.7), 0: plain |
 | 54 | INPUTS | joiner → host | a bundle: count (1-3), then per set: joiner clock (ms), length, controls; newest first |
+| 55 | ROSTER | host → joiner | the pre-battle lobby (`Roster`): host name, state (0 campaign map, 1 battle), size limit, players (name, slot), fleet members (≤ 120: id, ship name, hull name, size, designation, CR, officer and level, flags flagship / mothballed / can't fly with a note, picked by) |
+| 56 | PICK | joiner → host | fleet member id the player wants to fly in the next battle ("" none; ≤ 64 characters, the last one counts) |
 
 ### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
 
@@ -249,7 +252,11 @@ lurch. With it:
 ### 5.1 What an update holds (`Snapshot`)
 
 Header: tick, paused, battle speed (`timeMult`, clamped 0.05 to 20), host flagship, host battle clock
-(`hostTime`), and per flown ship the control set it last acted on, for how long, and its system charges.
+(`hostTime`), and per flown ship the control set it last acted on, for how long, its system charges, and where
+its pilot points (`pilotedAimX/Y`, 2 bytes each, to 2 units), plus where the host points (`hasHostAim`,
+`hostAimX/Y`, from the host's ship's mouse target). A joiner sets the mouse target of its copies of other
+people's ships to these each frame (`applyAims`), so a system or script aiming "where the pilot points" aims
+there on every PC.
 
 Per ship (`ShipState`): id, position, velocity, facing, turn rate, hull (0-1), CR, flux and hard flux, flags
 (shield, overload, venting, system on, phased), shield facing, firing bits (64 weapons), system and cloak stage
@@ -486,13 +493,40 @@ frame:
 - **Host keys:** Ctrl+Shift+P-number removes a player (name refused until restart); Ctrl+Shift+T takes back the
   targeted ship; Ctrl+Shift+O opens settings.
 
-### 6.5 Ready check and lobby
+### 6.5 The pre-battle lobby, then choosing a ship and the ready check
 
-Phase 0 waits until the host has deployed (unpaused with a real flagship), phase 1 holds the battle paused until
-Enter with everyone ready (or Ctrl+Enter), phase 2 runs. After 60 s of waiting the host is reminded of
-Ctrl+Enter. `LOBBY` (host name, expected ship count, size limit, per player: name, ready, built, skipped, ship,
-slot, ship id) goes out when it changes and at least once a second. A joiner counts as loaded when built +
-skipped reaches the expected count.
+**Before the battle (`CampaignLobby`, host setting `campaignLobby`, on by default).** A transient campaign script
+(added in `WingmanModPlugin.onGameLoad`, runs while paused) opens the session with `Hosting.open` as soon as a
+save is loaded, so friends can connect while the host is on the map, and pumps it each frame (joins and leaves go
+to the campaign message feed). While anyone is connected it sends `ROSTER`: the host's fleet (flagship first, then
+by size), who is connected, and who picked which ship; again whenever that changes, and every 5 s. A joiner's
+`PICK` is checked on the game thread (`handlePicks`: in the fleet, not the flagship, not mothballed, not a station,
+within the size limit, not picked by someone else connected; a refusal goes back as `NOTICE`) and kept as a
+reservation (`WingmanAPI.reserveShip`, the same store the campaign companion's crew screen uses). In a battle the
+host plugin still handles picks from joiners on their title screen and sends `ROSTER` with state 1 at the start.
+When the battle is in its ready check, `seatReserved` seats each player without a ship in their pick, if it was
+deployed (once per battle; before, it waited for 2 s of battle time, which never passes while the ready check
+holds the battle paused).
+
+**On the joiner's title screen** (`WingmanTitlePlugin`): the first `ROSTER` opens the **LOBBY** page by itself
+(F4 brings it back): the host's state, who is there, the fleet (a window of 9, the marked ship's designation and
+officer below), Up/Down, F (or Enter on the map) to pick, Delete for no pick, Enter to join when the host is in a
+battle. The pick (ship name, hull name) is kept in `JoinSetup.lobbyPick` for the battle.
+
+**In the battle: two stages, then the start.** Phase 0 waits until the host has deployed (unpaused with a real
+flagship), phase 1 holds the battle paused, phase 2 runs. During phase 1 each joiner goes through:
+1. **Choose your ship** (`WingmanClientPlugin.stage() == 1`: no ship and not watching, or Backspace from stage
+   2): once everything is loaded, the list of the host side's ships (Up/Down, Enter or F takes it through the
+   usual claim, W watches without a ship). A lobby pick that is deployed is shown, and the host seats them in it;
+   the remembered ship from last time is not taken then.
+2. **Ready check**: Enter ready / not ready, Backspace back to stage 1. Ready can't be given in stage 1.
+
+`READY` carries the watching flag (appended; `In.remaining()`); `LOBBY` per player: name, ready, built, skipped,
+ship, slot, ship id, watching. `Lobby.describe` reads "loading", "choosing a ship", or ready/not ready with the
+ship or "watching". The host's panel adds a line counting players at each stage. The host starts with Enter
+when everyone is ready, or Ctrl+Enter; after 60 s of waiting the host is reminded of Ctrl+Enter. `LOBBY` goes
+out when it changes and at least once a second. A joiner counts as loaded when built + skipped reaches the
+expected count.
 
 ### 6.6 Helpers
 
@@ -883,7 +917,14 @@ subsystems are the values of the ship's custom data entry `magicSubsystems`.
   the host's previous ship is undone (vanilla Transfer Command never picks a fighter). On the joiner the same
   script switches the local player ship; `watchPlayerShip` then claims it, and a fighter is claimable when it is
   from the ship the player flies (`WingmanHostPlugin.linked`: wing source ship, or its parent station). The host
-  grants it under the same rule.
+  grants it under the same rule. With Wingman's agent (8.9) the subsystem is fired as part of the joiner's ship's
+  frame, so the hand-over moves the joiner on the host as well, and the host's player ship never changes.
+- **Everyone else's copies:** the host relays each use to the other joiners (`relaySubsystem`, `SUBSYSTEM` host →
+  joiner): a joiner's use once the host has fired it, and the host's own (`Subsystems.pressed` on the host's ship).
+  On a joiner, the subsystems of every ship marked `wingman_remote` are parked each frame like the host parks
+  joiners' (`holdOthers`), and a relayed use fires the named one on that copy (`fireForOther`, inside
+  `AgentGate.runAs`; a hand-over of this PC's player it makes is undone, as on the host). So another person's
+  abilities fire on your screen when they used them, not when your copy's AI logic would have.
 
 Setting `joinerSubsystems` (both).
 
@@ -908,6 +949,106 @@ local player it does this only on autopilot; any other ship it treats as AI-flow
   following the host as usual. Hull, armour, CR and ammo restored on the host reach the joiner through the
   normal damage state.
 
+### 8.9 Wingman's agent (optional, host): mods' "player ship" scripts for joiners (`agent/`, `AgentGate`, `AgentLink`)
+
+On each PC, a ship another person flies is an AI ship (on the host: joiners' ships; on a joiner: the host's
+and the other joiners'), so any script that does something for `engine.getPlayerShip()` (a "switch to a fighter"
+override, an ability aimed at the cursor, a status line) never does it for that person's ship there, and the PCs
+disagree about what the script did. Each such mod could be
+handled one by one (8.7); the agent handles the pattern instead. It is a Java agent in its own jar,
+`jars/WingmanAgent.jar`, not listed in `mod_info.json`: the game can't load an agent itself, so the host adds
+`-javaagent:<path>` to the game's launch settings (USER_GUIDE section 9). Without that line nothing below happens
+and Wingman works as before.
+
+**Loading.** `Agent.premain` registers a `ClassFileTransformer`. As each class is defined (by any class loader:
+the game's, mod jars', Janino's for loose scripts) it is offered to `Patcher` with a rule set chosen by name
+(`Agent.rulesFor`): JDK, Wingman and the game's libraries are skipped; the game's own classes (`com/fs/starfarer/`,
+not `api/`) get the engine rules; `com/fs/starfarer/api/impl/` (vanilla scripts) and everything else (mods) get the
+mod rules. Option `novanilla` (after `=` in the launch line) leaves the vanilla scripts alone; `off` patches nothing.
+Interface code is never changed (`Agent.screenOnly`: classes named `MagicUI` or `StatusBarData`, MagicLib's and the
+copies mods bundle, and anything in a `ui`, `gui`, `combatgui` or `hud` package), nor are achievements (an
+`achievements` package, as MagicLib's): they ask "is this the player's ship?" to decide what to draw on this
+screen or count for this player, and that must stay this PC's player, or other people's bars would be drawn
+over yours and their kills counted as yours. Checked against MagicLib 1.5.6, LazyLib 3.0 and AshLib 2.2.3: what
+is left to change there is MagicLib's subsystems and interference warning (status lines), LazyLib's
+`CombatUtils.centerViewport` (camera), and sounds in interface elements that never run for another ship.
+A class the patcher can't read is left exactly as it was (counted in the report), and so is every class whose
+loader can't reach `wingman.agent.Hooks` (`Agent.seesHooks`: asked once per loader with `loadClass`, which must
+return the agent's own `Hooks`), since a swapped call there would fail when it ran. `premain` sets the system
+property `wingman.agent` (`on`/`off`), so Wingman's start-up line can tell "not started" from "started, but
+Wingman's own loader can't reach it".
+
+**Patching without a bytecode library.** Every swap keeps the code the same length and the operand stack the same
+shape, so nothing else in the class changes: `invokeinterface Owner.m(args)R` (5 bytes) becomes `invokestatic
+Hooks.m(Owner, args)R` (3 bytes) and two `nop`s; `invokevirtual`/`invokestatic` (3 bytes) becomes `invokestatic`
+(3 bytes). Jump offsets, exception tables, line numbers and stack map frames stay valid, and the new constants
+(the `Hooks` class and one Methodref per rule used) are appended to the end of the constant pool, where no
+existing index moves. `Patcher` parses the pool (all tags up to 20), finds the Methodref/InterfaceMethodref entries
+that match a rule by owner, name and descriptor, then walks each `Code` attribute instruction by instruction
+(a full length table, including `tableswitch`/`lookupswitch` padding and `wide`) and swaps only the call
+instructions of the rule's opcode that use those entries. `invokespecial` (a `super.` call) is never swapped.
+
+| Rules | Call swapped | Hook |
+|---|---|---|
+| mod | `CombatEngineAPI.getPlayerShip()` | the acting ship, else the real one |
+| mod | `CombatEngineAPI.setPlayerShipExternal(s)` | acting: `Bridge.moveRemote`: on the host the joiner is moved into `s` and the host stays; on a joiner nothing happens |
+| mod | `CombatEngineAPI.maintainStatusForPlayerShip(...)` | acting: dropped (the joiner's own game shows it) |
+| mod | `CombatEngineAPI.getTimeMult()` | acting: a throwaway `MutableStat` whose base is the real value (reads right; changes go nowhere: one player can't slow the battle for all) |
+| mod | `CombatEngineAPI.isUIAutopilotOn()` | acting: whether that person flies by hand (`Bridge.manual`; on a joiner: yes). Scripts pair it with "is this the player's ship?" to pick keys or their own AI logic, as MagicLib's subsystems do |
+| mod | `CombatEngineAPI.addPlugin(p)` | acting, and `p` keeps that ship in a field: `p` is noted as the joiner's |
+| mod | `Mouse.getX()/getY()` | acting: where that person points, converted to this screen |
+| mod | `Keyboard.isKeyDown(k)` | acting: the joiner's key (`Bridge.keyDown`; for now always "not pressed", never the host's keys) |
+| mod | `ViewportAPI.set/setViewMult/setExternalControl/setCenter` | acting: dropped (this PC's camera is its own player's) |
+| mod | `SoundPlayerAPI.playUISound/playUILoop` | acting: played at volume 0 / not played (interface sounds are for this PC's player) |
+| mod | `MagicSubsystem.advanceInternal(f)` (invokevirtual) | run with the subsystem's ship acting |
+| engine | `Ship.advance(f)` | run with that ship acting |
+| engine | `EveryFrameCombatPlugin.advance(f, events)` | a plugin noted as a joiner's runs with that ship acting |
+
+**The acting ship** (`Hooks.acting`, game thread only) is the ship whose frame is running, when a joiner flies it:
+`actingFor(s)` is `s` if it carries `wingman_remote` (6.4, `PilotMarks`), its parent if `s` is a module of such a
+ship, or the wing's source ship if `s` is a fighter from one; and only while a bridge is set and `Bridge.live()`.
+Frames nest and restore (`try/finally`). Inside a joiner's frame, then, a mod's "is this the player's ship?" is
+true for that joiner's ship, as it is on the joiner's own screen; outside, everything is as before. A plugin added
+from a joiner's frame runs for that joiner only if it holds the ship (or one of its modules or fighters) in an
+instance field, checked by reflection at `addPlugin`: a mod's battle-wide manager that happens to be added from
+the first ship whose frame runs holds no ship, and must stay the host's.
+
+**Both sides.** The agent is the same on every PC; what differs is the bridge Wingman sets. On the host it is
+`AgentLink` (below). On a joiner it is `JoinerAgentLink`, set when the join battle is ready
+(`AgentGate.startJoiner`): the acting ships are the copies of ships other people fly (marked `wingman_remote` by
+the joiner's own `markPilots`), `moveRemote` does nothing and returns false (who flies what is the host's
+decision; the pilot's own PC and the host move them), `cursor` is that pilot's aim from the host's updates (5.1),
+and no key is ever pressed. So on every PC, a script running for a ship a person flies treats it as a player's
+ship, and only that person's own PC shows the things meant for their screen.
+
+**Wingman's side.** `AgentGate` is the only class that may be loaded without the agent: it checks once for
+`wingman.agent.Hooks` (`Class.forName`; the sandbox allows `java.lang.Class`, and the agent's jar is on the system
+class path, which the mods' loaders delegate to) and only then touches `AgentLink`, which implements `Bridge`:
+- `live()`: the host plugin started, isn't disabled, and its engine is the current one (a bridge left from an
+  earlier battle changes nothing).
+- `moveRemote(from, to)`: the player flying `from` claims `to` under the same rules as a claim of their own
+  (`WingmanHostPlugin.refusal`); `claimByScript` makes `handleClaims` answer with `ASSIGN` + byte 1, and the
+  joiner's game sits down in that ship even when it wasn't in a fighter (`case Msg.ASSIGN`). Returns false if
+  refused (the first five refusals are logged), and the script then still sees the joiner where they were.
+- `cursor(ship)`: the joiner's `InputState.mouseX/Y` (map coordinates).
+The bridge is set in `start()` and cleared on a host error. `runSubsystems` fires a joiner's subsystem inside
+`AgentGate.runAs(ship)`, so a hand-over the subsystem makes moves the joiner (the old undo of a host switch stays as
+a safety net). The agent's report (classes changed, calls swapped by kind, answers changed) is logged when the
+battle starts and when it ends.
+
+**Not covered:** screen-wide plugins (not added from a ship's frame) that act on "the player's ship" each frame
+still act for this PC's own player only; joiners' keys aren't sent, so a mod hotkey read in a joiner's frame on the host is
+never pressed there (the joiner's own copy of the script still sees their key); a script that slows time for its
+pilot doesn't slow it for a joiner (on purpose).
+
+**Tests** (`build.agent.sh`, local): `AgentRun` loads fixture classes shaped like mod, engine and MagicLib code
+under the real agent and checks 79 answers with and without a bridge, inside and outside a joiner's frame
+(modules, plugins, refused moves, a bridge that isn't live). `AgentCheck` runs the patcher over every class in
+UAF, MagicLib, the game's jars and vanilla combat scripts, re-reads each changed class (nothing may match again)
+and `AgentVerify` loads the changed mod classes under the agent with `-Xverify:all`: 0 errors (69 verified; the
+rest need classes not here). The game's own classes can't be verified that way (their obfuscated names are only
+accepted with verification off, as the game runs); for them `javap` shows that only the swapped instructions differ.
+
 ## 9. Title screen and joining
 
 - **The panel** (`WingmanTitlePlugin`): the title screen's drifting ships are a real battle, so a combat plugin can
@@ -915,6 +1056,7 @@ local player it does this only on autopilot; any other ship it treats as AI-flow
   mouse; `processInputPreCoreControls` swallows it). F1 how-to (shown once, versioned by `HELP_VERSION`), F2 report,
   F3 settings, F5 reset blocked systems and objectives. State that must survive a battle is `static`, because the
   plugin is made afresh each time the title screen loads.
+- **The lobby page** (F4; opens by itself on the first `ROSTER`): the host's fleet and picks, see 6.5.
 - **Joining:** Enter connects (`ClientLink`); `BATTLE_INFO` starts the auto-join countdown (Esc skips this battle);
   `join()` calls `TitleLauncher.start("wingman_join")`. If that fails, the Missions screen's **Wingman: Join Game**
   works the same way, and the mission shows its own join form when not connected.
@@ -944,7 +1086,8 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `password` | "" | host | yes | Join password |
 | `maxPlayers` | 4 | host | no | Players including the host (2-16) |
 | `maxShipSize` | CAPITAL_SHIP | host | yes | Largest hull a joiner may fly |
-| `readyCheck` | true | host | no | Hold the battle until everyone is ready |
+| `readyCheck` | true | host | no | Hold the battle while everyone chooses a ship, then until everyone is ready |
+| `campaignLobby` | true | host | no | Open the session on the campaign map: friends connect and pick ships before a battle (6.5) |
 | `modCheck` | content | host | no | `content` (utility mods may differ), `all`, `off` |
 | `autoJoin` | true | joiner | no | Join the host's battle by itself |
 | `rememberShip` | true | joiner | yes | Board last battle's ship |
@@ -1036,7 +1179,9 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
 - **Build:** `./build.sh /path/to/starsector-core` (or `build.bat`): compile the stubs, compile `PatchNew` and
   `PatchPackage`, compile `src/` for Java 8 with the stubs ahead of the game jars, patch `TitleLauncher.class` and
   `MessageSpy.class`, jar the `wingman` package to
-  `jars/Wingman.jar`. The jar is committed so the mod works from a download.
+  `jars/Wingman.jar`. The jar is committed so the mod works from a download. Before that, `agent/src` is compiled
+  and jarred with `agent/MANIFEST.MF` (`Premain-Class`) to `jars/WingmanAgent.jar` (also committed), and Wingman is
+  compiled with those classes on the class path (they are not packed into `Wingman.jar`).
 - **Tests** (plain Java against the built jar, real sockets on 127.0.0.1; add `channels` to use the other driver):
   - `NetTest`: packing, player cap and numbering, version and mod refusals, every message's round trip, compact
     updates over 300 ticks, a lossy network (25% loss, reordering, a half-second blackout), compression, UDP,
@@ -1048,7 +1193,8 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name
     spoofing, password guessing, connection and message floods, UDP junk, 30,000 mangled inputs for each of 13
     decoders, impossible numbers; an honest player must stay served throughout.
-- **Player download:** `dist/make.sh` → `Wingman-<version>.zip` with the jar, `data/`, `mod_info.json`,
+- **Agent tests:** see 8.9.
+- **Player download:** `dist/make.sh` → `Wingman-<version>.zip` with both jars, `data/`, `mod_info.json`,
   `wingman_settings.json`, `dist/README.md` as README, `RELEASE_NOTES.md`, `LICENSE`, `NOTICE`.
 - **Release checklist:** `debugLog` false in `WingmanConfig` and `wingman_settings.json`; version in `mod_info.json`,
   README titles and release notes; `Msg.PROTOCOL_VERSION` raised whenever a message's layout changes; changelog.

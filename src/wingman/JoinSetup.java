@@ -77,6 +77,8 @@ public final class JoinSetup {
     private static long cachedAt;
     /** If the host refused us here, the reason; the battle plugin shows it. */
     public static volatile String rejectReason;
+    /** The ship this player picked in the pre-battle lobby (ship name, hull name), or null: the host seats them in it. */
+    public static volatile String[] lobbyPick;
 
     /** Forget what was learned last time, so the next fetch asks the host again. */
     public static synchronized void forget() { cached = null; }

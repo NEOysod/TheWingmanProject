@@ -41,6 +41,13 @@ WingmanAPI.isFlownRemotely(ship)  // a person on another PC flies it
 
 The marks are updated every frame while players are connected, and taken off a ship nobody flies any more.
 
+If the host runs Wingman's optional agent (see `docs/TECHNICAL.md` section 8.9), you may not need any of this:
+while a joiner's ship's frame runs on the host (its hullmods, system, weapon scripts, MagicLib subsystems),
+`engine.getPlayerShip()` in your code answers that ship, `setPlayerShipExternal` moves that joiner, and the mouse is
+theirs. Status lines and time-multiplier changes made there are dropped (the joiner's own game shows them). A
+plugin you add from that frame runs for the joiner too if it keeps the ship in a field. Screen-wide plugins that
+look at "the player's ship" on their own still see the host's.
+
 ## Messages between PCs
 
 A mod can talk to its own copies on the other PCs: the host to every joiner or to one, a joiner to the host.

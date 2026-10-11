@@ -33,6 +33,8 @@ public final class HostSession {
         /** Set when the player transferred command; the plugin decides whether the ship is free. */
         public boolean hasClaim;
         public int claim = -1, claimSeq;
+        /** The claim was made by a mod's script on the host (Wingman's agent), not by the player. */
+        public boolean claimByScript;
         /** MagicLib subsystems this player switched on, waiting for the game thread: ship net id, subsystem class. */
         public final java.util.List<Object[]> subsystemPresses = new java.util.ArrayList<Object[]>();
         long subsystemWindow;
@@ -40,8 +42,10 @@ public final class HostSession {
         /** Other mods' messages from this player in the current second (see ModChannel). */
         long modWindow;
         int modsInWindow;
-        /** Ready-check report from this player. */
-        public boolean ready;
+        /** Ready-check report from this player; watching: they chose to go without a ship. */
+        public boolean ready, watching;
+        /** A pick from the pre-battle lobby (Msg.PICK) waiting for the game thread: fleet member id, "" for none. */
+        public String pick;
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -514,6 +518,7 @@ public final class HostSession {
                         pl.ready = in.readBoolean();
                         pl.built = in.readInt();
                         pl.skipped = in.readInt();
+                        pl.watching = in.remaining() > 0 && in.readBoolean();
                         lobbyDirty = true;
                     }
                     else if (p.type == Msg.SUBSYSTEM) {
@@ -534,6 +539,10 @@ public final class HostSession {
                         pl.hasClaim = true;
                     }
                     else if (p.type == Msg.INPUTS) pl.buffer.arrive(p.data, System.currentTimeMillis());
+                    else if (p.type == Msg.PICK) {
+                        String id = Msg.reader(p.data).readUTF();
+                        if (id.length() <= 64) pl.pick = id; // (the last one counts; the game thread checks it)
+                    }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();
                         if (now - pl.modWindow > 1000) { pl.modWindow = now; pl.modsInWindow = 0; }

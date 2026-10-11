@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 49;
+    public static final int PROTOCOL_VERSION = 51;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -80,6 +80,10 @@ public final class Msg {
     public static final byte INPUT_MODE = 53;
     /** joiner -> host: a bundle of controls (see InputBuffer). */
     public static final byte INPUTS = 54;
+    /** host -> joiners, outside battles: the host's fleet, who is connected and which ship each picked (see Roster). */
+    public static final byte ROSTER = 55;
+    /** joiner -> host: the fleet member (by id) this player wants to fly in the next battle; "" for none. */
+    public static final byte PICK = 56;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */
@@ -100,6 +104,16 @@ public final class Msg {
 
     public static String readUtf(byte[] data) {
         try { return reader(data).readUTF(); } catch (IOException e) { return ""; }
+    }
+
+    /**
+     * ASSIGN when a mod's script on the host moved the player (see wingman.AgentLink): as twoInts, then a byte 1
+     * meaning "sit down in it" (the player didn't ask; their game follows).
+     */
+    public static byte[] assignMoved(int seq, int id) {
+        W w = new W();
+        try { w.out.writeInt(seq); w.out.writeInt(id); w.out.writeByte(1); } catch (IOException e) { throw new IllegalStateException(e); }
+        return w.done();
     }
 
     public static byte[] twoInts(int a, int b) {

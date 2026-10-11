@@ -46,7 +46,9 @@ final class Settings {
         ITEMS.add(new Item(0, "maxShipSize", "Largest ship a joiner may fly", HOST, true, new String[] { "FRIGATE", "DESTROYER", "CRUISER", "CAPITAL_SHIP" },
                 "CAPITAL_SHIP means no limit."));
         ITEMS.add(new Item(0, "readyCheck", "Ready check before a battle", HOST, false, YES_NO,
-                "On: the battle is held paused until everyone has loaded and pressed ready."));
+                "On: the battle is held paused while everyone chooses a ship, then until everyone has pressed ready."));
+        ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
+                "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,

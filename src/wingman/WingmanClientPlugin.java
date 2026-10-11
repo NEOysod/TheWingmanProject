@@ -161,6 +161,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     // Ready check and pop-ups
     private Lobby lobby;
     private boolean iAmReady, enterPressed, rejected;
+    /**
+     * The two stages before a battle: 1, choose a ship (or to watch without one); 2, ready. watching: chose to go
+     * without a ship. changingShip: went back from stage 2 to choose another.
+     */
+    private boolean watching, changingShip;
     private int skippedShips;
     /** Host ships and fighters that could not be built here (missing content, or over the cap): id -> is a fighter. */
     private final Map<Integer, Boolean> skippedIds = new HashMap<Integer, Boolean>();
@@ -184,7 +189,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private static final int RECONNECT_TRIES = 10;
     private static final int MAX_MISSILES = 2000, MAX_FIGHTERS = 800;
     private int sentBuilt = -1, sentSkipped = -1;
-    private boolean sentReady;
+    private boolean sentReady, sentWatching;
     private long lastReadyMillis;
     private final Panel panel = new Panel();
     private final ClientEnvironment environment = new ClientEnvironment();
@@ -238,6 +243,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             step(amount);
         } catch (Throwable t) {
             Global.getLogger(WingmanClientPlugin.class).error("Wingman client error, co-op stopped", t);
+            AgentGate.stop();
             Ui.say(engine, "Co-op: client error, stopped (see starsector.log): " + t);
             if (ready) {
                 // Stop following the host, but stay able to show why and to offer the way out. The connection
@@ -337,6 +343,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         lastSnapshotAt = System.currentTimeMillis();
         ready = true;
+        AgentGate.startJoiner(this);
         return true;
     }
 
@@ -345,6 +352,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         bufferClock.advance(clock);
         wingman.api.WingmanAPI.deliver();
         markPilots();
+        applyAims();
+        holdOthers();
         ClientLink.State state = link.getState();
         if (state != lastState) {
             if (state == ClientLink.State.CONNECTED && joinScreen) {
@@ -511,6 +520,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : ""));
                 lateSum = 0f;
                 lateN = 0;
+                String agent = AgentGate.report();
+                if (agent != null) Global.getLogger(WingmanClientPlugin.class).info(agent);
             }
         }
         String traffic = Dbg.on ? wingman.net.NetStats.report(30f) : null; // bandwidth meter, one line every 30 seconds
@@ -1182,6 +1193,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 localShips.clear();
                 freshlyBuilt.clear();
                 iAmReady = false;
+                watching = false;
+                changingShip = false;
                 sentBuilt = -1;
                 lobby = null;
                 break;
@@ -1266,10 +1279,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 break;
             }
+            case Msg.SUBSYSTEM: {
+                // Someone else used a MagicLib subsystem on the ship they fly (host's or another joiner's): the
+                // same here, on our copy (whose subsystems otherwise wait, see holdOthers).
+                In in = Msg.reader(p.data);
+                int id = in.readInt();
+                String cls = in.readUTF();
+                Puppet pp = id == ownId ? null : puppets.get(id);
+                if (pp != null && cfg != null && cfg.joinerSubsystems) fireForOther(pp, cls);
+                break;
+            }
             case Msg.ASSIGN: {
                 In in = Msg.reader(p.data);
                 int seq = in.readInt();
                 int id = in.readInt();
+                boolean movedByScript = in.remaining() > 0 && in.readByte() == 1;
                 if (id != ownId && id >= 0) {
                     Ui.say(engine, "Co-op: you have the helm.");
                     if (!helmHintsShown) {
@@ -1280,10 +1304,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 // The host moved us to another ship of its own accord (back to our carrier when the fighter we
                 // flew from it is done): sit down in it, if we are still in that fighter or have nothing to fly.
-                if (id >= 0 && id != ownId && puppets.containsKey(id)) {
+                // Only an answer that has seen our latest request: a late answer to an older one (we asked for the
+                // carrier, then for a fighter, and the carrier's answer comes now) must not pull us back.
+                if (seq == claimSeq && id >= 0 && id != ownId && puppets.containsKey(id)) {
                     ShipAPI now = engine.getPlayerShip();
                     Puppet there = puppets.get(id);
-                    if (there.ship != null && there.ship != now && (now == null || now == placeholder || now.isFighter() || !now.isAlive())) {
+                    // Or a mod's script on the host moved us (Isenoria's override passing control to a fighter, run
+                    // there for our ship): follow it.
+                    if (there.ship != null && there.ship != now && (movedByScript || now == null || now == placeholder || now.isFighter() || !now.isAlive())) {
                         engine.setPlayerShipExternal(there.ship); // (and the usual change of ship follows, see watchPlayerShip)
                     }
                 }
@@ -1476,6 +1504,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 stallAlerted = false;
                 hostFlagship = snap.hostFlagship;
                 hostTimeMult = snap.timeMult > 0.001f ? snap.timeMult : 1f;
+                aims.clear();
+                for (int ai = 0; ai < snap.piloted.length && ai < snap.pilotedAimX.length; ai++) {
+                    if (snap.piloted[ai] != ownId) aims.put(snap.piloted[ai], new float[] { snap.pilotedAimX[ai], snap.pilotedAimY[ai] });
+                }
+                if (snap.hasHostAim && snap.hostFlagship >= 0) aims.put(snap.hostFlagship, new float[] { snap.hostAimX, snap.hostAimY });
                 markTransferTargets(snap.piloted);
                 for (Snapshot.ShipState st : snap.ships) {
                     Puppet pp = puppets.get(st.netId);
@@ -1590,6 +1623,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (!(builtShips() + skippedShips >= lobby.expected && lobby.expected > 0)) return;
         rememberTried = true;
         if (ownId >= 0 || rejoinShip >= 0 || reboardId >= 0 || engine.getPlayerShip() != placeholder) return;
+        if (lobbyPickHere() != null) return; // picked in the lobby before the battle: the host seats us in that one
         try {
             if (rememberedShip == null) {
                 rememberedShip = Global.getSettings().fileExistsInCommon(SHIP_FILE) ? Global.getSettings().readTextFileFromCommon(SHIP_FILE) : "";
@@ -1611,7 +1645,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (found == null || same != 1) return;
             pickId = found.netId;
             engine.setPlayerShipExternal(found.ship);
-            Ui.say(engine, "Co-op: you are back in the ship you flew last time. Choose another in the ready check, or with Transfer Command.");
+            Ui.say(engine, "Co-op: you are back in the ship you flew last time. Backspace in the ready check chooses another.");
         } catch (Throwable t) {
             Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not put you back in your last ship; pick one as usual", t);
         }
@@ -1652,22 +1686,42 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (lobby == null || !lobby.readyCheck) { enterPressed = false; return; }
         int built = builtShips();
         boolean synced = built + skippedShips >= lobby.expected && lobby.expected > 0;
-        if (enterPressed) iAmReady = synced && !iAmReady;
-        if (!synced) iAmReady = false;
+        if (ownId >= 0) watching = false;
+        boolean chosen = stage() == 2;
+        if (enterPressed && chosen) iAmReady = synced && !iAmReady;
+        if (!synced || !chosen) iAmReady = false;
         enterPressed = false;
         long now = System.currentTimeMillis();
-        if (built == sentBuilt && skippedShips == sentSkipped && iAmReady == sentReady && now - lastReadyMillis < 1000) return;
+        if (built == sentBuilt && skippedShips == sentSkipped && iAmReady == sentReady && watching == sentWatching && now - lastReadyMillis < 1000) return;
         sentBuilt = built;
         sentSkipped = skippedShips;
         sentReady = iAmReady;
+        sentWatching = watching;
         lastReadyMillis = now;
         Msg.W w = new Msg.W();
         try {
             w.out.writeBoolean(iAmReady);
             w.out.writeInt(built);
             w.out.writeInt(skippedShips);
+            w.out.writeBoolean(watching);
         } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
         conn.send(Msg.READY, w.done());
+    }
+
+    /** Which stage of the ready check we are in: 1 choosing a ship, 2 ready (see watching). */
+    private int stage() {
+        return (ownId >= 0 || watching) && !changingShip ? 2 : 1;
+    }
+
+    /** The lobby pick (ship name, hull name) if that ship is in this battle on our side, else null. */
+    private Puppet lobbyPickHere() {
+        String[] pick = JoinSetup.lobbyPick;
+        if (pick == null) return null;
+        for (Puppet pp : pickable()) {
+            String name = pp.ship.getName() == null ? "" : pp.ship.getName();
+            if (name.equals(pick[0]) && pp.ship.getHullSpec().getHullName().equals(pick[1])) return pp;
+        }
+        return null;
     }
 
     @Override
@@ -1722,7 +1776,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 e.consume();
                 continue;
             }
-            if (!popup && lobbyUp && (key == 200 || key == 208 || key == KEY_PICK)) { // the ship list: Up, Down, F
+            boolean choosing = lobbyUp && stage() == 1;
+            boolean takeKey = key == KEY_PICK || (choosing && Panel.isEnter(key) && !e.isCtrlDown());
+            if (!popup && choosing && (key == 200 || key == 208 || takeKey)) { // stage 1, the ship list: Up, Down, F or Enter
                 try {
                     List<Puppet> ships = pickable();
                     if (!ships.isEmpty()) {
@@ -1732,16 +1788,36 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         else if (key == 208) at = (at + 1) % ships.size();
                         Puppet chosen = ships.get(at);
                         pickId = chosen.netId;
-                        if (key == KEY_PICK) {
+                        if (takeKey) {
                             String why = cannotFly(chosen);
-                            if (chosen.netId == ownId) toPlaceholder();           // F on your own ship: step out of it
+                            if (chosen.netId == ownId) { changingShip = false; pickNote = ""; } // keep the ship we have
                             else if (why != null) pickNote = "That ship is " + why + ".";
-                            else { pickNote = ""; engine.setPlayerShipExternal(chosen.ship); } // the host is then asked for it, as with Transfer Command
+                            else { // the host is asked for it, as with Transfer Command; stage 2 once it says yes
+                                pickNote = "Asking the host for " + (chosen.ship.getName() == null ? chosen.ship.getHullSpec().getHullName() : chosen.ship.getName()) + "...";
+                                changingShip = false;
+                                watching = false;
+                                engine.setPlayerShipExternal(chosen.ship);
+                            }
                         } else pickNote = "";
                     }
                 } catch (Throwable t) {
                     Global.getLogger(WingmanClientPlugin.class).warn("Wingman: choosing a ship from the list failed; use Transfer Command", t);
                 }
+                e.consume();
+                continue;
+            }
+            if (!popup && choosing && key == 17) { // W: go without a ship, watching
+                if (ownId >= 0) toPlaceholder();
+                watching = true;
+                changingShip = false;
+                pickNote = "";
+                e.consume();
+                continue;
+            }
+            if (!popup && lobbyUp && !choosing && key == 14) { // Backspace in stage 2: back to choosing a ship
+                changingShip = true;
+                iAmReady = false;
+                if (ownId >= 0) pickId = ownId;
                 e.consume();
                 continue;
             }
@@ -2011,6 +2087,81 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         return best;
     }
 
+    // ---- other people's ships: where they point, their subsystems, Wingman's agent ----
+
+    /** Where the host and the other joiners point, by the ship they fly (from the host's updates). */
+    private final Map<Integer, float[]> aims = new HashMap<Integer, float[]>();
+
+    /**
+     * Their ships' mouse targets follow where they point, so a ship system or script that aims "where the pilot
+     * points" (the ship's mouse target, as the game's own systems do) aims there on this PC too.
+     */
+    private void applyAims() {
+        for (Map.Entry<Integer, float[]> e : aims.entrySet()) {
+            Puppet pp = puppets.get(e.getKey());
+            if (pp == null || pp.ship == null || e.getKey() == ownId) continue;
+            try {
+                org.lwjgl.util.vector.Vector2f mt = pp.ship.getMouseTarget();
+                if (mt != null) mt.set(e.getValue()[0], e.getValue()[1]);
+            } catch (Throwable t) { /* the ship keeps its own */ }
+        }
+    }
+
+    /** Ships others fly whose MagicLib subsystems are held here (see holdOthers), as of last frame. */
+    private final Set<ShipAPI> othersHeld = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+
+    /**
+     * MagicLib subsystems on ships other people fly don't fire by their own (AI) logic here: they fire when their
+     * pilot used them, which the host relays (SUBSYSTEM). As on the host for joiners' ships.
+     */
+    private void holdOthers() {
+        if (cfg == null || !cfg.joinerSubsystems) {
+            for (ShipAPI s : othersHeld) Subsystems.release(s);
+            othersHeld.clear();
+            return;
+        }
+        Set<ShipAPI> now = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+        for (ShipAPI s : engine.getShips()) {
+            if (s == null || !s.isAlive() || !s.getCustomData().containsKey(wingman.api.WingmanAPI.REMOTE_KEY)) continue;
+            Subsystems.hold(s);
+            now.add(s);
+        }
+        for (ShipAPI s : othersHeld) if (!now.contains(s)) Subsystems.release(s);
+        othersHeld.clear();
+        othersHeld.addAll(now);
+    }
+
+    private int othersFired;
+
+    /** Fire a subsystem the pilot of this copy used on the host's battle, as part of that ship's frame. */
+    private void fireForOther(Puppet pp, final String cls) {
+        final ShipAPI ship = pp.ship;
+        if (ship == null || !ship.isAlive()) return;
+        ShipAPI before = engine.getPlayerShip();
+        java.util.Map<ShipAPI, java.util.Set<Object>> subsBefore = Subsystems.snapshotAll(engine);
+        final boolean[] fired = new boolean[1];
+        AgentGate.runAs(ship, new Runnable() { public void run() { fired[0] = Subsystems.fire(ship, cls); } });
+        ShipAPI after = engine.getPlayerShip();
+        if (after != before && before != null) {
+            // It handed "the player" another ship (Isenoria's override, run here without the agent): that is the
+            // other pilot's business. We stay where we are, and the switch-back it gave that ship goes again.
+            engine.setPlayerShipExternal(before);
+            lastPlayerShip = before;
+            Subsystems.dropAddedSince(after, subsBefore);
+        }
+        if (othersFired++ < 20) Dbg.info(WingmanClientPlugin.class, "Wingman subsystems: " + cls + " used on " + ship.getHullSpec().getHullId()
+                + " by its pilot" + (fired[0] ? "" : " (not ready here)"));
+    }
+
+    /** Co-op is following the host in the battle being played (for Wingman's agent, see JoinerAgentLink). */
+    boolean agentLive() { return ready && !disabled && !halted && !leaving && engine == Global.getCombatEngine(); }
+
+    /** Where the person flying this ship points, or null (for Wingman's agent). */
+    float[] aimOf(ShipAPI s) {
+        Puppet pp = s == null ? null : byShip.get(s);
+        return pp == null ? null : aims.get(pp.netId);
+    }
+
     private final PilotMarks marks = new PilotMarks();
 
     /** Who flies what, written on the ships for other mods (see WingmanAPI): the host's ship, ours, and the other joiners'. */
@@ -2077,48 +2228,79 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (lobby == null || !lobby.readyCheck) return;
         int built = builtShips();
         boolean synced = built + skippedShips >= lobby.expected && lobby.expected > 0;
+        int stage = stage();
         lines.add(lobby.hostName + " (host):  " + lobby.expected + " ships in the battle");
         colors.add(Panel.TEXT);
         for (Lobby.Entry e : lobby.players) {
             lines.add(lobby.describe(e));
-            colors.add(!lobby.isSynced(e) ? Panel.WARN : e.skipped > 0 ? Panel.BAD : e.ready ? Panel.GOOD : Panel.TEXT);
+            boolean chose = !e.ship.isEmpty() || e.watching;
+            colors.add(!lobby.isSynced(e) ? Panel.WARN : e.skipped > 0 ? Panel.BAD : !chose ? Panel.WARN : e.ready ? Panel.GOOD : Panel.TEXT);
         }
-        // Choose a ship here, before the battle starts, rather than start as a spectator.
-        if (synced) {
-            try {
-                List<Puppet> ships = pickable();
-                if (!ships.isEmpty()) {
-                    int at = 0;
-                    for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
-                    pickId = ships.get(at).netId;
-                    lines.add(ownId >= 0 ? "YOUR SHIP is marked below. Choose another if you like:" : "CHOOSE YOUR SHIP:");
-                    colors.add(ownId >= 0 ? Panel.GOOD : Panel.WARN);
-                    int from = Math.max(0, Math.min(at - 3, ships.size() - 7)), to = Math.min(ships.size(), from + 7);
-                    for (int i = from; i < to; i++) {
-                        Puppet pp = ships.get(i);
-                        String why = pp.netId == ownId ? "YOURS" : cannotFly(pp);
-                        String name = pp.ship.getName() == null ? "" : pp.ship.getName() + ",  ";
-                        lines.add((i == at ? ">  " : "    ") + name + pp.ship.getHullSpec().getHullName() + "  ("
-                                + String.valueOf(pp.ship.getHullSize()).toLowerCase().replace('_', ' ') + ")" + (why == null ? "" : "     [" + why + "]"));
-                        colors.add(pp.netId == ownId ? Panel.GOOD : why != null ? Panel.DIM : Panel.TEXT);
+        lines.add("");
+        colors.add(Panel.DIM);
+        if (stage == 1) {
+            // Stage 1: choose a ship (or to watch), before the battle starts.
+            String[] pick = JoinSetup.lobbyPick;
+            if (pick != null) {
+                boolean here = lobbyPickHere() != null;
+                lines.add("Your pick from the lobby: " + (pick[0].isEmpty() ? pick[1] : pick[0] + ", " + pick[1])
+                        + (here ? (ownId >= 0 ? "" : "  (the host is seating you in it)") : "  (not in this battle: choose another)"));
+                colors.add(here ? Panel.GOOD : Panel.WARN);
+            }
+            if (!synced) {
+                lines.add("Loading the battle: " + built + "/" + lobby.expected + " ships...");
+                colors.add(Panel.WARN);
+            } else {
+                try {
+                    List<Puppet> ships = pickable();
+                    if (!ships.isEmpty()) {
+                        int at = 0;
+                        for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
+                        pickId = ships.get(at).netId;
+                        int from = Math.max(0, Math.min(at - 4, ships.size() - 9)), to = Math.min(ships.size(), from + 9);
+                        for (int i = from; i < to; i++) {
+                            Puppet pp = ships.get(i);
+                            String why = pp.netId == ownId ? "YOURS" : cannotFly(pp);
+                            String name = pp.ship.getName() == null ? "" : pp.ship.getName() + ",  ";
+                            lines.add((i == at ? ">  " : "    ") + name + pp.ship.getHullSpec().getHullName() + "  ("
+                                    + String.valueOf(pp.ship.getHullSize()).toLowerCase().replace('_', ' ') + ")" + (why == null ? "" : "     [" + why + "]"));
+                            colors.add(pp.netId == ownId ? Panel.GOOD : why != null ? Panel.DIM : i == at ? Panel.TEXT : Panel.TEXT);
+                        }
+                        if (ships.size() > 9) { lines.add("    ..." + (at + 1) + " of " + ships.size()); colors.add(Panel.DIM); }
+                    } else {
+                        lines.add("No ship of the host's side is free to fly. W: watch the battle without one.");
+                        colors.add(Panel.WARN);
                     }
-                    if (ships.size() > 7) { lines.add("    ..." + (at + 1) + " of " + ships.size()); colors.add(Panel.DIM); }
-                    if (!pickNote.isEmpty()) { lines.add(pickNote); colors.add(Panel.WARN); }
-                }
-            } catch (Throwable t) { /* the list is a convenience: Transfer Command still works */ }
+                } catch (Throwable t) { /* the list is a convenience: Transfer Command still works */ }
+                if (!pickNote.isEmpty()) { lines.add(pickNote); colors.add(Panel.WARN); }
+            }
+            String footer = !synced ? "Choose a ship once the battle has loaded."
+                    : "Up/Down: choose     Enter or F: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
+            panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer);
+            return;
+        }
+        // Stage 2: the ready check.
+        Puppet mine = ownId >= 0 ? puppets.get(ownId) : null;
+        if (mine != null) {
+            String name = mine.ship.getName() == null ? "" : mine.ship.getName() + ",  ";
+            lines.add("You fly:  " + name + mine.ship.getHullSpec().getHullName() + "  (" + String.valueOf(mine.ship.getHullSize()).toLowerCase().replace('_', ' ') + ")");
+            colors.add(Panel.GOOD);
+        } else {
+            lines.add("You watch this battle without a ship. Transfer Command still takes one during the battle.");
+            colors.add(Panel.TEXT);
         }
         String footer;
-        String pick = "     Up/Down: choose a ship     F: take it";
+        String back = "     Backspace: change ship";
         if (!synced) {
-            footer = "Loading the battle: " + built + "/" + lobby.expected + " ships...";
+            footer = "Loading the battle: " + built + "/" + lobby.expected + " ships..." + back;
         } else if (skippedShips > 0 && !iAmReady) {
-            footer = skippedShips + " ships are missing on your side (mods differ from the host).  Enter: ready anyway" + pick;
+            footer = skippedShips + " ships are missing on your side (mods differ from the host).  Enter: ready anyway" + back;
         } else if (!iAmReady) {
-            footer = "All " + lobby.expected + " ships loaded.  Enter: ready" + pick;
+            footer = "Enter: ready" + back;
         } else {
-            footer = "You are ready. Waiting for the host to start.  Enter: cancel" + pick;
+            footer = "You are ready. Waiting for the host to start.  Enter: not ready" + back;
         }
-        panel.render("READY CHECK", lines, colors, footer);
+        panel.render("2 / 2   READY CHECK", lines, colors, footer);
     }
 
     /** The host's battle is paused (as of the last update): shown in large letters, since only the host can unpause. */

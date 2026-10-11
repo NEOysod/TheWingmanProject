@@ -41,7 +41,8 @@ there again: open the **CO-OP** panel (top right of the title screen) and press 
 
 ## 2. Hosting
 
-There is nothing to set up. Every battle you start (a mission, the simulator, a campaign fight) can be joined.
+There is nothing to set up. Every battle you start (a mission, the simulator, a campaign fight) can be joined,
+and in a campaign friends can connect as soon as you load your save, while you are still on the map.
 
 1. **Let friends reach you.** They need to reach your PC on port **24816**. Pick one:
    - the same home network,
@@ -53,8 +54,13 @@ There is nothing to set up. Every battle you start (a mission, the simulator, a 
 3. **Set a password** if anyone else can reach your PC (a public Radmin or Hamachi network, for example).
    In the CO-OP panel press **F3**, pick "Join password" and type one. Without a password, anyone who can
    reach the port can join.
-4. **Start a battle.** After you deploy, the battle waits on a **ready check** until everyone has loaded
-   and pressed ready. Press **Enter** to start, or **Ctrl+Enter** to start without waiting.
+4. **Load your save.** Friends can connect now. They see your fleet in their lobby and pick the ship they
+   want to fly; your message feed says who joined and who picked what. (Setting "Friends can connect on the
+   campaign map"; off: only once a battle starts.)
+5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
+   the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
+   player as loading, choosing a ship, or flying one and ready or not. Press **Enter** to start once everyone
+   is ready, or **Ctrl+Enter** to start without waiting.
 
 **What only the host can do**
 - Give fleet orders. Joiners see them but cannot give any.
@@ -78,21 +84,26 @@ There is nothing to set up. Every battle you start (a mission, the simulator, a 
    between boxes, Ctrl+V pastes. Press **Enter**.
    - It connects at once, so a wrong address, a wrong password or a mod mismatch shows up here.
    - What you typed is remembered for next time.
-3. **Stay on the title screen.** When the host's battle begins, the panel counts down three seconds and
+3. **The lobby.** If the host is on the campaign map, the **LOBBY** page opens: the host's fleet (ship, class,
+   size, CR, officer), who else is connected, and who picked which ship.
+   - **Up / Down** moves through the fleet. **F** picks the marked ship for the next battle; **Delete** drops
+     your pick. Ships marked *host's flagship*, *mothballed*, *can't be flown* or with another player's name
+     can't be picked.
+   - **Esc** goes back to the CO-OP panel; **F4** there opens the lobby again.
+4. **Stay on the title screen.** When the host's battle begins, the panel counts down three seconds and
    takes you into it. Press **Enter** to go at once, or **Esc** to sit that battle out.
    (With "Join the host's battles by myself" switched off, press Enter yourself once the battle has begun.)
-4. Deploy the single stand-in ship.
-5. **Choose your ship in the ready check.** Once the battle has loaded, the ready check lists the host's
-   ships, largest first.
-   - **Up / Down** moves through the list. **F** takes the marked ship.
+5. Deploy the single stand-in ship.
+6. **Step 1 of 2: choose your ship.** If the host deployed the ship you picked in the lobby, you are seated in
+   it and go straight to step 2. Otherwise, once the battle has loaded, you get the list of the host's ships,
+   largest first.
+   - **Up / Down** moves through the list. **Enter** or **F** takes the marked ship.
    - Ships marked *taken*, *the host's* or *over the host's size limit* can't be taken.
-   - F on your own ship steps out of it again.
-   - If you flew one of these ships last time, you are already seated in it (see
+   - **W** goes without a ship: you watch, following the host, and can take one later with Transfer Command.
+   - Without a lobby pick, if you flew one of these ships last time, you are already seated in it (see
      "Put me back in my last ship" in the settings).
-6. Press **Enter** for ready. The battle starts when the host presses Enter.
-
-The ready check also shows every player, whether they are ready, and which ship each is flying.
-You can skip choosing and start as a spectator following the host; take a ship later with Transfer Command.
+7. **Step 2 of 2: ready check.** It shows your ship and every player's. Press **Enter** for ready
+   (**Backspace** goes back to step 1 to change ship). The battle starts when the host presses Enter.
 
 **When the battle ends** you are returned to the title screen, still connected. Stay there and you are
 taken into the host's next battle the same way, for as long as the session lasts.
@@ -169,8 +180,10 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Battle (host) | Enter / Ctrl+Enter | Start after the ready check / start without waiting |
 | Battle (host) | Ctrl+Shift+2…9 | Remove that player (by their P number) |
 | Battle (host) | Ctrl+Shift+T | Take back the targeted ship |
-| Ready check (joiner) | Up / Down, F | Choose a ship from the list; take it |
-| Ready check (joiner) | Enter | Ready / not ready |
+| Lobby (joiner, title screen) | Up / Down, F, Delete | Choose a ship in the host's fleet; pick it; drop your pick |
+| Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
+| Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
+| Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |
 | Battle (joiner) | Transfer Command | Take the helm of the targeted friendly ship |
 | Battle (joiner) | U | Autopilot on / off |
 | Battle (joiner) | Enter at the bottom edge | Retreat with your ship |
@@ -203,7 +216,8 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Join password | none | Joiners must type the same one. After 3 wrong tries from one PC, it must wait 30 seconds. |
 | Players, host included | 4 | 4 is what the mod is built for. More means more bandwidth. |
 | Largest ship a joiner may fly | CAPITAL_SHIP | CAPITAL_SHIP means no limit. |
-| Ready check before a battle | on | Hold the battle until everyone has loaded. |
+| Ready check before a battle | on | Hold the battle while everyone chooses a ship, then until everyone is ready. |
+| Friends can connect on the campaign map | on | Friends connect as soon as you load a save, see your fleet and pick their ships. Off: only once a battle starts. |
 | Mod list check | content | content: mods must match except utility mods. all: every mod. off: no check. |
 | Port | 24816 | Must be the same for everyone. |
 
@@ -338,6 +352,46 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
 - Ships a mod's script brings into the battle (turrets, reinforcements, summons) are matched to the host's;
   any extra one the joiner's own game makes is switched off at once and removed after 3 seconds.
 
+### Optional: Wingman's agent (mods' "player ship" scripts, on every PC)
+
+On the host, a ship a joiner flies is an AI ship as far as the game knows, so a mod's script that does something
+only for "the player's ship" (a "take control of a fighter" override, an ability aimed at the cursor, a slow-motion
+effect, a status line) never does it for a joiner there. **Wingman's agent** fixes that for every mod at once: while the
+host's game runs a joiner's ship (its hullmods, ship system, weapons' scripts, MagicLib abilities), those scripts
+see that ship as the player's ship, the mouse as the joiner's cursor, and a hand-over of "the player" to another
+ship moves the joiner, not the host. Things meant only for the player's own screen and speed (the status lines in
+the corner, slowing the whole battle down) do nothing for a joiner on the host; the joiner's own game shows them.
+
+It works the same way on joiners' PCs: there, the host's ship and the other joiners' ships are treated as their
+pilots' ships, so a mod's player-only effect for them plays out on your screen as it does on theirs (without
+moving your camera, playing their interface sounds or drawing their status bars on your screen). It is optional;
+each player who adds it gets this on their own PC, and the host's matters most. It changes nothing on disk: it works on the mods' code in memory as the game loads it, and only while co-op runs.
+
+To turn it on, add one setting to the game's launch settings, with the game closed. Find `-Xms` (the memory setting) and put the setting just before it, with a space after it:
+
+- **Windows:** in `vmparams` in the Starsector folder (next to `starsector.exe`; open it with Notepad):
+  `-javaagent:..\mods\Wingman\jars\WingmanAgent.jar`
+- **Linux:** in `starsector.sh`:
+  `-javaagent:./mods/Wingman/jars/WingmanAgent.jar`
+- **Mac:** in the file where the game's `-Xms` setting is, `-javaagent:` followed by the full path to
+  `mods/Wingman/jars/WingmanAgent.jar`.
+
+If you start the game with a custom Java launcher (a `.bat` file that runs `java.exe @SomeFile.txt`, as the
+newer-Java packs do), the settings are in that `.txt` file and `vmparams` isn't read: put
+`-javaagent:../mods/Wingman/jars/WingmanAgent.jar` on a line of its own at the top of the `.txt` file.
+
+(If you renamed the mod folder, use your folder's name instead of `Wingman`.) To check it works, look in
+`starsector.log`: "Wingman agent: running" when the game starts, and "Wingman agent: on" when a co-op battle starts; "not started" means the
+setting isn't being read. To turn it off, delete the setting again.
+
+**If the game won't start after adding it,** delete it again: your game's Java may lack the part agents need.
+Please report that, with your Starsector version and operating system.
+
+Some things it can't do yet: a mod's key that is read in the joiner's ship's script on the host is never pressed
+there (the joiner's own copy of the script still sees their key, so effects on their own screen work as before),
+and a mod's battle-wide script that does something to "the player's ship" every frame still does it for the host
+only.
+
 ### What kind of mod can cause problems
 
 | Risk | Kind of mod | What can happen | Covered? |
@@ -348,6 +402,7 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
 | **Covered** | Carrier scripts that look at the carrier's own fighters (`getAllWings()`), and carrier panels. | Used to find no fighters on a joiner's copy (greyed carrier panel, effects missing). | Yes: the host's fighters sit in the copy's hangars. |
 | **Covered** | Mods that put their own AI on a ship (Arma Armatura's carrier refit, scripted manoeuvres). | Used to take a joiner's ship away from them on the host: docked it for repairs and gave it a new AI. | Yes: a strikecraft refits only on the joiner's autopilot, and the joiner's controls are put back after a mod resets the AI. |
 | **Covered** | MagicLib subsystems on a joiner's ship. | Used to be fired by the ship's AI on the host whatever the joiner pressed. | Yes: they follow the joiner's key. |
+| **Covered with the agent** | Scripts that do something only for "the player's ship" (abilities, overrides, status lines). | On the host a joiner's ship is an AI ship, so such a script never does it for a joiner there. | With Wingman's agent (optional, host only, see above): yes, for scripts that run as part of the ship. Without it: only the cases Wingman knows (MagicLib subsystems, Isenoria). |
 | **Covered** | Mods that switch a ship to the other side mid-battle (boarding, hacking, mind control). | The host notices and tells joiners; a player flying that ship loses it and is told. | Yes. |
 | **Out of step** | Mods that create ship types or variants at runtime from the campaign (procedural hulls, generated skins). | The joiner's game doesn't have that ship type, so the ship is invisible there (it still counts for the ready check). | Reported in the log; the ship is skipped. |
 | **Out of step** | Combat scripts that pick at random (random variant, random proc, random target). | Each PC picks differently, so visuals can differ. Damage, positions and deaths are always the host's. | Damage and deaths: yes. Visuals: no. |

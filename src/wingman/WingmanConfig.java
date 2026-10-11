@@ -39,6 +39,8 @@ public final class WingmanConfig {
     public boolean useUdp = true;
     /** Joiner: the ship you fly moves at once under your own controls, and is kept in step with the host's. */
     public boolean predictOwnShip = true;
+    /** Host: open the co-op session on the campaign map, so friends can connect and pick ships before a battle. */
+    public boolean campaignLobby = true;
     /** Joiner: while connected on the title screen, go into the host's battles as they begin, without being asked. */
     public boolean autoJoin = true;
     /** Joiner: at the start of a battle, sit down in the ship flown last time if it is there and free. */
@@ -136,6 +138,7 @@ public final class WingmanConfig {
             c.matchWindowMs = j.optInt("matchWindowMs", c.matchWindowMs);
             c.predictOwnShip = j.optBoolean("predictOwnShip", c.predictOwnShip);
             c.autoJoin = j.optBoolean("autoJoin", c.autoJoin);
+            c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
             c.playerOutlines = j.optBoolean("playerOutlines", c.playerOutlines);
@@ -189,6 +192,7 @@ public final class WingmanConfig {
         if ("useUdp".equals(key)) return String.valueOf(useUdp);
         if ("predictOwnShip".equals(key)) return String.valueOf(predictOwnShip);
         if ("autoJoin".equals(key)) return String.valueOf(autoJoin);
+        if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
         if ("playerOutlines".equals(key)) return String.valueOf(playerOutlines);
@@ -238,6 +242,7 @@ public final class WingmanConfig {
             else if ("useUdp".equals(key)) useUdp = yes(value);
             else if ("predictOwnShip".equals(key)) predictOwnShip = yes(value);
             else if ("autoJoin".equals(key)) autoJoin = yes(value);
+            else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);
             else if ("playerOutlines".equals(key)) playerOutlines = yes(value);

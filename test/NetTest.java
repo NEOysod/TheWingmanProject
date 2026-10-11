@@ -197,6 +197,7 @@ public class NetTest {
         // snapshot of a big battle: 60 ships x 20 weapons
         Snapshot snap = new Snapshot(); snap.tick = 42; snap.paused = true; snap.hostFlagship = 3; snap.timeMult = 0.3333f; snap.piloted = new int[] {5, 9};
         snap.hostTime = 123.456f; snap.pilotedSeq = new int[] {65535, 7}; snap.pilotedAge = new float[] {0.13f, 9f}; snap.pilotedSysAmmo = new int[] {3, 999};
+        snap.pilotedAimX = new float[] {1234.4f, -70000f}; snap.pilotedAimY = new float[] {-5f, Float.NaN}; snap.hasHostAim = true; snap.hostAimX = 99f; snap.hostAimY = -101f;
         Random r = new Random(1);
         for (int i = 0; i < 60; i++) {
             Snapshot.ShipState st = new Snapshot.ShipState();
@@ -218,6 +219,8 @@ public class NetTest {
         Snapshot.ShipState l = s2.ships.get(59);
         check("update carries the host's clock and which controls each piloted ship has acted on", s2.hostTime == 123.456f && s2.pilotedSeq[0] == 65535
                 && s2.pilotedSeq[1] == 7 && Math.abs(s2.pilotedAge[0] - 0.13f) < 0.006f && s2.pilotedAge[1] >= 2.5f && s2.pilotedSysAmmo[0] == 3 && s2.pilotedSysAmmo[1] == 255);
+        check("update carries where each pilot and the host point", Math.abs(s2.pilotedAimX[0] - 1234.4f) <= 1.01f && s2.pilotedAimY[0] == -4f
+                && s2.pilotedAimX[1] == -65534f && s2.pilotedAimY[1] == 0f && s2.hasHostAim && s2.hostAimX == 100f && s2.hostAimY == -100f);
         // the connection is compressed
         String zs = clients.get(0).compressionState();
         check("both directions of the link are compressed (" + zs + ")", zs.contains("sending compressed") && zs.contains("receiving compressed"));
@@ -535,11 +538,11 @@ public class NetTest {
         }
 
         // ready check: a joiner's report reaches the host, and the lobby list round-trips
-        Msg.W rw = new Msg.W(); rw.out.writeBoolean(true); rw.out.writeInt(58); rw.out.writeInt(2);
+        Msg.W rw = new Msg.W(); rw.out.writeBoolean(true); rw.out.writeInt(58); rw.out.writeInt(2); rw.out.writeBoolean(true);
         clients.get(1).send(Msg.READY, rw.done());
         end = System.currentTimeMillis() + 2000;
         while (System.currentTimeMillis() < end && !p2.ready) { host.pump(); Thread.sleep(5); }
-        check("ready report reaches host", p2.ready && p2.built == 58 && p2.skipped == 2 && !host.getPlayers().get(0).ready && host.lobbyDirty);
+        check("ready report reaches host", p2.ready && p2.built == 58 && p2.skipped == 2 && p2.watching && !host.getPlayers().get(0).ready && host.lobbyDirty);
         Lobby lob = new Lobby(); lob.readyCheck = true; lob.hostName = "Host"; lob.expected = 60;
         for (HostSession.Player hp : host.getPlayers()) { Lobby.Entry le = new Lobby.Entry(); le.name = hp.name; le.ready = hp.ready; le.built = hp.built; le.skipped = hp.skipped; lob.players.add(le); }
         lob.players.get(1).ship = "ISS Test (Onslaught)"; lob.maxShipSize = "CRUISER"; lob.players.get(1).slot = 3; lob.players.get(1).shipNetId = 77;
@@ -551,6 +554,30 @@ public class NetTest {
                 && lg.maxShipSize.equals("CRUISER") && lg.players.get(1).slot == 3 && lg.players.get(1).shipNetId == 77 && lg.players.get(0).shipNetId == -1 && lg.describe(lg.players.get(1)).startsWith("P3  ") && lg.describe(lg.players.get(1)).contains("flying ISS Test") && lg.describe(lg.players.get(0)).contains("no ship yet") == lg.isSynced(lg.players.get(0)));
         for (Lobby.Entry le : lg.players) { le.ready = true; le.built = 60; le.skipped = 0; }
         check("all ready only when everyone is loaded and ready", lg.allReady() && new Lobby().allReady());
+        // the two stages: loaded with no ship is "choosing"; watching (no ship by choice) can be ready
+        Lobby lw = new Lobby(); lw.expected = 2; Lobby.Entry ch = new Lobby.Entry(); ch.name = "Cy"; ch.built = 2; Lobby.Entry wa = new Lobby.Entry(); wa.name = "Wu"; wa.built = 2; wa.watching = true; wa.ready = true;
+        lw.players.add(ch); lw.players.add(wa);
+        Lobby lw2 = Lobby.decode(lw.encode());
+        check("lobby stages: " + lw2.describe(lw2.players.get(0)) + " / " + lw2.describe(lw2.players.get(1)), lw2.describe(lw2.players.get(0)).contains("choosing a ship")
+                && lw2.players.get(1).watching && lw2.describe(lw2.players.get(1)).contains("READY") && lw2.describe(lw2.players.get(1)).contains("watching"));
+
+        // pre-battle lobby: the host's fleet round-trips, and a pick reaches the host
+        Roster ro = new Roster(); ro.hostName = "Host"; ro.hostState = 0; ro.maxShipSize = "CRUISER";
+        Roster.Player rp = new Roster.Player(); rp.name = "Ann"; rp.slot = 2; ro.players.add(rp);
+        Roster.Member rm = new Roster.Member(); rm.id = "m-1"; rm.shipName = "ISS Venus\n"; rm.hullName = "Onslaught"; rm.hullSize = "CAPITAL_SHIP"; rm.cr = 70; rm.officer = "Bo Lee"; rm.officerLevel = 5; rm.flags = Roster.CANT_FLY; rm.note = "too big";
+        Roster.Member rm2 = new Roster.Member(); rm2.id = "m-2"; rm2.shipName = "ISS Ant"; rm2.hullName = "Wolf"; rm2.hullSize = "FRIGATE"; rm2.pickedBy = "Ann";
+        ro.members.add(rm); ro.members.add(rm2);
+        host.broadcastAll(Msg.ROSTER, ro.encode());
+        Roster rg = Roster.decode(waitFor(clients.get(0), Msg.ROSTER, host).data);
+        check("roster round trip (the host's fleet, picks, what can't be flown)", rg.hostName.equals("Host") && rg.maxShipSize.equals("CRUISER") && rg.players.get(0).slot == 2
+                && rg.members.size() == 2 && rg.members.get(0).shipName.equals("ISS Venus") && rg.members.get(0).cr == 70 && rg.members.get(0).officerLevel == 5
+                && (rg.members.get(0).flags & Roster.CANT_FLY) != 0 && rg.members.get(0).note.equals("too big") && rg.pickOf("ann") == rg.members.get(1) && rg.pickOf("Bo") == null
+                && Roster.label(rg.members.get(1)).equals("ISS Ant, Wolf"));
+        clients.get(1).send(Msg.PICK, Msg.utf("m-2"));
+        end = System.currentTimeMillis() + 2000;
+        while (System.currentTimeMillis() < end && p2.pick == null) { host.pump(); Thread.sleep(5); }
+        check("a pick reaches the host", "m-2".equals(p2.pick));
+        p2.pick = null;
 
         // battlefield description round trip
         BattleInfo bi = new BattleInfo(); bi.width = 18000f; bi.height = 14000f; bi.background = "graphics/backgrounds/background4.jpg";

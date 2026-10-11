@@ -152,6 +152,7 @@ public final class Budget {
         Snapshot c = new Snapshot();
         c.tick = s.tick; c.paused = s.paused; c.hostFlagship = s.hostFlagship; c.timeMult = s.timeMult;
         c.piloted = s.piloted; c.pilotedSeq = s.pilotedSeq; c.pilotedAge = s.pilotedAge; c.pilotedSysAmmo = s.pilotedSysAmmo;
+        c.pilotedAimX = s.pilotedAimX; c.pilotedAimY = s.pilotedAimY; c.hasHostAim = s.hasHostAim; c.hostAimX = s.hostAimX; c.hostAimY = s.hostAimY;
         c.hostTime = s.hostTime;
         return c;
     }

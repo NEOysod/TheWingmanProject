@@ -256,6 +256,7 @@ public final class SnapshotCodec {
             out.writeByte(Math.round(Snapshot.clamp(age, 0f, 2.55f) * 100f));
             out.writeByte(i < s.pilotedSysAmmo.length ? Math.max(0, Math.min(255, s.pilotedSysAmmo[i])) : 255);
         }
+        Snapshot.writeAims(out, s);
     }
 
     private static void readHead(In in, Snapshot snap) throws IOException {
@@ -274,6 +275,7 @@ public final class SnapshotCodec {
             snap.pilotedAge[i] = (in.readByte() & 0xFF) / 100f;
             snap.pilotedSysAmmo[i] = in.readByte() & 0xFF;
         }
+        Snapshot.readAims(in, snap);
     }
 
     /** What one ship stands at after an update: its numbers, its turret angles, its running shot totals. */

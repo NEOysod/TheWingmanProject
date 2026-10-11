@@ -9,7 +9,7 @@ STAGE=$(mktemp -d)/Wingman
 mkdir -p "$STAGE/jars"
 cp "$MOD/mod_info.json" "$MOD/wingman_settings.json" "$MOD/RELEASE_NOTES.md" "$MOD/LICENSE" "$MOD/NOTICE" "$STAGE/"
 cp "$MOD/dist/README.md" "$STAGE/README.md"
-cp "$MOD/jars/Wingman.jar" "$STAGE/jars/"
+cp "$MOD/jars/Wingman.jar" "$MOD/jars/WingmanAgent.jar" "$STAGE/jars/"
 cp -r "$MOD/data" "$STAGE/"
 rm -f "$OUT"
 (cd "$(dirname "$STAGE")" && zip -qr "$OUT" Wingman)

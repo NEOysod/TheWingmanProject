@@ -4,11 +4,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Who is connected and whether each player has the whole battle loaded and has pressed ready. */
+/**
+ * Who is connected, and where each player is in the two stages before a battle: loading it, choosing a ship
+ * (or to watch), then ready.
+ */
 public final class Lobby {
     public static final class Entry {
         public String name = "";
         public boolean ready;
+        /** They chose to go without a ship (watch). */
+        public boolean watching;
         /** Ships this player has built locally, and ships they could not build (content they don't have). */
         public int built, skipped;
         /** The ship this player is flying, as shown to everyone ("" if none): "Name (Hull class)". */
@@ -50,6 +55,7 @@ public final class Lobby {
                 w.out.writeUTF(e.ship);
                 w.out.writeByte(e.slot);
                 w.out.writeInt(e.shipNetId);
+                w.out.writeBoolean(e.watching);
             }
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
@@ -72,6 +78,7 @@ public final class Lobby {
             e.ship = in.readUTF();
             e.slot = in.readByte() & 0xFF;
             e.shipNetId = in.readInt();
+            e.watching = in.readBoolean();
             l.players.add(e);
         }
         return l;
@@ -83,6 +90,7 @@ public final class Lobby {
         String who = (e.slot > 0 ? "P" + e.slot + "  " : "") + e.name;
         if (!isSynced(e)) return who + ":  loading, " + load;
         String miss = e.skipped > 0 ? ",  MISSING " + e.skipped + " (different mods than host)" : "";
-        return who + ":  " + (e.ready ? "READY" : "not ready") + ",  " + (e.ship.isEmpty() ? "no ship yet" : "flying " + e.ship) + ",  " + load + miss;
+        if (e.ship.isEmpty() && !e.watching) return who + ":  choosing a ship" + miss;
+        return who + ":  " + (e.ready ? "READY" : "not ready") + ",  " + (e.ship.isEmpty() ? "watching (no ship)" : "flying " + e.ship) + miss;
     }
 }

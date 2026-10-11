@@ -34,7 +34,7 @@ import wingman.net.Msg;
 public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private static final float W = 150f, H = 46f, MARGIN = 8f;
     /** Bumped when the how-to pages change enough that everyone should see them again. */
-    private static final String HELP_VERSION = "1";
+    private static final String HELP_VERSION = "2";
     private static final String SEEN_FILE = "wingman_seen";
 
     /** Set by the join mission when it leaves a battle only to come straight back (wrong map size). */
@@ -68,6 +68,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private long lastHostCheck, rejoinAt;
     private WingmanConfig cfg;
 
+    // ---- the pre-battle lobby (see CampaignLobby): the host's fleet, and the ship we pick from it ----
+    private wingman.net.Roster roster;
+    private boolean lobbyOpen, lobbyShown;
+    private int lobbyAt;
+    private String lobbyNote = "";
+    private java.awt.Color lobbyNoteColor = Panel.DIM;
+    private static final int LOBBY_ROWS = 9;
+
     private static final String[] HELP_TITLES = {
         "THE WINGMAN PROJECT: WHAT THIS IS", "HOSTING A BATTLE", "JOINING A BATTLE", "IN THE BATTLE", "BEFORE YOU PLAY",
     };
@@ -79,18 +87,20 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             "These pages are always available: open the CO-OP panel (top right of the title screen) and press F1.",
         },
         {
-            "You don't set anything up. Every battle you start (mission, simulator, campaign) can be joined.",
+            "You don't set anything up. Every battle you start (mission, simulator, campaign) can be joined, and friends can connect as soon as you load a save.",
             "Friends need to reach your PC on TCP port 24816: same network, a virtual LAN (Radmin, Tailscale, ZeroTier), or a port forward.",
             "Your addresses are listed in the CO-OP panel. Read one out to your friends.",
-            "After you deploy, the battle waits on a ready check. Enter starts it once everyone is ready; Ctrl+Enter starts regardless.",
+            "Connected friends see your fleet and pick their ships; your message feed shows who picked what. Deploy those ships if you want them flown.",
+            "After you deploy, everyone chooses a ship, then the ready check. Enter starts once everyone is ready; Ctrl+Enter starts regardless.",
             "Players are numbered: you are P1, joiners P2, P3, P4. Ctrl+Shift+2 removes P2, and so on. Ctrl+Shift+T takes back the ship you have targeted.",
             "Only you can give fleet orders, pause, or change the battle speed.",
         },
         {
             "Click CO-OP, type the host's address and your name, press Enter. You are connected.",
-            "When the host's battle has begun, press Enter again. You go straight into it.",
-            "Deploy the one stand-in ship. You start as a spectator following the host.",
-            "Target a friendly ship and use Transfer Command (see Settings > Controls) to take its helm.",
+            "If the host is on the campaign map, the LOBBY shows their fleet: Up/Down and F pick the ship you want. F4 reopens it.",
+            "When the host's battle begins you are taken into it (Enter goes at once). Deploy the one stand-in ship.",
+            "Step 1: choose your ship (your lobby pick, if deployed, is already yours). Step 2: Enter for ready.",
+            "In the battle, Transfer Command (see Settings > Controls) on a friendly ship changes ship.",
             "When the battle ends you are returned here, still connected. Enter joins the next one.",
         },
         {
@@ -187,7 +197,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     hostLine = "";
                 }
                 if (state == ClientLink.State.CONNECTED) { form.status = "Connected to " + connectedTo + "."; form.statusColor = Panel.GOOD; }
-                if (state != ClientLink.State.CONNECTED) { welcomed = false; withHost = ""; }
+                if (state != ClientLink.State.CONNECTED) { welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null; }
                 lastState = state;
             }
             if (state != ClientLink.State.CONNECTED) return;
@@ -226,6 +236,24 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     autoJoinAt = 0;
                     autoJoinSkip = false;
                     leftOnPurpose = false;
+                } else if (p.type == Msg.ROSTER) { // the host's fleet and who picked what (pre-battle lobby)
+                    roster = wingman.net.Roster.decode(p.data);
+                    welcomed = true;
+                    if (cfg == null) cfg = WingmanConfig.load();
+                    wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg.playerName));
+                    JoinSetup.lobbyPick = mine == null ? null : new String[] { mine.shipName, mine.hullName };
+                    StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
+                    for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
+                    withHost = names.toString();
+                    if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
+                        lobbyShown = true;
+                        lobbyOpen = true;
+                        open = true;
+                        if (mine != null) lobbyAt = roster.members.indexOf(mine);
+                    }
+                } else if (p.type == Msg.NOTICE) { // the host's answer to a pick it can't grant
+                    lobbyNote = Msg.readUtf(p.data);
+                    lobbyNoteColor = Panel.WARN;
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
                     StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
@@ -284,7 +312,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     e.consume();
                     continue;
                 }
+                if (lobbyOpen && open && roster != null) { // the lobby page takes every key while it is up
+                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue());
+                    e.consume();
+                    continue;
+                }
                 if (!open || !e.isKeyDownEvent()) continue;
+                if (e.getEventValue() == 62 && roster != null) { lobbyOpen = true; e.consume(); continue; } // F4: the lobby
                 if (e.getEventValue() == 1 && autoJoinAt != 0) {                      // Escape during the countdown: not this battle
                     autoJoinAt = 0;
                     autoJoinSkip = true;
@@ -322,7 +356,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (!settings.open) cfg = WingmanConfig.load(); // closed: the panel shows the new state of things
                 return;
             }
-            if (!open || helpPage >= 0 || reportPage >= 0) return;
+            if (!open || helpPage >= 0 || reportPage >= 0 || (lobbyOpen && roster != null)) return;
             ClientLink link = ClientLink.get();
             if (!form.keys(events, link.getState() == ClientLink.State.CONNECTING, true)) return;
             String typed = form.address.toString().trim();
@@ -361,6 +395,93 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) {
             fail(t);
         }
+    }
+
+    /** Keys on the lobby page: Up/Down choose, F (or Enter on the map) pick, Delete no pick, Enter join, Esc back. */
+    private void lobbyKey(int key) {
+        int n = roster.members.size();
+        if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
+        if (key == 59) { helpPage = 0; return; }                                       // F1
+        if (n > 0 && key == 200) lobbyAt = (lobbyAt + n - 1) % n;
+        else if (n > 0 && key == 208) lobbyAt = (lobbyAt + 1) % n;
+        else if (key == 201) lobbyAt = Math.max(0, lobbyAt - LOBBY_ROWS);             // Page Up
+        else if (key == 209) lobbyAt = Math.min(Math.max(0, n - 1), lobbyAt + LOBBY_ROWS); // Page Down
+        else if (key == 211) sendPick("");                                             // Delete: no pick
+        else if (Panel.isEnter(key) && (roster.hostState == 1 || autoJoinAt != 0)) {   // the host is in a battle: join it
+            autoJoinAt = 0;
+            leftOnPurpose = false;
+            join();
+        }
+        else if ((key == 33 || Panel.isEnter(key)) && n > 0) {                          // F (or Enter): pick this ship
+            wingman.net.Roster.Member m = roster.members.get(Math.max(0, Math.min(n - 1, lobbyAt)));
+            if ((m.flags & wingman.net.Roster.FLAGSHIP) != 0) note("That is the host's flagship.", Panel.WARN);
+            else if ((m.flags & wingman.net.Roster.MOTHBALLED) != 0) note("That ship is mothballed.", Panel.WARN);
+            else if ((m.flags & wingman.net.Roster.CANT_FLY) != 0) note("Can't pick that ship: " + m.note + ".", Panel.WARN);
+            else if (!m.pickedBy.isEmpty() && !m.pickedBy.equalsIgnoreCase(HostSession.cleanName(cfg == null ? "" : cfg.playerName))) note(m.pickedBy + " has picked that one.", Panel.WARN);
+            else sendPick(m.id);
+        }
+    }
+
+    private void note(String text, java.awt.Color color) { lobbyNote = text; lobbyNoteColor = color; }
+
+    private void sendPick(String memberId) {
+        Conn c = ClientLink.get().getConn();
+        if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+        c.send(Msg.PICK, Msg.utf(memberId));
+        note(memberId.isEmpty() ? "No ship picked: you will choose one in the battle." : "Asked the host for it...", Panel.DIM);
+    }
+
+    private static String size(String hullSize) {
+        return "CAPITAL_SHIP".equals(hullSize) ? "capital" : hullSize.toLowerCase();
+    }
+
+    /** The lobby page: who is there, the host's fleet, and our pick. */
+    private void renderLobby(List<String> lines, List<java.awt.Color> colors) {
+        String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
+        lines.add(roster.hostName + " (host) is " + (roster.hostState == 1 ? "in a battle. Enter joins it." : "on the campaign map. You go into their next battle when it starts."));
+        colors.add(roster.hostState == 1 ? Panel.GOOD : Panel.TEXT);
+        if (autoJoinAt != 0) {
+            long left = Math.max(1, (autoJoinAt - System.currentTimeMillis() + 999) / 1000);
+            lines.add("Joining the host's battle in " + left + "...   Esc: back (then Esc again: not this one).");
+            colors.add(Panel.GOOD);
+        }
+        StringBuilder who = new StringBuilder("Here:  P1 " + roster.hostName);
+        for (wingman.net.Roster.Player rp : roster.players) who.append(",  P").append(rp.slot).append(' ').append(rp.name);
+        lines.add(who.toString());
+        colors.add(Panel.DIM);
+        wingman.net.Roster.Member mine = roster.pickOf(me);
+        lines.add(mine == null ? "You have not picked a ship. Pick one below, or choose in the battle."
+                : "Your ship for the next battle:  " + wingman.net.Roster.label(mine) + "  (if the host deploys it)");
+        colors.add(mine == null ? Panel.WARN : Panel.GOOD);
+        int n = roster.members.size();
+        if (n == 0) {
+            lines.add("The host's fleet isn't available (the host is not in a campaign).");
+            colors.add(Panel.DIM);
+        }
+        lobbyAt = Math.max(0, Math.min(Math.max(0, n - 1), lobbyAt));
+        int from = Math.max(0, Math.min(lobbyAt - LOBBY_ROWS / 2, n - LOBBY_ROWS)), to = Math.min(n, from + LOBBY_ROWS);
+        for (int i = from; i < to; i++) {
+            wingman.net.Roster.Member m = roster.members.get(i);
+            String tag = (m.flags & wingman.net.Roster.FLAGSHIP) != 0 ? "host's flagship"
+                    : (m.flags & wingman.net.Roster.MOTHBALLED) != 0 ? "mothballed"
+                    : (m.flags & wingman.net.Roster.CANT_FLY) != 0 ? "can't be flown"
+                    : m.pickedBy.equalsIgnoreCase(me) ? "YOURS" : m.pickedBy;
+            lines.add((i == lobbyAt ? ">  " : "    ") + wingman.net.Roster.label(m) + "   " + size(m.hullSize)
+                    + (m.cr >= 0 ? ",  CR " + m.cr + "%" : "") + (tag.isEmpty() ? "" : "   [" + tag + "]"));
+            boolean blocked = (m.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED | wingman.net.Roster.CANT_FLY)) != 0
+                    || (!m.pickedBy.isEmpty() && !m.pickedBy.equalsIgnoreCase(me));
+            colors.add(m.pickedBy.equalsIgnoreCase(me) ? Panel.GOOD : blocked ? Panel.DIM : Panel.TEXT);
+        }
+        if (n > LOBBY_ROWS) { lines.add("    ..." + (lobbyAt + 1) + " of " + n + " ships"); colors.add(Panel.DIM); }
+        if (n > 0) { // the marked ship in more detail
+            wingman.net.Roster.Member m = roster.members.get(lobbyAt);
+            String detail = (m.designation.isEmpty() ? "" : m.designation + ".  ")
+                    + (m.officer.isEmpty() ? "No officer." : "Officer: " + m.officer + (m.officerLevel > 0 ? ", level " + m.officerLevel : "") + ".")
+                    + ((m.flags & wingman.net.Roster.CANT_FLY) != 0 && !m.note.isEmpty() ? "  Can't be flown: " + m.note + "." : "");
+            lines.add(detail);
+            colors.add(Panel.DIM);
+        }
+        if (!lobbyNote.isEmpty()) { lines.add(lobbyNote); colors.add(lobbyNoteColor); }
     }
 
     /**
@@ -456,6 +577,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
             if (!open) return;
+            if (lobbyOpen && roster != null && state == ClientLink.State.CONNECTED) {
+                renderLobby(lines, colors);
+                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), "LOBBY:  " + roster.hostName.toUpperCase() + "'S FLEET", lines, colors,
+                        "Up/Down: choose     F: pick this ship     Delete: no pick     "
+                        + (roster.hostState == 1 ? "Enter: join the battle" : "Enter: pick") + "     Esc: back");
+                return;
+            }
 
             form.lines(lines, colors, state == ClientLink.State.CONNECTING);
             if (!hostLine.isEmpty() && state == ClientLink.State.CONNECTED) { lines.add(hostLine); colors.add(Panel.GOOD); }
@@ -472,6 +600,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 colors.add(hostLine.isEmpty() ? Panel.WARN : Panel.TEXT);
             }
             if (!withHost.isEmpty() && state == ClientLink.State.CONNECTED) { lines.add("In this game: " + withHost); colors.add(Panel.DIM); }
+            if (roster != null && state == ClientLink.State.CONNECTED) {
+                wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg == null ? "" : cfg.playerName));
+                lines.add("F4: the lobby (the host's fleet)" + (mine == null ? ", to pick your ship before the battle." : ". Your pick: " + wingman.net.Roster.label(mine) + "."));
+                colors.add(Panel.GOOD);
+            }
             lines.add("To join:  type the host's address, Enter to connect, Enter again to join their battle.");
             colors.add(Panel.DIM);
             lines.add("To host:  just start any battle. Friends type "

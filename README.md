@@ -18,6 +18,9 @@ troubleshooting.
 2. Enable **The Wingman Project** in the launcher.
 3. Every player needs the same mods, in the same versions, as the host. Interface-only mods marked as
    "utility" may differ. A joiner whose mods differ is refused and shown the list of differences.
+4. Optional: Wingman's agent lets mods' "player ship" scripts (fighter take-overs, cursor-aimed abilities)
+   work for every player's ship on every PC (the host's matters most). It is one setting in the game's launch settings; see `docs/USER_GUIDE.md`
+   section 9.
 
 ## Hosting
 Nothing to set up. Every battle you start is open to join.
@@ -27,8 +30,10 @@ Nothing to set up. Every battle you start is open to join.
   ZeroTier, Hamachi), or a port forward on your router.
 - Your addresses to read out are in the CO-OP panel on the title screen. They are not shown during a
   battle unless you switch on "Show my addresses in battle", so they don't end up on a stream.
-- After you deploy, the battle holds on a **ready check** until everyone has loaded and pressed ready. Press
-  Enter to start (Ctrl+Enter to start without waiting).
+- In a campaign, friends can connect as soon as you load your save: they see your fleet in their lobby and pick
+  the ship they want (your message feed says who picked what).
+- After you deploy, everyone chooses a ship, then the battle holds on a **ready check** until everyone has
+  pressed ready. Press Enter to start (Ctrl+Enter to start without waiting).
 - Fleet orders are yours alone. Joiners see them but cannot give any.
 - If a player drops, the battle pauses with a notice and their ship goes back to the AI.
 - **Password.** Without one, anyone who can reach your PC on the port can join. Set one in the settings
@@ -46,13 +51,15 @@ Nothing to set up. Every battle you start is open to join.
 1. On the title screen, click **CO-OP** in the top right corner.
 2. Type the host's address and your name (and the password, if the host set one), press **Enter**. It
    connects straight away, so a wrong address, password or a mod mismatch shows here. Ctrl+V pastes.
-   Everything typed is remembered for next time.
+   Everything typed is remembered for next time. If the host is on the campaign map, the **lobby** opens:
+   their fleet, Up/Down and F to pick the ship you want (F4 reopens it).
 3. Stay on the title screen. When the host's battle begins you are taken into it after a three-second
    countdown (Esc skips that battle; Enter joins at once). With "Join the host's battles by myself" off
    in the settings, press **Enter** yourself instead.
 4. Deploy the single stand-in ship.
-5. **Choose your ship in the ready check:** Up/Down moves through the host's ships, F takes one. If
-   you flew one of them last time, you are already seated in it. Then press Enter for ready.
+5. **Step 1, choose your ship:** a ship you picked in the lobby is yours if the host deployed it. Otherwise
+   Up/Down moves through the host's ships, Enter (or F) takes one, W watches without a ship. **Step 2, ready
+   check:** Enter for ready, Backspace to change ship.
 6. During the battle, target a friendly ship and use the game's **Transfer Command** (see Settings >
    Controls) to change ship.
 

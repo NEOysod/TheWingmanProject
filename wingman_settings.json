@@ -65,6 +65,10 @@
     # The largest ship a joiner may fly: "FRIGATE", "DESTROYER", "CRUISER" or "CAPITAL_SHIP" (no limit).
     "maxShipSize": "CAPITAL_SHIP",
 
+    # true: as soon as a save is loaded, friends can connect (while you are on the campaign map), see your
+    # fleet and pick the ship they want to fly in the next battle. false: only once a battle starts.
+    "campaignLobby": true,
+
     # ---- JOINING ----
     # Only used until an address has been typed into the CO-OP panel, which then takes over.
     # 127.0.0.1 is this PC itself (two copies of the game on one machine).

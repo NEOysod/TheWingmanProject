@@ -113,6 +113,41 @@ public final class Snapshot {
     public float[] pilotedAge = new float[0];
     /** For each piloted ship: charges left in its ship system (254 or more = as good as unlimited, 255 = no system). */
     public int[] pilotedSysAmmo = new int[0];
+    /**
+     * Where each piloted ship's player is pointing (map coordinates, to 2 units), and the host's own (hasHostAim):
+     * so on every PC a mod's script that aims "where the player points" for one of these ships (with Wingman's
+     * agent, or through the ship's mouse target) aims where that person really points.
+     */
+    public float[] pilotedAimX = new float[0], pilotedAimY = new float[0];
+    public boolean hasHostAim;
+    public float hostAimX, hostAimY;
+
+    /** Aims: piloted ones (as many as piloted), then the host's if any. */
+    static void writeAims(Out out, Snapshot s) throws IOException {
+        for (int i = 0; i < s.piloted.length; i++) {
+            out.writeShort(packAim(i < s.pilotedAimX.length ? s.pilotedAimX[i] : 0f));
+            out.writeShort(packAim(i < s.pilotedAimY.length ? s.pilotedAimY[i] : 0f));
+        }
+        out.writeBoolean(s.hasHostAim);
+        if (s.hasHostAim) { out.writeShort(packAim(s.hostAimX)); out.writeShort(packAim(s.hostAimY)); }
+    }
+
+    static void readAims(In in, Snapshot s) throws IOException {
+        s.pilotedAimX = new float[s.piloted.length];
+        s.pilotedAimY = new float[s.piloted.length];
+        for (int i = 0; i < s.piloted.length; i++) {
+            s.pilotedAimX[i] = in.readShort() * 2f;
+            s.pilotedAimY[i] = in.readShort() * 2f;
+        }
+        s.hasHostAim = in.readBoolean();
+        if (s.hasHostAim) { s.hostAimX = in.readShort() * 2f; s.hostAimY = in.readShort() * 2f; }
+    }
+
+    static int packAim(float v) {
+        if (bad(v)) return 0;
+        return Math.max(-32767, Math.min(32767, Math.round(v / 2f)));
+    }
+
     /** The host's battle clock when this update was made. */
     public float hostTime;
     public List<ShipState> ships = new ArrayList<ShipState>();
@@ -166,6 +201,7 @@ public final class Snapshot {
                 w.out.writeByte(Math.round(clamp(age, 0f, 2.55f) * 100f));
                 w.out.writeByte(i < pilotedSysAmmo.length ? Math.max(0, Math.min(255, pilotedSysAmmo[i])) : 255);
             }
+            writeAims(w.out, this);
             w.out.writeVarInt(ships.size());
             for (ShipState s : ships) {
                 int vx = packSpeed(s.vx, SPEED), vy = packSpeed(s.vy, SPEED), av = packSpeed(s.angVel, TURN);
@@ -247,6 +283,7 @@ public final class Snapshot {
             snap.pilotedAge[i] = (in.readByte() & 0xFF) / 100f;
             snap.pilotedSysAmmo[i] = in.readByte() & 0xFF;
         }
+        readAims(in, snap);
         int n = in.readVarInt();
         if (n < 0 || n > 100000) throw new IOException("bad ship count " + n);
         for (int i = 0; i < n; i++) {

@@ -165,6 +165,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             step();
         } catch (Throwable t) {
             disabled = true;
+            AgentGate.stop();
             Global.getLogger(WingmanHostPlugin.class).error("Wingman host error, co-op disabled for this battle", t);
             Ui.say(engine, "Co-op: host error, disabled for this battle (see starsector.log): " + t);
             // Don't leave joiners staring at a frozen copy: hand their ships back and tell them it is over.
@@ -208,8 +209,19 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             if (!mine.isEmpty()) Ui.show(engine, "Co-op: friends type one of these into the join screen: " + mine);
         }
         Global.getLogger(WingmanHostPlugin.class).info("Wingman network: " + wingman.net.Transport.describe());
+        AgentGate.start(this);
+        CampaignLobby.battleStarted(session, cfg);
         return true;
     }
+
+    // ---- for Wingman's agent (see AgentLink) ----
+
+    /** Co-op is running in the battle being played. */
+    boolean agentLive() { return started && !disabled && session != null && engine == Global.getCombatEngine(); }
+    HostSession session() { return session; }
+    Integer idOf(ShipAPI s) { return s == null ? null : ids.get(s); }
+    boolean onAutopilot(int playerId) { return onAutopilot.contains(playerId); }
+    ShipAPI hostShip() { return engine.getPlayerShip(); }
 
     private MessageSpy spy;
     private long spyCheckedAt, msgWindowStart;
@@ -274,6 +286,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         for (String line : session.pump()) Ui.say(engine, "Co-op: " + line);
         wingman.api.WingmanAPI.deliver();
         markPilots();
+        // Picks from joiners still on their title screen (the pre-battle lobby): kept for when they come in.
+        if (CampaignLobby.handlePicks(session, cfg, false)) CampaignLobby.battleStarted(session, cfg);
         if (System.currentTimeMillis() - spyCheckedAt > 3000) tapMessages();
         if (session.acceptError != null) {
             String err = session.acceptError;
@@ -304,6 +318,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             session.endBattle();
             Global.getLogger(WingmanHostPlugin.class).info("Wingman: battle over, joiners told to leave it"
                     + (seededCuts + unseededCuts > 0 ? " (wreck cuts sent with their dice seed: " + seededCuts + " of " + (seededCuts + unseededCuts) + ")" : ""));
+            String agent = AgentGate.report();
+            if (agent != null) Global.getLogger(WingmanHostPlugin.class).info(agent);
             return;
         }
         if (endSent) return;
@@ -375,6 +391,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         checkPilotedShips();
         seatReserved();
         handleClaims();
+        markPilots(); // at once, so scripts run for a ship that just changed hands (runSubsystems, the agent) see who flies it
         runSubsystems();
         keepPilots();
         watchLandings();
@@ -400,6 +417,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanHostPlugin.class).info("Wingman traffic (host, " + session.getPlayers().size() + " joined, " + ships
                         + " ships, " + fighters + " fighters, " + missilesById.size() + " missiles, " + rate + " of " + cfg.snapshotRate
                         + " updates/s, " + pc[2] + " ship/missile states left out as guessed right so far): " + traffic);
+                String agent = AgentGate.report();
+                if (agent != null) Global.getLogger(WingmanHostPlugin.class).info(agent);
             }
         }
         if (Dbg.on) {
@@ -623,6 +642,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             e.built = p.built;
             e.skipped = p.skipped;
             e.slot = p.slot;
+            e.watching = p.watching;
             e.shipNetId = p.shipNetId;
             try {
                 ShipAPI flown = (ShipAPI) p.ship;
@@ -723,9 +743,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (readyPhase != 1) return;
         lines.add("P1  " + lobby.hostName + " (host):  " + lobby.expected + " ships in the battle");
         colors.add(Panel.TEXT);
+        int loading = 0, choosing = 0, readyN = 0;
         for (Lobby.Entry e : lobby.players) {
             lines.add(lobby.describe(e));
-            colors.add(!lobby.isSynced(e) ? Panel.WARN : e.skipped > 0 ? Panel.BAD : e.ready ? Panel.GOOD : Panel.TEXT);
+            boolean chose = !e.ship.isEmpty() || e.watching;
+            if (!lobby.isSynced(e)) loading++; else if (!chose) choosing++; else if (e.ready) readyN++;
+            colors.add(!lobby.isSynced(e) ? Panel.WARN : e.skipped > 0 ? Panel.BAD : !chose ? Panel.WARN : e.ready ? Panel.GOOD : Panel.TEXT);
+        }
+        if (!lobby.players.isEmpty()) {
+            lines.add("1. Loading: " + loading + "     2. Choosing a ship: " + choosing + "     3. Ready: " + readyN + " of " + lobby.players.size());
+            colors.add(Panel.DIM);
         }
         String footer;
         if (lobby.players.isEmpty()) {
@@ -1273,8 +1300,18 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         snap.pilotedSeq = new int[snap.piloted.length];
         snap.pilotedAge = new float[snap.piloted.length];
         snap.pilotedSysAmmo = new int[snap.piloted.length];
+        snap.pilotedAimX = new float[snap.piloted.length];
+        snap.pilotedAimY = new float[snap.piloted.length];
+        try {
+            ShipAPI mine = engine.getPlayerShip();
+            org.lwjgl.util.vector.Vector2f aim = mine == null ? null : mine.getMouseTarget();
+            snap.hasHostAim = aim != null;
+            if (aim != null) { snap.hostAimX = aim.x; snap.hostAimY = aim.y; }
+        } catch (Throwable t) { snap.hasHostAim = false; }
         for (int i = 0; i < snap.piloted.length; i++) {
             snap.piloted[i] = flown.get(i);
+            snap.pilotedAimX[i] = pilots.get(i).input.mouseX;
+            snap.pilotedAimY[i] = pilots.get(i).input.mouseY;
             snap.pilotedSeq[i] = pilots.get(i).input.appliedSeq & 0xFFFF;
             snap.pilotedAge[i] = pilots.get(i).input.appliedSeq < 0 ? 2.55f : pilots.get(i).input.sinceApplied;
             snap.pilotedSysAmmo[i] = 255;
@@ -1876,7 +1913,13 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 if (s == null || ((Integer) press[0]).intValue() != p.shipNetId) continue;
                 java.util.Map<ShipAPI, java.util.Set<Object>> beforeSubs = Subsystems.snapshotAll(engine);
                 ShipAPI before = engine.getPlayerShip();
-                boolean fired = Subsystems.fire(s, (String) press[1]);
+                final boolean[] firedBox = new boolean[1];
+                final ShipAPI ship = s;
+                final String which = (String) press[1];
+                // As part of the joiner's ship's frame: with Wingman's agent, a script it starts sees that ship as
+                // the player's, and a hand-over of "the player" moves the joiner, not the host.
+                AgentGate.runAs(s, new Runnable() { public void run() { firedBox[0] = Subsystems.fire(ship, which); } });
+                boolean fired = firedBox[0];
                 ShipAPI after = engine.getPlayerShip();
                 if (after != before && before != null) {
                     // It handed "the player" another ship (Isenoria's override passes control to a fighter): that
@@ -1888,6 +1931,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                     Subsystems.dropAddedSince(after, beforeSubs);
                 }
                 Dbg.info(WingmanHostPlugin.class, "Wingman subsystems: " + p.name + " used " + press[1] + (fired ? "" : " (not ready here)"));
+                if (fired) relaySubsystem(p.shipNetId, (String) press[1], p);
             }
             p.subsystemPresses.clear();
             if (s == null || onAutopilot.contains(p.id) || !s.isAlive()) continue;
@@ -1897,6 +1941,24 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         for (ShipAPI s : heldShips) if (!flown.contains(s)) Subsystems.release(s); // nobody flies it now: its AI may use them
         heldShips.clear();
         heldShips.addAll(flown);
+        // The host's own uses, for the joiners' copies of the host's ship (which wait for them).
+        ShipAPI mine = engine.getPlayerShip();
+        Integer mineId = ids.get(mine);
+        if (mineId != null) for (String cls : Subsystems.pressed(mine)) relaySubsystem(mineId, cls, null);
+    }
+
+    /**
+     * A person used a MagicLib subsystem on the ship they fly: every other joiner's copy of that ship does the same
+     * (it doesn't fire by its own logic there, see WingmanClientPlugin.holdOthers).
+     */
+    private void relaySubsystem(int shipId, String cls, HostSession.Player except) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeInt(shipId);
+            w.out.writeUTF(cls.length() > 200 ? cls.substring(0, 200) : cls);
+        } catch (java.io.IOException ex) { return; }
+        byte[] m = w.done();
+        for (HostSession.Player o : session.getPlayers()) if (o != except) o.conn.send(Msg.SUBSYSTEM, m);
     }
 
     /** Arma Armatura's "don't go and refit" mark: a ship whose mark is in the future isn't sent to a carrier. */
@@ -2067,7 +2129,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
      * it. Once per battle and player.
      */
     private void seatReserved() {
-        if (gameClock < 2f) return; // let the battle settle (deployment) first
+        // Once the host has deployed: in the ready check (the battle held paused), or 2 s into a battle without one.
+        if (readyPhase == 0 || (readyPhase == 2 && gameClock < 2f)) return;
         for (HostSession.Player p : session.getPlayers()) {
             if (p.ship != null || p.hasClaim || p.needsSync || p.heldCarrier != null) continue;
             String key = p.name.toLowerCase();
@@ -2087,6 +2150,19 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    /** Why this player can't have this ship (what they are told), or null if they can. */
+    String refusal(HostSession.Player p, ShipAPI s, ShipAPI hostShip) {
+        if (s == null || s.getOwner() != 0 || (s.isFighter() && !linked(s, (ShipAPI) p.ship)) || s.isStationModule() || s.isDrone()) {
+            // (A fighter only from the ship they fly: a mod may hand its pilot one, as UAF's Isenoria does.)
+            return "That ship can't be flown.";
+        }
+        if (s == hostShip) return "That is the host's ship.";
+        if (tooBig(s)) return "The host only lets joiners fly ships up to " + cfg.maxShipSize.toLowerCase().replace('_', ' ') + " size.";
+        HostSession.Player other = pilotOf(s);
+        if (other != null && other != p) return other.name + " is already flying that ship.";
+        return null;
+    }
+
     private void handleClaims() {
         ShipAPI hostShip = engine.getPlayerShip();
         for (HostSession.Player p : session.getPlayers()) {
@@ -2098,15 +2174,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 p.shipNetId = -1;
             } else if (s != null && s == p.ship) {
                 // already theirs
-            } else if (s == null || s.getOwner() != 0 || (s.isFighter() && !linked(s, (ShipAPI) p.ship)) || s.isStationModule() || s.isDrone()) {
-                // (A fighter only from the ship they fly: a mod may hand its pilot one, as UAF's Isenoria does.)
-                p.conn.send(Msg.NOTICE, Msg.utf("That ship can't be flown."));
-            } else if (s == hostShip) {
-                p.conn.send(Msg.NOTICE, Msg.utf("That is the host's ship."));
-            } else if (tooBig(s)) {
-                p.conn.send(Msg.NOTICE, Msg.utf("The host only lets joiners fly ships up to " + cfg.maxShipSize.toLowerCase().replace('_', ' ') + " size."));
-            } else if (pilotOf(s) != null) {
-                p.conn.send(Msg.NOTICE, Msg.utf(pilotOf(s).name + " is already flying that ship."));
+            } else if (refusal(p, s, hostShip) != null) {
+                p.conn.send(Msg.NOTICE, Msg.utf(refusal(p, s, hostShip)));
             } else {
                 ShipAPI from = (ShipAPI) p.ship;
                 if (s.isFighter() && from != null && linked(s, from) && from.isAlive() && !onAutopilot.contains(p.id)) {
@@ -2135,7 +2204,13 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 session.broadcastNotice(p.name + " is flying " + shipName + ".", p);
             }
-            p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, p.shipNetId));
+            if (p.claimByScript) {
+                // A script on the host moved them (see AgentLink): their game is told to sit down in it too.
+                p.claimByScript = false;
+                p.conn.send(Msg.ASSIGN, Msg.assignMoved(p.claimSeq, p.shipNetId));
+            } else {
+                p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, p.shipNetId));
+            }
             session.lobbyDirty = true; // who flies what is part of what the ready check shows
         }
     }

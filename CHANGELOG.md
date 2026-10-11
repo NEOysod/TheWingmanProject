@@ -1,7 +1,20 @@
 # Changelog
 
 ## Since 0.6.4-beta (not released)
-Protocol 49.
+Protocol 51.
+
+**Lobby and ready check**
+
+- **Friends can connect before the battle.** New host setting "Friends can connect on the campaign map" (on): the
+  session opens as soon as a save is loaded. Joiners see a LOBBY page on their title screen with the host's
+  fleet (ship, class, size, CR, officer), who is connected, and who picked which ship, and pick the ship they want
+  (F; Delete for none). The host sees joins and picks in the campaign message feed. When the battle starts, a
+  picked ship that is deployed is theirs at once.
+- **Two stages before the battle.** First CHOOSE YOUR SHIP (the list of the host side's ships, Enter or F takes
+  one, W watches without a ship), then READY CHECK (Enter ready, Backspace back to change ship). Ready can only be
+  given with a ship chosen (or watching). The host's panel shows each player as loading, choosing a ship, or
+  flying a ship and ready / not ready, with a count at each stage.
+- New messages `ROSTER` and `PICK`; `READY` and `LOBBY` carry "watching".
 
 **Netcode**
 
@@ -25,6 +38,42 @@ Protocol 49.
   the host's figures a round trip late.
 - The packer's guess for something left out of several updates in a row no longer keeps its acceleration for ever
   (it fades), so a long-carried guess can't run away. No change in bandwidth.
+
+**Mod compatibility: Wingman's agent (optional, host only)**
+
+- **Mods' "player ship" scripts now work for joiners on the host, for every mod at once.** On the host a joiner's
+  ship is an AI ship, so scripts that act only for "the player's ship" never did anything for a joiner there. A
+  new optional Java agent (`jars/WingmanAgent.jar`, turned on with one setting in the game's launch settings, see
+  the user guide) changes mods' code in memory as the game loads it: while a joiner's ship's frame runs on the
+  host (hullmods, ship system, weapon scripts, MagicLib subsystems), `getPlayerShip()` answers that ship, the mouse
+  is the joiner's cursor, and `setPlayerShipExternal` moves the joiner instead of the host (with the usual checks;
+  the joiner's game follows). Status lines and changes to the battle's speed made for a joiner are dropped on the
+  host. Plugins a script adds for a joiner's ship, and that keep hold of it, run for that joiner too.
+- No bytecode library: each changed call keeps its length, so nothing else in a class moves. Checked against UAF,
+  MagicLib, the game's own classes and vanilla scripts (274 calls in 80 classes; the changed mod classes pass the
+  JVM's verifier). Without the setting, nothing changes.
+- New: `ASSIGN` may carry a "sit down in it" byte (a script on the host moved the player).
+- Fixed: a joiner switching carrier → fighter quickly could be pulled straight back into the carrier: the host's late
+  answer to the earlier request (the carrier) was taken for a move the host made by itself. A joiner now follows an
+  unrequested move only in an answer that has seen its latest request.
+- Who flies what is written on the ships again right after ship changes, so an ability Wingman fires for a joiner
+  in the frame they changed ship runs for that ship (with the agent: as theirs).
+- **The agent works on joiners' PCs too.** There, the ships other people fly (the host's and the other joiners')
+  are the "player's ship" for scripts running for them, aiming where that person points; a script can't move
+  anyone from a joiner's PC (the host decides). Everyone's PC now agrees on what a player-only script did.
+- Never on someone else's behalf, on any PC: moving this PC's camera, interface sounds, status lines, the battle's
+  speed. Interface code (MagicUI and its copies, status bars, `ui` packages) is left unchanged, so other people's
+  ability bars are not drawn on your HUD. A script reading the battle's speed for someone else's ship reads the
+  real value.
+- "Is the player flying by hand?" (`isUIAutopilotOn`) answers for the person whose ship it is (their U key), not
+  this PC's player. MagicLib's achievements are left alone too, so a joiner's kill is not counted as the host's.
+- **Where everyone points is sent with every update** (4 bytes a pilot), and each PC's copies of other people's
+  ships point there, so systems and abilities aimed at the cursor aim the same everywhere, with or without the
+  agent.
+- **Other people's MagicLib subsystems fire on your screen when they used them.** The host relays each use (its
+  own and joiners') to the other joiners, whose copies otherwise hold them, instead of firing them by their own
+  AI logic at other moments.
+- The host's log shows the agent's counters every two minutes (with the traffic line) and every move a script makes.
 
 **For other mods**
 

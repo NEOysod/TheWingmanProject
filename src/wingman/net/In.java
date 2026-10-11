@@ -9,6 +9,9 @@ public final class In {
 
     public In(byte[] data) { this.buf = data; }
 
+    /** Bytes not read yet (for a message that may carry more at its end than an older one did). */
+    public int remaining() { return buf.length - p; }
+
     private void need(int more) throws IOException {
         if (p + more > buf.length) throw new IOException("message cut short");
     }

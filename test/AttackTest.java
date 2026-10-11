@@ -433,6 +433,9 @@ public class AttackTest {
         for (int i = 0; i < 8; i++) { Snapshot.ShipState s = new Snapshot.ShipState(); s.netId = i; s.x = i * 100; s.weaponAngles = new byte[6]; s.firing = 3; s.shots = new byte[] {0, 1}; snap.ships.add(s); }
         for (int i = 0; i < 8; i++) { Snapshot.MissileState m = new Snapshot.MissileState(); m.id = 100 + i; m.x = i; snap.missiles.add(m); }
         samples.put("Snapshot", snap.encode()); decs.put("Snapshot", new Dec() { public void run(byte[] b) throws Exception { Snapshot.decode(b); } });
+        Roster ro = new Roster(); ro.hostName = "H"; Roster.Player rp = new Roster.Player(); rp.name = "Ann"; ro.players.add(rp);
+        for (int i = 0; i < 5; i++) { Roster.Member m = new Roster.Member(); m.id = "id" + i; m.shipName = "S" + i; m.hullName = "Wolf"; m.officer = "O"; m.cr = 50; ro.members.add(m); }
+        samples.put("Roster", ro.encode()); decs.put("Roster", new Dec() { public void run(byte[] b) throws Exception { Roster.decode(b); } });
         SnapshotCodec.Encoder en = new SnapshotCodec.Encoder(); snap.ships.get(0).shotTotals = new byte[] {1, 2};
         byte[] key = en.encode(snap, -1); snap.tick = 6; snap.ships.get(1).x += 50; byte[] delta = en.encode(snap, 5);
         samples.put("SnapshotCodec (key)", key); samples.put("SnapshotCodec (change)", delta);
