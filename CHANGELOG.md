@@ -1,6 +1,7 @@
 # Changelog
 
-## Since 0.6.3-beta (not released)
+## 0.6.4-beta
+Protocol 47, as 0.6.2 and 0.6.3. Includes everything in 0.6.3.
 
 - **Every charge-up weapon checked against the game's own weapon code** (its charge, burst and cooldown state
   machine). Firing on the host is the game's own, with the button held exactly as long as the joiner held it, so
