@@ -377,9 +377,10 @@ frame:
       charge-up, or a burst beam's burst + cooldown + charge-up/down) / weapons / rate-of-fire bonus seconds;
       the game does that held rotation only for the local player's ship, so the host does it
       (`WeaponGroup.setCurrentActive`, public on the game's class, through `MethodHandles.publicLookup`);
-    - each press counts for weapons with ammo: each one the press fires is told to fire until it has (0.6 s, or
-      1.5 s while charging up); a fighter's weapon that still won't fire has its shot spawned by hand, using its
-      ammo and cooldown;
+    - charge-up as in the game: a weapon fires only if the button is held until it has charged (the host holds
+      as long as the joiner did; nothing extends a press). On a fighter, an ammo weapon that shows no sign of
+      charging or firing once the button has been held for its charge-up + 0.1 s is fired by hand (shot spawned,
+      ammo and cooldown used), again each time it is ready while held; let go sooner and nothing fires;
     - a hold that makes nothing happen for 0.35 s (not overloaded, venting or phased) fires the weapons the game
       would have fired directly, until release; a group the ship won't select for 0.25 s likewise;
     - a ship with no groups (an AI-flown fighter) fires its loadout's group of that number, by slot;

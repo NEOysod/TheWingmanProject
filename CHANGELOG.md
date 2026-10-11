@@ -1,5 +1,14 @@
 # Changelog
 
+## Since 0.6.2-beta (not released)
+
+- **Bombs and missiles with a charge-up work exactly as in the game.** 0.6.2 made a quick click count: the host kept
+  a weapon firing for up to 0.6 s after the press, which also fired weapons whose charge-up is there so that only
+  a held button fires them. Now the host holds the button for exactly as long as the joiner did, and a weapon
+  fires only if it was held until charged. The by-hand launch for a fighter's weapon that ignores the order
+  (the Rafflesya bomb) waits the same way: the button held for the charge-up time, and again each time the weapon
+  is ready while it is held.
+
 ## 0.6.2-beta
 Protocol 47: everyone in a game needs 0.6.2. Includes everything in 0.6.
 

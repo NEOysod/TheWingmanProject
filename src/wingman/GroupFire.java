@@ -38,10 +38,15 @@ import com.fs.starfarer.api.loading.WeaponSpecAPI;
  *   the ship the local player flies. On any other ship the active weapon never changes while the button is held,
  *   so holding fire on a joiner's ship fired only the first gun. That turn-taking is done here.
  *
+ * Charge-up works as in the game: a weapon with a charge-up (many bombs and missiles have one as a guard against
+ * misfires) fires only if the button is held until it has charged; let go sooner and nothing fires. The host
+ * gets the joiner's button as it is held, so it holds for as long as they did; nothing here extends a press.
+ *
  * On top of that, two things the game doesn't need on a player's own ship:
- * - A press of the button counts for weapons with ammo (bombs, missiles): each one the press fires is told to
- *   fire until it has, for up to 0.6 s (1.5 s while charging up), so a quick click that reaches the host as a
- *   frame or two still fires. A fighter's weapon that still won't fire is fired by hand (see launch).
+ * - A fighter flown by the AI may ignore the fire order for some weapons altogether (UAF's Rafflesya bomb never
+ *   starts charging). Such a weapon, if it shows no sign of charging, is fired by hand once the button has been
+ *   held for its charge-up time: its shot is launched from the weapon, with its ammo and cooldown (see launch);
+ *   held on, again each time it is ready. Let go before that and, as in the game, nothing fires.
  * - A watch on each hold of the button: if, after a third of a second, no weapon of the group has done anything,
  *   the weapons the game would have fired are told to fire directly for the rest of that hold.
  * And a fighter flown by the AI may have no weapon groups at all: its loadout's groups are fired, by slot.
@@ -56,7 +61,7 @@ final class GroupFire {
     private int heldGroup = -1, mismatchLogs, stuckLogs, pressLines, rotateLogs;
     private float holdTime, altElapsed, mismatchFor;
 
-    // Shots asked for by a press, from weapons with ammo: weapon -> {seconds followed, ammo at the press}.
+    // A fighter's ammo weapons the button is holding: weapon -> {seconds held, ammo at the press, charge seen (0/1), charge-up time}.
     private final Map<WeaponAPI, float[]> shots = new IdentityHashMap<WeaponAPI, float[]>();
 
     /** For the host's report on fighters flown by joiners. */
@@ -101,7 +106,7 @@ final class GroupFire {
                 watch(g, amount);
             }
         }
-        followShots(amount);
+        followShots(fire, amount);
     }
 
     // ---- what the game fires -------------------------------------------------------------------------------
@@ -235,10 +240,11 @@ final class GroupFire {
         }
     }
 
-    // ---- presses: each one counts for weapons with ammo -------------------------------------------------
+    // ---- presses, and a fighter's weapons that ignore the button -------------------------------------
 
     private void onPress(WeaponGroupAPI g, int group, Vector2f aim, int groupCount) {
         pressesSeen++;
+        shots.clear();
         List<WeaponAPI> want = g != null ? wouldFire(g, aim) : inArc(loadoutWeapons(group), aim);
         StringBuilder sb = new StringBuilder();
         for (WeaponAPI w : want) {
@@ -247,28 +253,46 @@ final class GroupFire {
             if (w.usesAmmo()) sb.append(' ').append(w.getAmmo()).append('/').append(w.getMaxAmmo());
             if (w.getCooldownRemaining() > 0f) sb.append(" cooling");
             if (w.isDisabled()) sb.append(" disabled");
+            if (!ship.isFighter()) continue;
             if (!w.usesAmmo() || w.isBeam() || w.getAmmo() <= 0 || w.isDisabled() || w.getCooldownRemaining() > 0f) continue;
-            if (!shots.containsKey(w)) shots.put(w, new float[] {0f, w.getAmmo()});
+            shots.put(w, new float[] {0f, w.getAmmo(), 0f, chargeUp(w)});
         }
         lastPress = "group " + (group + 1) + " [" + sb + "]";
         if (ship.isFighter() && pressLines++ < 6) Global.getLogger(GroupFire.class).info("Wingman fire: " + ship.getHullSpec().getHullId()
                 + " fire pressed on " + lastPress + " (ship has " + groupCount + " groups)");
     }
 
-    private void followShots(float amount) {
+    /** A weapon's charge-up time, in seconds (0 if it has none). */
+    private static float chargeUp(WeaponAPI w) {
+        try {
+            WeaponSpecAPI spec = w.getSpec();
+            if (spec instanceof ProjectileWeaponSpecAPI) return Math.max(0f, ((ProjectileWeaponSpecAPI) spec).getChargeTime());
+            return Math.max(0f, spec.getChargeTime());
+        } catch (Throwable t) { return 0f; }
+    }
+
+    /**
+     * While the button is held: a fighter's ammo weapon that the game is charging or has fired is left to the game.
+     * One that shows no sign of either by the time the button has been held for its charge-up (plus a tenth of a
+     * second, for the order to have taken) is fired by hand. Let go before that: nothing, as in the game.
+     */
+    private void followShots(boolean fire, float amount) {
         if (shots.isEmpty()) return;
+        if (!fire) { shots.clear(); return; }
         Iterator<Map.Entry<WeaponAPI, float[]>> it = shots.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<WeaponAPI, float[]> e = it.next();
             WeaponAPI w = e.getKey();
             float[] f = e.getValue();
-            f[0] += amount;
             try {
-                if (!ship.isAlive() || w.isDisabled() || w.getAmmo() <= 0 || w.getAmmo() < f[1] || w.getCooldownRemaining() > 0f) { it.remove(); continue; }
-                boolean charging = w.getChargeLevel() > 0f || w.isFiring();
-                if (f[0] < (charging ? 1.5f : 0.6f)) { w.setForceFireOneFrame(true); continue; }
-                it.remove();
-                if (ship.isFighter()) launch(w);
+                if (!ship.isAlive() || w.isDisabled() || w.getAmmo() <= 0) { it.remove(); continue; }
+                // Firing or cooling down: wait. Held on, it is ready again later and fires again, as in the game.
+                if (w.getCooldownRemaining() > 0f || w.getAmmo() < f[1]) { f[0] = 0f; f[1] = w.getAmmo(); f[2] = 0f; continue; }
+                f[0] += amount;
+                if (w.getChargeLevel() > 0f || w.isFiring()) f[2] = 1f; // the game has it in hand
+                if (f[2] > 0f || f[0] < f[3] + 0.1f) continue;
+                launch(w);
+                f[0] = 0f; f[1] = w.getAmmo();
             } catch (Throwable t) { it.remove(); }
         }
     }
