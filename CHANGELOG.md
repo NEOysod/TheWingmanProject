@@ -1,6 +1,7 @@
 # Changelog
 
-## Since 0.6.2-beta (not released)
+## 0.6.3-beta
+Protocol 47, as 0.6.2. Includes everything in 0.6.2.
 
 - **Bombs and missiles with a charge-up work exactly as in the game.** 0.6.2 made a quick click count: the host kept
   a weapon firing for up to 0.6 s after the press, which also fired weapons whose charge-up is there so that only

@@ -3,5 +3,5 @@ package wingman;
 /** Which build of the jar this is (written by the build script), for the log: zips of one version differ. */
 final class Build {
     private Build() {}
-    static final String ID = "0.6.2-beta 2026-10-11T04:47Z";
+    static final String ID = "0.6.3-beta 2026-10-11T05:08Z";
 }
