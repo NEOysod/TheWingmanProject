@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 46 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 47 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -383,7 +383,11 @@ frame:
     - a hold that makes nothing happen for 0.35 s (not overloaded, venting or phased) fires the weapons the game
       would have fired directly, until release; a group the ship won't select for 0.25 s likewise;
     - a ship with no groups (an AI-flown fighter) fires its loadout's group of that number, by slot;
-  - shield or phase toggled to match (at most every 0.3 s); vent on the rising edge; fighters pull back or engage;
+  - shield or phase toggled to match (at most every 0.3 s); vent on the rising edge; Hold Fire matched;
+  - fighters: the game's `PULL_BACK_FIGHTERS` order on a change, plus what the game does only for the player's
+    carrier (`forceCarrierTarget` = R target for 20 s, 30 s if friendly; `forceCarrierPullBackTime` 20 s);
+  - flown in every time-step of a frame (a ship with time multiplier above 1 is moved in several; see
+    docs/GAME_CODE_AUDIT.md);
   - **ship system:** the joiner sends a running count of uses; new uses (at most 4, dropped after 1.5 s) are issued
     0.1 s apart at the cursor; drone orders stepped to match; toggles switched off when released.
   - An error inside marks it failed; the host hands the ship back to the AI and tells the player.

@@ -4474,6 +4474,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (s.getSystem() != null && (s.getSystem().isActive() || s.getSystem().isOn())) f |= InputState.SYSTEM;
         noteSystemUse(s);
         if (s.getFluxTracker().isVenting()) f |= InputState.VENT;
+        try { if (s.isHoldFire()) f |= InputState.HOLD_FIRE; } catch (Throwable t) { /* no such switch */ }
         try {
             if (s.isPullBackFighters()) f |= InputState.PULL_BACK;
         } catch (Throwable t) { /* not a carrier */ }

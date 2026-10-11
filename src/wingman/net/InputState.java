@@ -9,7 +9,9 @@ public final class InputState {
             /** The player has given their own ship the retreat order. */
             RETREAT = 8192,
             /** The player is at their edge of the map and has confirmed: leave the battle now. */
-            RETREAT_NOW = 16384;
+            RETREAT_NOW = 16384,
+            /** The player has switched on Hold Fire for their ship: its autofire groups stay quiet. */
+            HOLD_FIRE = 32768;
 
     public int flags;
     public float mouseX, mouseY;

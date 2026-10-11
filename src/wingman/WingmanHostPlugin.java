@@ -1805,12 +1805,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             if (s.isFighter()) {
                 // A carrier's script may tell its fighter to hold fire (UAF's Rafflesya dock does while it means to
                 // bring it home); the local player's own ship pays no attention to that, and a joiner's mustn't either.
-                try { s.setHoldFire(false); } catch (Throwable t) { /* no such switch */ }
+                try { s.setHoldFire(p.input.has(InputState.HOLD_FIRE)); } catch (Throwable t) { /* no such switch */ }
                 fighterReport(p, s, now);
             }
             boolean missed = s.isFighter() && pilot.lastFlown < since && !s.isLanding() && !s.isFinishedLanding();
             if (missed) {
-                pilot.advance(engine.getElapsedInLastFrame());
+                pilot.flyFromHost(engine.getElapsedInLastFrame());
                 fightersFlownHere++;
             }
             // A fighter a joiner flies (Isenoria's Manual Override) is fought over every frame by its carrier's

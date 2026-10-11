@@ -62,6 +62,16 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
 - A joiner flying a fighter from their own carrier (UAF's Rafflesya from the Isenoria) is put back in the carrier
   when the fighter is done: lost, landing, retreating or gone from the battle. Before, they were left with no ship
   and had to use Transfer Command. The host hands the carrier back to them and their game sits them down in it.
+- Audit of the game's code for everything it does differently for the local player's ship (docs/GAME_CODE_AUDIT.md).
+  Fixed from it:
+  - A joiner's ship running faster than battle time (phase cloak, temporal shell, mod time systems) is moved in
+    several steps a frame; the host answered only the first, so it coasted through the rest and turned,
+    accelerated and fired a fraction as well as on the joiner's screen. Every step is flown now.
+  - The fighter order (Z) is given as the game's own order: wings head for the cursor when told to engage, drop
+    what they were doing, and go for the joiner's R target (or come home) as they do for the player's carrier.
+  - Hold Fire is passed on to the host (new input bit; protocol 47).
+  - Interdictor Array, Energy Lash and Drone Strike aim at the joiner's R target or the enemy nearest their cursor
+    (they read an AI flag the host never set, and picked whatever was nearest the ship).
 - Weapon groups on a joiner's ship are now fired the way the game fires the player's own (worked out from the
   game's code; see TECHNICAL.md, GroupFire). Holding fire on an alternating group takes turns again: the game
   moves an alternating group on to its next weapon while the button is held only for the local player's ship,

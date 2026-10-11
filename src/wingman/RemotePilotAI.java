@@ -50,13 +50,37 @@ public class RemotePilotAI implements ShipAIPlugin {
     /** When the host last put this pilot back after a script took the ship (battle time). */
     public float restoredAt = -1f;
 
+    /** Set when the host flew this pilot itself this frame (see flyFromHost): the game's next call is skipped. */
+    private float flownByHostAt = -1f;
+
+    /**
+     * Called by the game. Usually once a frame; but a ship whose time runs faster than the battle's (a phase
+     * cloak, a temporal shell, a mod's time system) is moved in several steps a frame and its AI is asked to fly
+     * in each step, all at the same battle time. Every step gets the player's controls, as the game gives the
+     * local player's ship its controls in every step; answering only the first (as before) left a phased ship
+     * coasting for two of its three steps, so it turned, sped up and fired a third as well as on the player's
+     * own screen.
+     */
     public void advance(float amount) {
-        // Once a frame at most: the host may already have flown it this frame (see WingmanHostPlugin.keepPilots).
         try {
             float now = Global.getCombatEngine().getTotalElapsedTime(false);
-            if (now == lastFlown && lastFlown > 0f) return;
+            if (now == flownByHostAt) { flownByHostAt = -1f; lastFlown = now; return; } // flown already, this frame
             lastFlown = now;
         } catch (Throwable t) { /* no engine: not stale either */ }
+        flyNow(amount);
+    }
+
+    /** The host flies this pilot itself (a fighter whose AI a script took this frame); the game's next call is skipped. */
+    public void flyFromHost(float amount) {
+        try {
+            float now = Global.getCombatEngine().getTotalElapsedTime(false);
+            flownByHostAt = now;
+            lastFlown = now;
+        } catch (Throwable t) { /* no engine */ }
+        flyNow(amount);
+    }
+
+    private void flyNow(float amount) {
         if (failed) { ship.giveCommand(ShipCommand.DECELERATE, null, 0); return; }
         try {
             fly(amount);
@@ -103,8 +127,10 @@ public class RemotePilotAI implements ShipAIPlugin {
         }
 
         // Carrier fighter command: regroup (pull back) or engage.
-        boolean pullBack = in.has(InputState.PULL_BACK);
-        if (ship.isPullBackFighters() != pullBack) ship.setPullBackFighters(pullBack);
+        followFighterOrder(in.has(InputState.PULL_BACK), amount);
+        // Hold Fire: the player's switch for keeping the autofire groups quiet.
+        boolean hold = in.has(InputState.HOLD_FIRE);
+        if (ship.isHoldFire() != hold) ship.setHoldFire(hold);
 
         aim.set(in.mouseX, in.mouseY);
         lastAmount = amount;
@@ -221,18 +247,59 @@ public class RemotePilotAI implements ShipAIPlugin {
                 // no ship targeted (R): the enemy nearest the cursor, as for the game's own player
                 marked = com.fs.starfarer.api.util.Misc.findClosestShipEnemyOf(ship, cursor, ShipAPI.HullSize.FRIGATE, 4000f, true);
             }
+            // Targeted systems ask a ship that isn't the local player's for its mark under either of two names
+            // (TARGET_FOR_SHIP_SYSTEM; MANEUVER_TARGET for drone strike and its kin), and the local player's ship
+            // for its R target, else the enemy nearest the cursor. Both are answered with that.
+            // (For MANEUVER_TARGET the game's own player gets the nearest of any size, fighters included.)
+            ShipAPI near = ship.getShipTarget();
+            if (near == null || near.isHulk() || !near.isAlive())
+                near = com.fs.starfarer.api.util.Misc.findClosestShipEnemyOf(ship, cursor, ShipAPI.HullSize.FIGHTER, 4000f, true);
             if (marked != null) flags.setFlag(ShipwideAIFlags.AIFlags.TARGET_FOR_SHIP_SYSTEM, 0.3f, marked);
             else flags.unsetFlag(ShipwideAIFlags.AIFlags.TARGET_FOR_SHIP_SYSTEM);
+            if (near != null) flags.setFlag(ShipwideAIFlags.AIFlags.MANEUVER_TARGET, 0.3f, near);
+            else flags.unsetFlag(ShipwideAIFlags.AIFlags.MANEUVER_TARGET);
             ShipwideAIFlags theirs = ship.getAIFlags();
             if (theirs != null && theirs != flags) { // the game keeps a separate set for this ship: answer there too
                 theirs.setFlag(ShipwideAIFlags.AIFlags.SYSTEM_TARGET_COORDS, 0.3f, cursor);
                 if (marked != null) theirs.setFlag(ShipwideAIFlags.AIFlags.TARGET_FOR_SHIP_SYSTEM, 0.3f, marked);
+                if (near != null) theirs.setFlag(ShipwideAIFlags.AIFlags.MANEUVER_TARGET, 0.3f, near);
             }
         } catch (Throwable t) {
             // a system that needs a mark then picks its own, as it would for an AI ship
         }
     }
     private float lastAmount;
+
+    private float fighterOrderWait;
+
+    /**
+     * The fighter order (Z) given the way the game gives it from the keyboard, not by setting the switch: the
+     * toggle order also sends the wings toward the cursor when they are told to engage and has them drop what
+     * they are doing. The game then does one more thing only for the local player's ship, done here: told to
+     * engage with a ship targeted (R), the wings go for that ship (for 20 seconds, 30 for a friendly one, as
+     * the game does); told to regroup, they come back for 20 seconds whatever the carrier's AI would rather.
+     */
+    private void followFighterOrder(boolean pullBack, float amount) {
+        fighterOrderWait -= amount;
+        try {
+            if (ship.isPullBackFighters() == pullBack || fighterOrderWait > 0f) return;
+            fighterOrderWait = 0.25f; // (the order is carried out later this frame; don't give it twice)
+            ship.giveCommand(ShipCommand.PULL_BACK_FIGHTERS, null, 0);
+            if (pullBack) {
+                ship.setForceCarrierPullBackTime(20f);
+                ship.setForceCarrierTargetTime(0f);
+                ship.setForceCarrierTarget(null);
+            } else {
+                ShipAPI t = ship.getShipTarget();
+                if (t != null && t.isAlive()) {
+                    ship.setForceCarrierTarget(t);
+                    ship.setForceCarrierTargetTime(t.getOwner() == ship.getOwner() ? 30f : 20f);
+                }
+            }
+        } catch (Throwable t) {
+            if (ship.isPullBackFighters() != pullBack) ship.setPullBackFighters(pullBack);
+        }
+    }
 
     /**
      * Turning. The player's ship turns on their own screen with no delay, and what arrives here is the heading
