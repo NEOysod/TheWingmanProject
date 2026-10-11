@@ -2945,7 +2945,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** Break-ups the host has reported and we have yet to carry out: { wreck, new piece, tries }; for each, { next try, give up } in battle time. */
     private final List<int[]> pendingSplits = new ArrayList<int[]>();
     private final List<float[]> splitDue = new ArrayList<float[]>();
-    private int wreckSplitsDone, wreckSplitsFailed, wreckCutsSame, wreckCutsOwn;
+    private int wreckSplitsDone, wreckSplitsFailed, wreckCutsSame, wreckCutsOwn, diceLines;
     /** The dice seed each pending piece was cut with on the host (see WreckDice). */
     private final Map<Integer, Long> splitSeeds = new HashMap<Integer, Long>();
     /** Per seed: { dice state for its next cut, which cut is next, 1 if the chain is broken }. */
@@ -2977,9 +2977,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         chain[2] = 1L; // that one never came: this seed's cuts go their own way
                     }
                     WreckDice.Dice dice = chain != null && chain[2] == 0L ? WreckDice.dice() : null;
-                    if (dice != null) dice.restore(chain[0]);
+                    if (dice != null) { dice.restore(chain[0]); dice.draws = 0; }
+                    String before = diceLines < 40 ? WingmanHostPlugin.outline(parent.ship) : null;
                     parent.split = true;
                     try { piece = parent.ship.splitShip(); } catch (Throwable t) { /* tried again later */ }
+                    if (before != null) {
+                        diceLines++;
+                        Global.getLogger(WingmanClientPlugin.class).info("Wingman wreck dice: piece " + split[1] + " off wreck " + split[0]
+                                + " (" + parent.ship.getHullSpec().getHullId() + ", outline " + before + ")"
+                                + (seed == null ? ": host sent no seed" : chain == null ? ": no chain" : dice == null ? ": seed " + seed + " not used (chain broken)"
+                                : ": seed " + seed + ", " + dice.draws + " numbers") + (piece == null ? ", no cut made" : ""));
+                    }
                     if (dice != null) {
                         if (piece != null) { chain[0] = dice.state(); chain[1]++; wreckCutsSame++; }
                         else chain[2] = 1L; // the host's cut can't be made here: let the game pick its own

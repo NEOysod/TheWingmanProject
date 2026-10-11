@@ -861,7 +861,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private final Map<ShipAPI, Long> deathSeeds = new IdentityHashMap<ShipAPI, Long>();
     /** Wrecks and pieces that have been cut at least once: their next cut is rolled when it is made. */
     private final Set<ShipAPI> cutBefore = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
-    private int seededCuts, unseededCuts;
+    private int seededCuts, unseededCuts, diceLines;
+
+    /** For the wreck dice log: a ship's outline, as segment counts (now / as built). */
+    static String outline(ShipAPI s) {
+        try {
+            com.fs.starfarer.api.combat.BoundsAPI b = s.getExactBounds();
+            return b == null ? "none" : b.getSegments().size() + "/" + b.getOrigSegments().size();
+        } catch (Throwable t) { return "?"; }
+    }
 
     /** Ships (not fighters, not pieces) that have died since the last look. */
     private List<ShipAPI> noteDeaths() {
@@ -924,11 +932,20 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         // out without a seed (joiners cut those their own way, as before). Then the dice get a fresh seed.
         long frameSeed = 0L;
         WreckDice.Dice dice = WreckDice.dice();
+        int frameDraws = 0;
         if (dice != null && dice.draws > 0) {
             frameSeed = dice.seed;
+            frameDraws = dice.draws;
             dice.setSeed(WreckDice.freshSeed());
         }
         List<ShipAPI> diedNow = noteDeaths();
+        if (frameSeed != 0L && diceLines < 40) {
+            diceLines++;
+            StringBuilder sb = new StringBuilder();
+            for (ShipAPI d : diedNow) sb.append(' ').append(d.getHullSpec().getHullId()).append('(').append(outline(d)).append(')');
+            Global.getLogger(WingmanHostPlugin.class).info("Wingman wreck dice: rolled " + frameDraws + " numbers on seed " + frameSeed
+                    + "; died this frame:" + (sb.length() == 0 ? " none" : sb.toString()));
+        }
         if (wrecks.isEmpty() || wrecks.size() >= MAX_WRECKS) {
             if (frameSeed != 0L && diedNow.size() == 1) deathSeeds.put(diedNow.get(0), frameSeed);
             return;
@@ -980,6 +997,13 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             if (parentShip != null) cutBefore.add(parentShip);
             if (split[2] != 0L) seededCuts++; else unseededCuts++;
+            if (diceLines < 40) {
+                diceLines++;
+                Global.getLogger(WingmanHostPlugin.class).info("Wingman wreck dice: piece " + split[1] + " off wreck " + split[0]
+                        + (parentShip == null ? "" : " (" + parentShip.getHullSpec().getHullId() + ", outline now " + outline(parentShip) + ")")
+                        + (split[2] == 0L ? ": no seed (" + rolls + " rolls this frame" + (parentShip != null && !cutBefore.contains(parentShip) ? "" : "") + ")"
+                        : ": seed " + split[2] + (frameSeed == split[2] ? " (" + frameDraws + " numbers)" : " (rolled when it died)")));
+            }
             wreckSplits.add(split);
             session.broadcast(Msg.WRECK_SPLIT, splitMsg(split));
         }
