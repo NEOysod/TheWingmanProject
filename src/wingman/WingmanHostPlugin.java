@@ -184,21 +184,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         cfg = WingmanConfig.load();
         if (!cfg.hostEnabled) { disabled = true; return false; }
         try {
-            int mode = "off".equals(cfg.modCheck) ? HostSession.MOD_CHECK_OFF
-                    : "all".equals(cfg.modCheck) ? HostSession.MOD_CHECK_ALL : HostSession.MOD_CHECK_CONTENT;
-            session = HostSession.getOrStart(cfg.port, cfg.maxPlayers, cfg.snapshotRate, cfg.playerName,
-                    Mods.enabled(), mode);
+            session = Hosting.open(cfg);
         } catch (java.io.IOException e) {
             disabled = true;
             Ui.say(engine, "Co-op: could not open port " + cfg.port + " (" + e.getMessage() + "). Hosting is off.");
             return false;
         }
         extras = new HostExtras(ids, cfg, officered);
-        session.setAccess(cfg.password, Mods.gameVersion());
         session.beginBattle();
         rate = cfg.snapshotRate;
-        wingman.net.Conn.compression = cfg.compressLink;
-        wingman.net.Conn.udp = cfg.useUdp;
         readyPhase = cfg.readyCheck ? 0 : 2;
         Subsystems.reset();
         lastHostShip = engine.getPlayerShip();
@@ -258,11 +252,28 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    private final PilotMarks marks = new PilotMarks();
+
+    /** Who flies what, written on the ships for other mods (see WingmanAPI). */
+    private void markPilots() {
+        ShipAPI mine = engine.getPlayerShip();
+        if (mine != null && !session.getPlayers().isEmpty()) marks.flown(mine, cfg.playerName, false);
+        for (HostSession.Player p : session.getPlayers()) {
+            if (p.ship instanceof ShipAPI) marks.flown((ShipAPI) p.ship, p.name, true);
+            // what this player is looking at, for the bandwidth limit's priorities (see Budget)
+            ShipAPI looking = p.ship instanceof ShipAPI ? (ShipAPI) p.ship : mine;
+            if (looking != null) { p.budget.focusX = looking.getLocation().x; p.budget.focusY = looking.getLocation().y; p.budget.hasFocus = true; }
+        }
+        marks.apply();
+    }
+
     private final Prof prof = new Prof("network", "ships", "wrecks", "missiles", "shots", "firing", "players", "orders+map", "damage", "updates");
 
     private void step() {
         prof.begin();
         for (String line : session.pump()) Ui.say(engine, "Co-op: " + line);
+        wingman.api.WingmanAPI.deliver();
+        markPilots();
         if (System.currentTimeMillis() - spyCheckedAt > 3000) tapMessages();
         if (session.acceptError != null) {
             String err = session.acceptError;
@@ -362,6 +373,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
 
         guardHostShip();
         checkPilotedShips();
+        seatReserved();
         handleClaims();
         runSubsystems();
         keepPilots();
@@ -642,6 +654,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                     else if ("compactUpdates".equals(key)) session.needKeyAll();
                     else if ("compressLink".equals(key)) wingman.net.Conn.compression = cfg.compressLink;
                     else if ("useUdp".equals(key)) wingman.net.Conn.udp = cfg.useUdp;
+                    else if ("steadyControls".equals(key)) session.setSteadyControls(cfg.steadyControls);
+                    else if ("bandwidthLimit".equals(key)) wingman.net.Budget.bytesPerSecond = Math.max(0, cfg.bandwidthLimit) * 1024;
                     Global.getLogger(WingmanHostPlugin.class).info("Wingman: setting changed in battle: " + key
                             + ("password".equals(key) ? "" : " = " + cfg.get(key)));
                 }
@@ -2044,6 +2058,35 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     }
 
     /** Players pick a ship with the normal transfer-command order on their side; here we grant or refuse it. */
+    /** Players already seated in the ship kept for them (see WingmanAPI.reserveShip) this battle, by name. */
+    private final Set<String> seated = new HashSet<String>();
+
+    /**
+     * A ship kept for a player by another mod (a campaign mod's "this is Ann's ship"): once they are in the
+     * battle with nothing to fly, it is claimed for them, as if they had asked for it, and they are moved into
+     * it. Once per battle and player.
+     */
+    private void seatReserved() {
+        if (gameClock < 2f) return; // let the battle settle (deployment) first
+        for (HostSession.Player p : session.getPlayers()) {
+            if (p.ship != null || p.hasClaim || p.needsSync || p.heldCarrier != null) continue;
+            String key = p.name.toLowerCase();
+            if (seated.contains(key)) continue;
+            String member = wingman.api.WingmanAPI.reservedShip(p.name);
+            if (member == null) continue;
+            for (Map.Entry<Integer, ShipAPI> e : byId.entrySet()) {
+                ShipAPI s = e.getValue();
+                if (s.getFleetMember() == null || !member.equals(s.getFleetMember().getId())) continue;
+                if (!s.isAlive() || s.isHulk() || s.getOwner() != 0) break;
+                seated.add(key);
+                p.claim = e.getKey();
+                p.hasClaim = true; // handleClaims checks it like any request, and moves them in
+                Global.getLogger(WingmanHostPlugin.class).info("Wingman: seating " + p.name + " in the ship kept for them");
+                break;
+            }
+        }
+    }
+
     private void handleClaims() {
         ShipAPI hostShip = engine.getPlayerShip();
         for (HostSession.Player p : session.getPlayers()) {

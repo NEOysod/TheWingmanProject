@@ -53,6 +53,8 @@ public final class SnapshotCodec {
     private static final int SHIP_Q = SHIP_FIELDS + ACC, MISSILE_Q = MISSILE_FIELDS + ACC;
     private static final int SHIP_ALL = SHIP_Q + 1, MISSILE_ALL = MISSILE_Q + 1;
     static final int CARRY = 30;
+    /** Updates in a row an entity is carried before its acceleration starts to fade (see settle). */
+    static final int FADE_AFTER = 3;
     /** More ships (or missiles) than any battle has, counting those carried on: the update is refused. */
     private static final int MAX_HELD = 30000;
     private static final int[] SHIP_SPEEDS = { 4, 5, 6 }, MISSILE_SPEEDS = { 3, 4, 6 };
@@ -193,6 +195,16 @@ public final class SnapshotCodec {
      * after a gap too long to tell.
      */
     private static void settle(int[] now, int[] base, float dt, int fields, int[] speeds) {
+        // Built on a state that has been carried by the guess for a few updates in a row: a speed change measured
+        // from a guess means little, and measuring would only keep the acceleration as it was for ever. So it fades
+        // instead, by half each time. A guess left running for many updates (the bandwidth limit can leave a thing
+        // out for up to 20) then changes speed by a bounded amount, and the first measure after it is sent again
+        // can't be a wild one. (From the first carried update on, this cost about 3% more bandwidth: things that
+        // were steadily speeding up had to be sent again sooner.)
+        if (base != null && base[fields + ACC] >= FADE_AFTER) {
+            for (int k = 0; k < ACC; k++) now[fields + k] = base[fields + k] / 2;
+            return;
+        }
         for (int k = 0; k < ACC; k++) {
             int a = 0;
             if (base != null && dt > 0f && dt <= ACC_SPAN) {
@@ -315,7 +327,10 @@ public final class SnapshotCodec {
         return now;
     }
 
-    /** Carry a ship left out of this update on by the guess; null once it has been left out too long. */
+    /**
+     * Carry a ship left out of this update on by the guess; null once it has been left out too long. (Its
+     * acceleration fades while it is carried: see settle.)
+     */
     private static Rec carryShip(Rec was, float dt, int[] g) {
         if (was.f[SHIP_Q] >= CARRY) return null;
         guessShip(was.f, dt, g);
@@ -373,6 +388,30 @@ public final class SnapshotCodec {
 
         /** True if an update with this number is still remembered, so a new one can be built on it. */
         public boolean has(int tick) { return find(tick) != null; }
+
+        private final int[] probe = new int[SHIP_ALL];
+
+        /**
+         * How far (units) this player's copy of a ship or missile, as both ends carry it on from what the
+         * player holds at update {@code builtOn}, would be at {@code hostTime} from (x, y). -1 if the player holds
+         * none (or nothing to build on). For the bandwidth limit (Budget): what the player is getting wrong.
+         */
+        public float heldOff(int builtOn, boolean missile, int id, float hostTime, float x, float y) {
+            State b = find(builtOn);
+            if (b == null) return -1f;
+            float dt = step(b.time, Snapshot.bad(hostTime) ? 0f : hostTime);
+            if (missile) {
+                int[] was = b.missiles.get(id);
+                if (was == null) return -1f;
+                guessMissile(was, dt, probe);
+            } else {
+                Rec was = b.ships.get(id);
+                if (was == null) return -1f;
+                guessShip(was.f, dt, probe);
+            }
+            float dx = probe[1] / POS - x, dy = probe[2] / POS - y;
+            return (float) Math.sqrt(dx * dx + dy * dy);
+        }
 
         /**
          * Pack an update for a player who holds update number 'builtOn' (-1, or one no longer remembered: in

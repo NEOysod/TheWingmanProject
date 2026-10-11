@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
 public final class Udp {
     private Udp() {}
 
-    static final int HELLO = 1, ACK = 2, INPUT = 3, PONG = 1, UPDATE = 2;
+    static final int HELLO = 1, ACK = 2, INPUT = 3, INPUTS = 4, PONG = 1, UPDATE = 2;
     /** The most data in one datagram. Kept well under what any ordinary link (or a VPN on top of one) passes whole. */
     static final int PIECE = 1100;
     private static final int HEAD = 9;
@@ -86,12 +86,18 @@ public final class Udp {
                         putLong(pong, 0, p.token);
                         pong[8] = PONG;
                         queue(new DatagramPacket(pong, pong.length, d.getSocketAddress()));
-                    } else if ((kind == ACK || kind == INPUT) && len >= HEAD + 8) {
+                    } else if ((kind == ACK || kind == INPUT || kind == INPUTS) && len >= HEAD + 8) {
                         p.ack(getInt(buf, HEAD), getInt(buf, HEAD + 4));
                         if (kind == INPUT && len > HEAD + 8 && len < HEAD + 8 + 256) {
                             byte[] controls = new byte[len - HEAD - 8];
                             System.arraycopy(buf, HEAD + 8, controls, 0, controls.length);
                             p.udpInput = controls; // the game thread takes the latest
+                            NetStats.received(Msg.INPUT, len);
+                        }
+                        if (kind == INPUTS && len > HEAD + 8 && len < HEAD + 8 + 1024 && p.udpBundles.size() < 64) {
+                            byte[] bundle = new byte[len - HEAD - 8];
+                            System.arraycopy(buf, HEAD + 8, bundle, 0, bundle.length);
+                            p.udpBundles.add(bundle); // each one is played in turn (see InputBuffer)
                             NetStats.received(Msg.INPUT, len);
                         }
                     }
@@ -273,7 +279,7 @@ public final class Udp {
                 socket.send(new DatagramPacket(b, b.length, host));
                 lastSentAt = System.currentTimeMillis();
                 NetStats.wireOut(b.length);
-                if (kind == INPUT) NetStats.sent(Msg.INPUT, b.length);
+                if (kind == INPUT || kind == INPUTS) NetStats.sent(Msg.INPUT, b.length);
             } catch (IOException e) {
                 // lost like any other datagram
             } catch (RuntimeException e) {
@@ -283,6 +289,9 @@ public final class Udp {
 
         /** Our controls, with word of the last update read. */
         public void controls(int ackEpoch, int ackTick, byte[] controls) { send(INPUT, ackEpoch, ackTick, controls); }
+
+        /** Our controls as a bundle (see InputBuffer). */
+        public void bundle(int ackEpoch, int ackTick, byte[] bundle) { send(INPUTS, ackEpoch, ackTick, bundle); }
 
         /** Word of the last update read, if nothing else has carried it in the last 30 ms. */
         public void ack(int ackEpoch, int ackTick) {

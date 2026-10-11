@@ -18,6 +18,11 @@ import wingman.net.*;
  *
  * Usage: java -cp jars/Wingman.jar:test SyncBench [rate=60] [seconds=60] [delayMs=50] [jitterMs=20]
  *        [ships=40] [fighters=80] [missiles=200] [seed=1] [accel=1: joiner carries copies along their acceleration]
+ *        [mode=carry|smooth|buffer: the joiner's way of moving copies; see wingman.net.Smoother]
+ *        [limit=0: the host's bandwidth limit, KB/s before compression (see wingman.net.Budget); the player looks at 0,0]
+ *        [near=0: measure only what is within this distance of 0,0 (0: everything)]
+ * In buffer mode copies of ships and fighters (not missiles, as on the joiner) are deliberately shown later (the jitter buffer's delay), so they are compared with where
+ * the host had them that much earlier; the delay is reported.
  */
 public class SyncBench {
     static final float DT = 1f / 60f;
@@ -44,12 +49,16 @@ public class SyncBench {
         boolean shown;
         float px1, py1, px2, py2, rx1, ry1, rx2, ry2; // last two shown / reference positions, for jitter
         int frames;
+        Smoother.Track tr = new Smoother.Track();
         float[] hx = new float[256], hy = new float[256]; // host positions by frame
     }
 
     static Random rnd;
     /** Joiner carries copies on along their acceleration (accel=1), or in a straight line (accel=0). */
     static boolean useAcc;
+    /** 0 carry (the plain mode), 1 smooth corrections, 2 smooth corrections + jitter buffer. */
+    static int mode;
+    static float hostNowGap, bufDelay, bufShowing;
     static int nextId = 1;
     static List<Body> bodies = new ArrayList<Body>();
 
@@ -177,6 +186,16 @@ public class SyncBench {
     static void joinerStep(Body b, float clock) {
         if (b.kind == 2 ? b.ms == null : b.st == null) return;
         float amount = DT;
+        if (mode > 0) {
+            if (!b.shown) { b.jx = b.kind == 2 ? b.ms.x : b.st.x; b.jy = b.kind == 2 ? b.ms.y : b.st.y; b.shown = true; }
+            b.jx += b.jvx * DT; b.jy += b.jvy * DT; // the game moves it by its speed this frame
+            boolean buffered = mode == 2 && b.kind != 2; // as on the joiner: missiles are never delayed
+            float r = buffered ? bufShowing : clock - hostNowGap;
+            b.tr.sample(r, buffered, b.kind == 2 ? 2f : 1f, useAcc ? 0.25f : 0f, false);
+            b.tr.follow(b.jx, b.jy, b.tr.mf, amount, false);
+            b.jx = b.tr.sx; b.jy = b.tr.sy; b.jvx = b.tr.mvx; b.jvy = b.tr.mvy;
+            return;
+        }
         if (b.kind == 2) {
             Snapshot.MissileState t = b.ms;
             float age = Math.max(0f, Math.min(2f, clock - b.targetAt));
@@ -227,6 +246,14 @@ public class SyncBench {
         int nShips = Integer.parseInt(o.getOrDefault("ships", "40")), nFighters = Integer.parseInt(o.getOrDefault("fighters", "80"));
         int nMissiles = Integer.parseInt(o.getOrDefault("missiles", "200"));
         useAcc = !"0".equals(o.getOrDefault("accel", "1"));
+        String modeName = o.getOrDefault("mode", "carry");
+        mode = modeName.equals("buffer") ? 2 : modeName.equals("smooth") ? 1 : 0;
+        Smoother.Delay delayCalc = new Smoother.Delay();
+        Budget.bytesPerSecond = Integer.parseInt(o.getOrDefault("limit", "0")) * 1024;
+        Budget budget = new Budget();
+        budget.hasFocus = true;
+        float near = Float.parseFloat(o.getOrDefault("near", "0"));
+        double delaySum = 0; long delayN = 0;
         rnd = new Random(Long.parseLong(o.getOrDefault("seed", "1")));
         for (int i = 0; i < nShips; i++) bodies.add(ship(0));
         for (int i = 0; i < nFighters; i++) bodies.add(ship(1));
@@ -266,7 +293,7 @@ public class SyncBench {
             if (t + 1e-6f >= nextUpdate) {
                 nextUpdate += 1f / rate;
                 Snapshot s = capture(tick, t, 7);
-                byte[] data = enc.encode(s, lastTick);
+                byte[] data = budget.fit(s, enc.encode(s, lastTick), enc, lastTick, 1f / rate);
                 lastTick = tick;
                 for (int k = 0; k < 3; k++) {
                     byte[] part = byKind[k].encode(capture(tick, t, 1 << k), lastKindTick[k]);
@@ -300,14 +327,24 @@ public class SyncBench {
                 float quickest = Float.MAX_VALUE;
                 for (int i = 0; i < Math.min(lateN, 8); i++) quickest = Math.min(quickest, recentLate[i]);
                 float stamp = jt - Math.min(0.1f, late - quickest);
-                for (Snapshot.ShipState st : s.ships) { Body b = byId.get(st.netId); if (b != null) { b.st = st; b.targetAt = stamp; } }
-                for (Snapshot.MissileState m : s.missiles) { Body b = byId.get(m.id); if (b != null) { b.ms = m; b.targetAt = stamp; } }
+                hostNowGap = quickest;
+                delayCalc.update(jt, s.hostTime);
+                for (Snapshot.ShipState st : s.ships) { Body b = byId.get(st.netId); if (b != null) { b.st = st; b.targetAt = stamp;
+                    b.tr.push(s.hostTime, st.x, st.y, st.vx, st.vy, st.ax, st.ay, st.facing, st.angVel, st.angAcc); } }
+                for (Snapshot.MissileState ms : s.missiles) { Body b = byId.get(ms.id); if (b != null) { b.ms = ms; b.targetAt = stamp;
+                    b.tr.push(s.hostTime, ms.x, ms.y, ms.vx, ms.vy, ms.ax, ms.ay, ms.facing, ms.angVel, 0f); } }
             }
+            delayCalc.advance(jt);
+            bufDelay = delayCalc.delay;
+            bufShowing = delayCalc.showing(jt);
+            if (t >= warm) { delaySum += bufDelay; delayN++; }
             for (Body b : bodies) {
                 joinerStep(b, jt);
-                if (!b.shown || t < warm || b.frames < 12) continue;
+                if (!b.shown || t < warm || b.frames < 12 + (delay + bufDelay) / DT) continue; // (the host's past must be its own)
+                if (near > 0f && Math.hypot(b.x, b.y) > near) continue;
                 // where the host had it one (shortest) delay ago: what a perfect link shows
-                float back = (delay - DT * 0.5f) / DT;
+                // (buffer mode: exactly the host moment the joiner means to show)
+                float back = mode == 2 && b.kind != 2 ? (t - bufShowing) / DT : (delay - DT * 0.5f) / DT;
                 int whole = (int) Math.floor(back);
                 float fr = back - whole;
                 int i0 = (f - whole) & 255, i1 = (f - whole - 1) & 255;
@@ -330,6 +367,8 @@ public class SyncBench {
                 tcp / 1024f / secs, udp / 1024f / secs, raw / 1024f / secs, raw / (float) updates));
         System.out.println(String.format("raw by kind: ships %.1f, fighters %.1f, missiles %.1f KB/s",
                 rawKind[0] / 1024f / secs, rawKind[1] / 1024f / secs, rawKind[2] / 1024f / secs));
+        if (Budget.bytesPerSecond > 0) System.out.println("limit " + Budget.bytesPerSecond / 1024 + " KB/s: " + budget.cut + " updates cut down, " + budget.leftOut + " states left out");
+        System.out.println("joiner mode: " + modeName + (mode == 2 ? String.format(" (copies shown %.0f ms late on average, on top of the link's delay)", 1000 * delaySum / Math.max(1, delayN)) : ""));
         System.out.println(stats[0].line("ships"));
         System.out.println(stats[1].line("fighters"));
         System.out.println(stats[2].line("missiles"));

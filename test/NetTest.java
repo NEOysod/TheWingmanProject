@@ -477,6 +477,63 @@ public class NetTest {
         while (System.currentTimeMillis() < end && !p3.hasClaim) { host.pump(); Thread.sleep(5); }
         check("ship claim reaches host", p3.hasClaim && p3.claim == 7 && p3.claimSeq == 5 && !host.getPlayers().get(0).hasClaim);
 
+        // other mods' messages: carried both ways, capped in size and number
+        int joinedSeen = 0;
+        for (ModChannel.Message m; (m = ModChannel.poll()) != null; ) if (m.channel.equals(ModChannel.JOINED)) joinedSeen++;
+        check("the host posts a 'joined' notice for other mods when a joiner comes in (" + joinedSeen + ")", joinedSeen >= 4);
+        clients.get(1).send(Msg.MOD, ModChannel.encode("mymod:loot", new byte[] { 1, 2, 3 }));
+        end = System.currentTimeMillis() + 2000; ModChannel.Message gotMod = null;
+        while (System.currentTimeMillis() < end && (gotMod = ModChannel.poll()) == null) { host.pump(); Thread.sleep(5); }
+        check("a mod's message from a joiner reaches the host with who sent it", gotMod != null && gotMod.channel.equals("mymod:loot") && gotMod.from.equals("P2")
+                && gotMod.playerId == p2.id && gotMod.data.length == 3 && gotMod.data[2] == 3);
+        for (int i = 0; i < 150; i++) clients.get(1).send(Msg.MOD, ModChannel.encode("mymod:spam", Msg.EMPTY));
+        Msg.W badMod = new Msg.W(); badMod.out.writeUTF("mymod:x"); badMod.out.writeInt(1000); // says 1,000 bytes, has none
+        clients.get(2).send(Msg.MOD, badMod.done());
+        int bad0 = ModChannel.malformed.get();
+        end = System.currentTimeMillis() + 1500;
+        while (System.currentTimeMillis() < end) { host.pump(); Thread.sleep(5); }
+        int spam = 0;
+        for (ModChannel.Message m; (m = ModChannel.poll()) != null; ) if (m.channel.equals("mymod:spam")) spam++;
+        check("a joiner gets at most 100 mod messages a second through (" + spam + " of 150), a broken one is refused, and they stay connected",
+                spam > 0 && spam <= 100 && ModChannel.malformed.get() == bad0 + 1 && host.getPlayers().size() == 4 && !clients.get(1).isClosed());
+        boolean tooBig = false;
+        try { ModChannel.encode("mymod:big", new byte[ModChannel.MAX_BYTES + 1]); } catch (IllegalArgumentException e) { tooBig = true; }
+        check("a mod message over 60 KB or with no channel is refused when written", tooBig);
+        host.sendTo(p2.id, Msg.MOD, ModChannel.encode("mymod:hello", new byte[] { 9 }));
+        Conn.Packet modBack = waitFor(clients.get(1), Msg.MOD, host);
+        check("the host can send a mod's message to one joiner", modBack != null && ModChannel.received("Host", 0, modBack.data)
+                && (gotMod = ModChannel.poll()) != null && gotMod.channel.equals("mymod:hello") && gotMod.data[0] == 9);
+
+        // steady controls: bundles with copies, played back one set a frame in order, losses made good
+        {
+            InputBuffer buf = new InputBuffer();
+            List<byte[]> sets = new ArrayList<byte[]>(); List<Integer> times = new ArrayList<Integer>();
+            List<byte[]> arrivals = new ArrayList<byte[]>(); List<Long> arriveAt = new ArrayList<Long>();
+            Random jr = new Random(5);
+            for (int i = 1; i <= 60; i++) { // a set every 16 ms; every 4th datagram lost; arrival 40 ms + up to 50 ms late
+                InputState is = new InputState(); is.seq = i; is.flags = (i % 2 == 0) ? InputState.FIRE : 0; is.mouseX = i;
+                sets.add(0, is.encode()); times.add(0, 1000 + i * 16);
+                while (sets.size() > InputBuffer.COPIES + 1) { sets.remove(sets.size() - 1); times.remove(times.size() - 1); }
+                if (i % 4 == 0) continue;
+                arrivals.add(InputBuffer.bundle(sets, times)); arriveAt.add(5000L + i * 16 + 40 + jr.nextInt(50));
+            }
+            InputState into = new InputState();
+            List<Integer> seen = new ArrayList<Integer>();
+            boolean onePerFrame = true;
+            for (long now = 5000; now < 6500; now += 16) {
+                for (int i = 0; i < arrivals.size(); i++) if (arriveAt.get(i) > now - 16 && arriveAt.get(i) <= now) buf.arrive(arrivals.get(i), now);
+                int before = buf.played;
+                buf.playOut(now, into);
+                if (buf.played - before > 1) onePerFrame = false;
+                if (buf.played > before) seen.add((int) into.mouseX);
+            }
+            boolean inOrder = true;
+            for (int i = 1; i < seen.size(); i++) if (seen.get(i) <= seen.get(i - 1)) inOrder = false;
+            check("steady controls: sets played in order, one a frame, lost ones made good from copies, a few skipped when late (" + seen.size() + " of 60, "
+                    + buf.recovered + " from copies, " + buf.delayMs + " ms added, " + buf.skipped + " skipped)",
+                    inOrder && onePerFrame && seen.size() + buf.skipped >= 58 && buf.skipped <= 4 && buf.recovered >= 10 && buf.delayMs <= InputBuffer.MAX_DELAY_MS);
+        }
+
         // ready check: a joiner's report reaches the host, and the lobby list round-trips
         Msg.W rw = new Msg.W(); rw.out.writeBoolean(true); rw.out.writeInt(58); rw.out.writeInt(2);
         clients.get(1).send(Msg.READY, rw.done());

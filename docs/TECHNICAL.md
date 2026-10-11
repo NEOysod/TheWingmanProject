@@ -43,8 +43,9 @@ Three constraints shape almost every detail:
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
-| Campaign | `WingmanModPlugin` |
-| Network (`wingman.net`, no game classes) | `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats` |
+| Campaign | `WingmanModPlugin`, `Hosting` (opens the session with the saved settings, for a battle or another mod) |
+| For other mods | `wingman.api.WingmanAPI` (see `docs/MOD_API.md`), `PilotMarks` (who flies what, written on ships) |
+| Network (`wingman.net`, no game classes) | `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats`, `ModChannel` (other mods' messages), `InputBuffer` (steady controls), `Budget` (bandwidth limit), `Smoother` (smooth corrections, jitter buffer) |
 | Messages (`wingman.net`) | `Snapshot`, `SnapshotCodec`, `InputState`, `ShipSpawn`, `DamageState`, `Extras`, `Orders`, `BattleInfo`, `Lobby`, `ModList` |
 | Build | `build.sh`, `build.bat`, `tools/PatchNew.java`, `tools/PatchPackage.java`, `tools/stub/`, `dist/make.sh` |
 
@@ -154,16 +155,22 @@ host frame.
 - **Ids and numbers:** `id` counts up per session; `slot` is the P-number, the lowest free from 2 (host is P1).
 - **Reconnect replacement:** the same name from the same address while the old link is closed or silent for
   1.5 s replaces the old player and keeps the slot (`Player.replaced`).
-- **Per player, each frame:** reads `INPUT` (`InputState.decodeIfNewer`), `READY`, `CLAIM`, `NEED_KEY`, `SYNC_REQ`,
-  `UDP_READY`, `BYE`, and the latest UDP controls. A garbled message is skipped; over 20 drops the player.
+- **Per player, each frame:** reads `INPUT` (`InputState.decodeIfNewer`), `INPUTS` (into `InputBuffer`), `READY`,
+  `CLAIM`, `NEED_KEY`, `SYNC_REQ`, `UDP_READY`, `MOD` (into `ModChannel`, at most 100 a second per player), `BYE`,
+  the latest UDP controls and any UDP bundles; then plays out the steady-controls buffer (4.7). A garbled message
+  is skipped; over 20 drops the player.
+- **Outside battles:** another mod may open the session (`WingmanAPI.openHost`, via `Hosting.open`) and pump it
+  from the campaign (`WingmanAPI.pump`), so joiners can connect before the host's first battle. Joins and
+  departures are posted to other mods on `wingman:joined` / `wingman:left`.
 
 `ClientLink` is the joiner's single connection, a singleton shared by the title screen and the battle. It
 connects on its own thread, sends `HELLO` (protocol, name, mod list, game build, password), handles UDP setup in
-its tap, and offers `sendControls`, `ack`, `pollUpdate`.
+its tap, and offers `sendControls`, `ack`, `pollUpdate`. The tap also takes `MOD` (into `ModChannel`, for other
+mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and reads the host's name from `WELCOME`.
 
 ### 4.6 Messages
 
-Protocol version 48 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 49 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -212,10 +219,32 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 49 | COMBAT_MSG | host → joiner | a script's line in the message feed: indent, ≤ 40 parts (colour, text ≤ 1,000, ship id, objective index); ≤ 30/s |
 | 50 | SUBSYSTEM | joiner → host | ship id, MagicLib subsystem class (≤ 200 characters); host keeps ≤ 10 a second |
 | 51 | LANDING | host → joiner | ship id, carrier id (or −1), byte 1 landing / 2 launched |
+| 52 | MOD | both | another mod's message: channel (≤ 64), length, bytes (≤ 60 KB); see `ModChannel`, `docs/MOD_API.md` |
+| 53 | INPUT_MODE | host → joiner | byte 1: send controls as bundles (steady controls, 4.7), 0: plain |
+| 54 | INPUTS | joiner → host | a bundle: count (1-3), then per set: joiner clock (ms), length, controls; newest first |
+
+### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
+
+Without it the host takes a joiner's newest controls each frame. Two sets that arrive in the same host frame
+count as one (a tap that began and ended between two host frames never happens), and a late set makes the ship
+lurch. With it:
+
+- The host sends `INPUT_MODE 1`; the joiner then sends each set as an `INPUTS` bundle (by UDP kind `INPUTS`, or
+  TCP) with its own clock and the two sets before it (`ClientLink.sentSets`), so a lost datagram is made good by
+  the next without a resend.
+- The host queues sets by number (copies and old ones dropped, `recovered` counted), learns the usual lateness
+  (quickest arrival = base, over two 3 s windows) and its spread (the jitter, capped at 120 ms), and plays each set
+  at its joiner time + base + jitter: a small steady delay instead of an uneven one.
+- One set a frame while on time, so a tap lasts at least a frame. More than the allowance behind (the host
+  hitched): skips to the newest due (`skipped`). Nothing for a second: starts over.
+- Edge presses (system, retreat) are counts in the controls, so nothing here can lose or double them.
+- The traffic line in the log adds per player: sets played, the delay added, sets made good from copies, skips.
 
 ---
 
 ## 5. Position updates
+
+(5.4 below: the bandwidth limit.)
 
 ### 5.1 What an update holds (`Snapshot`)
 
@@ -270,7 +299,12 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   the guess (and turret angles and shot totals unchanged; never an `exact` ship) is not written at all. Both ends
   then *carry* it: the guess becomes its state, acceleration settled, and a quiet counter (another unsent
   integer) goes up. Entities in the base but absent from the snapshot (gone, or trimmed as unseen) are carried
-  the same way. At `CARRY` (30) quiet updates in a row an entity must be sent, or is forgotten by both ends. The
+  the same way. From the third carried update in a row (`FADE_AFTER`), and for the first update sent after that,
+  the acceleration is not measured again but halved, on both ends (`settle`): measuring from a guess would keep a
+  stale acceleration for ever, and the measure after a long carry could be wild, so a thing left out for many
+  updates (the bandwidth limit, 5.4) ran away (speeds in the tens of thousands in tests). From the first carried
+  update this cost about 3% bandwidth (things steadily speeding up were sent again sooner); from the third it
+  costs nothing measurable. At `CARRY` (30) quiet updates in a row an entity must be sent, or is forgotten by both ends. The
   decoder hands the game every entity it holds, sent or carried; ids the joiner no longer has are passed over.
   It refuses an update that would leave it holding over 30,000 ships or missiles.
 - **Per-player encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
@@ -302,6 +336,45 @@ Most of the "off" figure is the joiner's own tolerance (7.4), not the update rat
 smooth over an uneven link, since each unevenly timed update is a small correction. Packing takes about 0.2 ms
 per frame on the host.
 
+
+**Joiner modes** (0.6.5, `test/SyncBench.java rate=30 seconds=40 mode=...`; "off" is measured against the host's
+position one link delay earlier, or, with the jitter buffer, at exactly the host moment being shown; missiles are
+never buffered):
+
+| Link | Plain (`carry`) | Smooth corrections | + Jitter buffer (delay added) |
+|---|---|---|---|
+| 50 ms + 0-20 ms: off (ships / fighters / missiles) | 1.6 / 5.1 / 8.2 | 0.4 / 1.0 / 1.8 | 0.4 / 0.8 / 1.8 (67 ms) |
+| same: jitter, u/s² | 177 / 615 / 2299 | 83 / 244 / 1039 | 82 / 198 / 1039 |
+| 120 ms + 0-60 ms: off | 1.9 / 6.0 / 11.7 | 0.7 / 1.7 / 4.8 | 0.4 / 0.8 / 4.8 (117 ms) |
+| same: jitter | 197 / 710 / 3677 | 117 / 374 / 2017 | 81 / 201 / 2017 |
+| 60 ms + 0-150 ms: off | 3.7 / 10.4 / 29.6 | 2.5 / 5.9 / 22.3 | 0.4 / 0.9 / 22.3 (198 ms) |
+| same: jitter | 446 / 1304 / 8935 | 316 / 830 / 6639 | 85 / 220 / 6639 |
+
+### 5.4 The bandwidth limit (`Budget`, host setting `bandwidthLimit`, off by default)
+
+Per player, a token bucket (the limit per second, a quarter second's worth saved up at most) and a priority
+accumulator (after Glenn Fiedler's "state synchronization" and Halo: Reach). Each update, every entity in it
+gains priority: its kind (ships 3, missiles 1, a ship a player flies 100: it always goes), ×(1 + 3 × nearness to
+what the player looks at, within 4,000 units: their ship, or the host's; `focusX/Y` set by the host plugin),
+×2 if firing, and ×(1 + off/20) where *off* is how far the player's copy, as the packer carries it on, is from the
+real thing now (`Encoder.heldOff`, the codec's own guess from what the player holds). Something the player
+doesn't hold yet goes at once.
+
+If the encoded update fits the bucket, it goes as it is. If not, the entities are sorted by priority and as many
+as fit (estimated from the update's bytes per entity) go; the update is encoded again for the same tick (which
+replaces what the encoder noted for it) with only those. Sent entities' priority drops to zero; the rest keep
+gaining. Anything left out 20 updates in a row goes regardless (the packer forgets after 30). Updates in full
+(keys) are never cut, only counted. The limit counts update bytes before compression; other messages are not
+limited. The traffic line in the log adds updates cut and states left out.
+
+Measured (smooth corrections, 50 ms + 0-20 ms; the battle needs 49.5 KB/s):
+
+| Limit | TCP compressed | off (ships / fighters / missiles) | jitter, u/s² |
+|---|---|---|---|
+| none | 39.0 KB/s | 0.4 / 1.0 / 1.8 | 83 / 244 / 1039 |
+| 40 KB/s | 34.5 KB/s | 0.4 / 1.0 / 5.7 | 82 / 274 / 3496 |
+| 32 KB/s | 28.3 KB/s | 0.4 / 1.1 / 8.4 | 89 / 377 / 5515 |
+| 24 KB/s | 22.2 KB/s | 0.6 / 2.4 / 15.5 | 139 / 826 / 8610 |
 ---
 
 ## 6. The host
@@ -361,6 +434,14 @@ frame:
 - **Claims** (`handleClaims`): refused for no ship, not side 0, fighter, module, drone, the host's ship, too big
   (`maxShipSize`), or already flown. Granted: the ship's AI becomes a `RemotePilotAI`; always answered with
   `ASSIGN`. A one-time campaign warning says a friend's lost ship is lost for real.
+- **Kept ships** (`seatReserved`): another mod may keep a fleet member for a player (`WingmanAPI.reserveShip`; the
+  a campaign mod can). From 2 s into the battle, a player with no ship, no claim pending and synced is given
+  a claim for it, once per battle, checked by `handleClaims` like any other; the joiner, still on the placeholder,
+  is moved in by the `ASSIGN`.
+- **Pilot marks** (`PilotMarks`, for other mods): every frame the host writes `wingman_pilot` (name) on the ship
+  each person flies (its own while anyone is connected), and `wingman_remote` on joiners' ships; the joiner does
+  the same from the lobby (host's ship, other joiners', its own without `wingman_remote`). Ships nobody flies lose
+  both.
 - **`RemotePilotAI`** turns the player's controls into the commands the game's AI uses:
   - controls older than 500 ms → the ship only decelerates;
   - movement flags → accelerate, back, decelerate, strafe;
@@ -490,6 +571,26 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   blended at 25/s. Facing: `1.5 + 0.05 w` degrees. Modules are left to their ship.
 - **Lateness:** each update is stamped with how late it arrived compared with the quickest of the last 8 (at most
   0.1 s), so fast things are carried exactly as far as they should be.
+- The above is the **plain** mode. Two joiner settings change it (`Smoother`; measured in 5.3):
+  - **Smooth corrections** (`smoothCorrections`, on by default since 0.6.5): each puppet (ships, fighters,
+    missiles; not modules, not the joiner's own ship) keeps its recent host states (`Puppet.track`). The *model*
+    is the newest state carried forward to host-now (`clock - gapMin`), as above. The game moves the puppet at
+    the model's speed; each frame the gap between where it is and the model is the *error offset*, faded by 10%
+    a frame at 60 fps (up to 20% for a gap over 100 units; facing 12%), and the puppet put at model + offset. So
+    a smoothly moving model is followed exactly, while a jump in the model (an update that changed the guess, a
+    collision here) is spread over a few frames, and it always ends on the model: no tolerance band. Over 500
+    units, or at a detected teleport (`markJump`, at the host time of the update that leapt), it is put straight
+    there (with the teleport trail).
+  - **Jitter buffer** (`jitterBuffer`, off by default; uses smooth corrections): ships and fighters (not missiles:
+    their end is the host's hit, which is not delayed) are shown at host time `Smoother.Delay.showing(clock)`:
+    our clock minus *lag*, where lag = base (the promptest arrival gap of two 3 s windows) + delay (the latest an
+    update has been lately + the gap between updates + a frame, ≤ 0.25 s). Lag moves toward its target at 3% of
+    the time passing, only once off by more than 6 ms (20 ms to shrink), so the picture never jumps, only runs up
+    to 3% slow or fast for a moment. The model is carried on from the update at or before the moment shown, so
+    never further than to the next one, which has arrived: lateness no longer matters. (Curves through the
+    updates were tried and measured worse: rounded positions make a curve through them wobble.) The cost: other
+    ships are that much later on screen; their shots too, so with `scriptedHits = match` more hits may need the
+    host's copy. The detailed log reports the delay and how often an update past the shown moment was there.
 - **Battle speed:** `followHostTime` keeps the engine at the host's speed × `pace`; `keepPace` measures host time
   against local time every 0.5 s and moves `pace` 70% of the way when they differ by over 3% (0.25 to 1.1), so a
   slow host doesn't make everything race ahead and snap back.
@@ -512,6 +613,15 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 - **System readiness:** `matchSystemReadiness` copies the host's charges after 1.5 s of disagreement and clears a
   local cooldown the host doesn't have after 1 s; `confirmSystemUse` resends a use once after 0.8 s and logs it if
   the host never responds.
+- **Latency hiding per mechanic** (`hideLatency`, on by default; with `predictOwnShip`). Each thing the player
+  does gets an immediate answer here, kept in step with the host's later one:
+  - movement, turning, shield, system, vent, the group in hand: already local (above, 7.6, 7.7);
+  - **flux bar** (`ownFlux`): the flux and hard flux of our ship are recorded each frame with its position, and the
+    host's figures compared with ours at the moment they were true (the same ack as `reconcile`); only a
+    difference over `max(15, 1% of capacity)` is closed, at 4/s, the record shifted with it. Before, the bar
+    showed the host's figures a round trip late: firing, it rose after the shots and fell back after a vent;
+  - **ammo**: on our ship a host count *above* ours is the host not yet having fired what we have, so it is taken
+    only if it stays above for a second (a reload, a refill); a lower count is taken at once.
 
 ### 7.6 Weapons
 
@@ -849,7 +959,12 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `useUdp` | true | both | no | UDP for updates and controls |
 | `trimUnseen` | true | host | yes | Unseen enemies about once a second |
 | `predictOwnShip` | true | joiner | yes | Local prediction of the player's ship |
-| `syncTolerance` | 1 | joiner | yes | Multiplier on puppet tolerances (0-4) |
+| `syncTolerance` | 1 | joiner | yes | Multiplier on puppet tolerances (0-4) (plain mode) |
+| `smoothCorrections` | true | joiner | yes | Puppets follow the model with a fading error offset (7.4) |
+| `jitterBuffer` | false | joiner | yes | Ships and fighters shown a measured moment in the past (7.4) |
+| `hideLatency` | true | joiner | yes | Own flux bar and ammo answer at once (7.5) |
+| `steadyControls` | false | host | yes | Joiners' controls bundled with copies and played back evenly (4.7) |
+| `bandwidthLimit` | 0 (off) | host | yes | Update bytes per joiner, KB/s before compression; priorities decide what waits (5.4) |
 | `scriptedHits` | match | joiner | yes | `match`, `host`, `local` (7.9) |
 | `matchWindowMs` | 100 | joiner | yes | Hit matching window (0-500) |
 | `shotCounts` | true | joiner | yes | Fire as often as the host's weapons |

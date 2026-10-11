@@ -1,7 +1,39 @@
 # Changelog
 
 ## Since 0.6.4-beta (not released)
-Protocol 48.
+Protocol 49.
+
+**Netcode**
+
+- **Smooth corrections (joiner, on by default).** Other ships, fighters and missiles now follow what the host's
+  updates say exactly, and each correction (an update that changed the guess) fades out over a few frames, kept
+  apart from where the ship is drawn. Measured on a simulated battle: copies 3 to 5 times closer to the host's and
+  about half as jittery as before. "Off" goes back to the old way (corrected only beyond a tolerance).
+- **Jitter buffer (joiner, off by default), for uneven connections.** Other ships and fighters are shown a moment
+  in the past (as much as the link's unevenness needs, at most 0.25 s), between updates that have already arrived,
+  so late updates make no difference. Measured with updates arriving up to 150 ms unevenly: ships 0.4 units off
+  instead of 3.7, and a fifth of the jitter. Your ship, shots and missiles are not delayed.
+- **Steady controls (host, off by default), for lossy connections.** Joiners send each set of controls with copies
+  of the last two and their own clock; the host plays them back at an even pace, a little late, one set a frame.
+  A lost or bunched-up packet costs nothing, and a tap shorter than a frame still happens.
+- **Bandwidth limit (host, off by default).** When a big battle needs more than the limit, each update carries what
+  matters most to that joiner first (near their ship; ships before missiles; anything firing; above all, whatever
+  their copy has drifted furthest on), and the rest a moment later. At half the bandwidth the battle needs, ships
+  stay within a unit.
+- **My flux and ammo answer at once (joiner, on).** Your own flux bar and ammo change the moment you fire, raise
+  shields or vent, and are kept in step with the host's figures with the delay taken out. Before, the bar showed
+  the host's figures a round trip late.
+- The packer's guess for something left out of several updates in a row no longer keeps its acceleration for ever
+  (it fades), so a long-carried guess can't run away. No change in bandwidth.
+
+**For other mods**
+
+- **`wingman.api.WingmanAPI`** (see `docs/MOD_API.md`): who flies which ship (also written on the ships as
+  `wingman_pilot` / `wingman_remote`), messages between a mod's copies on the host and joiners (new message `MOD`,
+  capped in size and rate), opening and running the host's session from the campaign, and keeping a ship for a
+  player (they are seated in it when they join a battle).
+
+**Wrecks**
 
 - **Wrecks stay whole, by default.** New host setting "Wrecks stay whole" (on): no wreck breaks into pieces, in the
   host's battles too, so every screen shows exactly the same wrecks. Turn it off for break-ups as in single player.

@@ -21,6 +21,16 @@ public final class WingmanConfig {
     public boolean sendEverything = true;
     /** Host: wrecks stay whole (no break-ups), so every screen shows the same wrecks. */
     public boolean wholeWrecks = true;
+    /** Joiner: other ships are shown as the host's (as best known) plus a fading offset, instead of corrected beyond a tolerance (see Smoother). */
+    public boolean smoothCorrections = true;
+    /** Joiner: other ships are shown a little in the past, between updates that have arrived (see Smoother). For uneven connections. */
+    public boolean jitterBuffer = false;
+    /** Host: joiners' controls are sent with copies and played back at an even pace (see InputBuffer). For lossy or uneven connections. */
+    public boolean steadyControls = false;
+    /** Host: most a joiner's position updates may take, KB/s; 0 = no limit (see Budget). */
+    public int bandwidthLimit = 0;
+    /** Joiner: the flux bar and ammo of the ship in your hands answer at once, kept in step with the host (needs predictOwnShip). */
+    public boolean hideLatency = true;
     /** Host: send each position update as what changed since the one before (about a third of the size). */
     public boolean compactUpdates = true;
     /** Compress the whole connection. Each side compresses what it sends if the other can read it. */
@@ -133,6 +143,11 @@ public final class WingmanConfig {
             c.syncTolerance = (float) j.optDouble("syncTolerance", c.syncTolerance);
             c.sendEverything = j.optBoolean("sendEverything", c.sendEverything);
             c.wholeWrecks = j.optBoolean("wholeWrecks", c.wholeWrecks);
+            c.smoothCorrections = j.optBoolean("smoothCorrections", c.smoothCorrections);
+            c.jitterBuffer = j.optBoolean("jitterBuffer", c.jitterBuffer);
+            c.steadyControls = j.optBoolean("steadyControls", c.steadyControls);
+            c.bandwidthLimit = j.optInt("bandwidthLimit", c.bandwidthLimit);
+            c.hideLatency = j.optBoolean("hideLatency", c.hideLatency);
             c.compactUpdates = j.optBoolean("compactUpdates", c.compactUpdates);
             c.compressLink = j.optBoolean("compressLink", c.compressLink);
             c.useUdp = j.optBoolean("useUdp", c.useUdp);
@@ -164,6 +179,11 @@ public final class WingmanConfig {
         if ("snapshotRate".equals(key)) return String.valueOf(snapshotRate);
         if ("sendEverything".equals(key)) return String.valueOf(sendEverything);
         if ("wholeWrecks".equals(key)) return String.valueOf(wholeWrecks);
+        if ("smoothCorrections".equals(key)) return String.valueOf(smoothCorrections);
+        if ("jitterBuffer".equals(key)) return String.valueOf(jitterBuffer);
+        if ("steadyControls".equals(key)) return String.valueOf(steadyControls);
+        if ("hideLatency".equals(key)) return String.valueOf(hideLatency);
+        if ("bandwidthLimit".equals(key)) return bandwidthLimit <= 0 ? "off" : String.valueOf(bandwidthLimit);
         if ("compactUpdates".equals(key)) return String.valueOf(compactUpdates);
         if ("compressLink".equals(key)) return String.valueOf(compressLink);
         if ("useUdp".equals(key)) return String.valueOf(useUdp);
@@ -208,6 +228,11 @@ public final class WingmanConfig {
             else if ("snapshotRate".equals(key)) snapshotRate = Integer.parseInt(value);
             else if ("sendEverything".equals(key)) sendEverything = yes(value);
             else if ("wholeWrecks".equals(key)) wholeWrecks = yes(value);
+            else if ("smoothCorrections".equals(key)) smoothCorrections = yes(value);
+            else if ("jitterBuffer".equals(key)) jitterBuffer = yes(value);
+            else if ("steadyControls".equals(key)) steadyControls = yes(value);
+            else if ("hideLatency".equals(key)) hideLatency = yes(value);
+            else if ("bandwidthLimit".equals(key)) bandwidthLimit = "off".equals(value) ? 0 : Integer.parseInt(value);
             else if ("compactUpdates".equals(key)) compactUpdates = yes(value);
             else if ("compressLink".equals(key)) compressLink = yes(value);
             else if ("useUdp".equals(key)) useUdp = yes(value);

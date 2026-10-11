@@ -53,6 +53,7 @@ import wingman.net.InputState;
 import wingman.net.Lobby;
 import wingman.net.Msg;
 import wingman.net.ShipSpawn;
+import wingman.net.Smoother;
 import wingman.net.Snapshot;
 
 /**
@@ -98,6 +99,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
         float blinkSeen = -100f; // when it last was
         boolean probing;        // diagnostics: leave this puppet completely alone for a frame
+        final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // its recent states, for smooth corrections and the jitter buffer
     }
 
     private static final class MissilePuppet {
@@ -121,6 +123,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean endWatched;      // the host's script ended it: we are watching whether ours does the same
         float releaseBy = -1f;   // the host's copy has released its next stage: ours gets this long to do the same
         int wantTarget = -2;     // ship the host says it is aimed at, still to be passed to its script (-2: nothing to pass)
+        final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // for smooth corrections
     }
 
     private CombatEngineAPI engine;
@@ -339,6 +342,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     private void step(float amount) throws Exception {
         clock += amount;
+        bufferClock.advance(clock);
+        wingman.api.WingmanAPI.deliver();
+        markPilots();
         ClientLink.State state = link.getState();
         if (state != lastState) {
             if (state == ClientLink.State.CONNECTED && joinScreen) {
@@ -517,9 +523,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + " units from the real one on the host once the delay is taken out, at most " + Math.round(ownWorst) + ", put straight back "
                     + ownSnaps + " times; compared " + reconChecks + " times, " + reconMisses + " could not be compared; ship system used "
                     + sysUsesTotal + " times so far (" + sysConfirmed + " seen to happen on the host, " + sysResent + " sent a second time, "
-                    + sysUnconfirmed + " never happened there)");
+                    + sysUnconfirmed + " never happened there); flux bar pulled toward the host's " + fluxFixes + " frames");
+            fluxFixes = 0;
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
+            if (bufferedFrames > 0) Dbg.info(WingmanClientPlugin.class, "Wingman jitter buffer: other ships shown " + Math.round(1000f * bufferClock.delay)
+                    + " ms in the past; " + Math.round(100f * bufferedBetween / bufferedFrames) + "% of the time an update after the moment shown had arrived");
+            bufferedFrames = 0; bufferedBetween = 0;
             lateSum = 0f; lateN = 0; reconChecks = 0; reconMisses = 0;
             ownErrSum = 0f; ownErrN = 0; ownWorst = 0f; ownSnaps = 0;
         }
@@ -1480,10 +1490,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         float jx = st.x - (pp.target.x + pp.target.vx * since), jy = st.y - (pp.target.y + pp.target.vy * since);
                         float pace2 = Math.abs(st.vx) + Math.abs(st.vy) + Math.abs(pp.target.vx) + Math.abs(pp.target.vy);
                         float reach = 150f + pace2 * 0.3f;
-                        if (jx * jx + jy * jy > reach * reach) pp.jumped = true;
+                        if (jx * jx + jy * jy > reach * reach) { pp.jumped = true; pp.track.markJump(snap.hostTime); }
                     }
                     pp.target = st;
                     pp.targetAt = now;
+                    pp.track.push(snap.hostTime, st.x, st.y, st.vx, st.vy, clampAcc(st.ax, st.vx, st.vy), clampAcc(st.ay, st.vx, st.vy),
+                            st.facing, st.angVel, st.angAcc);
                     if (st.weaponAngles != null) pp.angles = st.weaponAngles;
                     if (st.shots != null) {
                         if (pp.ahead == null) {
@@ -1506,7 +1518,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     if (mp == null) continue;
                     mp.target = ms;
                     mp.targetAt = now;
+                    mp.track.push(snap.hostTime, ms.x, ms.y, ms.vx, ms.vy, ms.ax, ms.ay, ms.facing, ms.angVel, ms.angAcc);
                 }
+                bufferClock.update(clock, snap.hostTime);
                 hostPaused = snap.paused;
                 if (snap.paused != engine.isPaused()) engine.setPaused(snap.paused);
                 break;
@@ -1995,6 +2009,23 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (score < bestScore) { bestScore = score; best = pp; }
         }
         return best;
+    }
+
+    private final PilotMarks marks = new PilotMarks();
+
+    /** Who flies what, written on the ships for other mods (see WingmanAPI): the host's ship, ours, and the other joiners'. */
+    private void markPilots() {
+        if (lobby != null) {
+            Puppet host = puppets.get(hostFlagship);
+            if (host != null) marks.flown(host.ship, lobby.hostName, true);
+            for (Lobby.Entry e : lobby.players) {
+                Puppet pp = e.shipNetId >= 0 ? puppets.get(e.shipNetId) : null;
+                if (pp != null) marks.flown(pp.ship, e.name, e.shipNetId != ownId);
+            }
+        }
+        Puppet mine = ownId >= 0 ? puppets.get(ownId) : null;
+        if (mine != null && cfg != null) marks.flown(mine.ship, cfg.playerName, false);
+        marks.apply();
     }
 
     @Override
@@ -3564,7 +3595,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (want && !w.isDisabled()) w.disable();
                 else if (!want && w.isDisabled()) w.repair();
                 // Ammo is the host's count. Our own shots only look like they use ammo; the real ones are fired there.
-                if (i < d.ammo.length && d.ammo[i] >= 0 && w.usesAmmo() && w.getAmmo() != d.ammo[i]) w.setAmmo(d.ammo[i]);
+                // On the ship in our hands (hideLatency) a count above ours is the host not yet having fired what we
+                // have: taken only if it stays above for a second (a reload, a refill).
+                if (i < d.ammo.length && d.ammo[i] >= 0 && w.usesAmmo() && w.getAmmo() != d.ammo[i]) {
+                    boolean mine = pp.netId == ownId && cfg != null && cfg.hideLatency && cfg.predictOwnShip;
+                    if (!mine || d.ammo[i] < w.getAmmo()) { w.setAmmo(d.ammo[i]); if (mine) ammoAbove.remove(w); }
+                    else {
+                        Float since = ammoAbove.get(w);
+                        if (since == null) ammoAbove.put(w, clock);
+                        else if (clock - since > 1f) { w.setAmmo(d.ammo[i]); ammoAbove.remove(w); }
+                    }
+                } else if (pp.netId == ownId) ammoAbove.remove(w);
             }
             ShipEngineControllerAPI ec = ship.getEngineController();
             List<ShipEngineControllerAPI.ShipEngineAPI> engines = ec == null ? null : ec.getShipEngines();
@@ -3919,6 +3960,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private final float[] gaps = new float[8];
     private int gapNext, gapCount, lateN;
     private float gapMin, lateSum;
+    /** The jitter buffer's clock (see Smoother.Delay); fed every update, advanced every frame. */
+    private final Smoother.Delay bufferClock = new Smoother.Delay();
+    private int bufferedFrames, bufferedBetween;
+
+    /** Smooth corrections are in use (on by themselves, or because the jitter buffer needs them), and the clocks are known. */
+    private boolean smoothing() { return cfg != null && (cfg.smoothCorrections || cfg.jitterBuffer) && gapCount > 0; }
     // Lining our own ship up with the real one (see reconcile()).
     private int ownSeq, ackSeq;
     private float ackAge;
@@ -3926,6 +3973,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private final float[] seqClock = new float[256];
     private final int[] seqNumber = new int[256];
     private final float[] pastT = new float[256], pastX = new float[256], pastY = new float[256];
+    /** Our ship's flux and hard flux each frame, beside its position, for hiding the delay on the flux bar (see ownFlux). */
+    private final float[] pastFlux = new float[256], pastHard = new float[256];
+    /** The host's flux and hard flux minus ours at the same moment (delay taken out), when reconReady. */
+    private float reconFlux, reconHard;
+    private boolean reconFluxReady;
     private int pastNext, pastCount;
     private float reconX, reconY;
     private Puppet reconShip;
@@ -3940,9 +3992,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * Returns false if there is nothing to compare yet.
      */
     private boolean reconcile(Puppet pp, Snapshot.ShipState t) {
-        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; ackFresh = false; }
+        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; }
         Vector2f loc = pp.ship.getLocation();
         pastT[pastNext] = clock; pastX[pastNext] = loc.x; pastY[pastNext] = loc.y;
+        FluxTrackerAPI ft = pp.ship.getFluxTracker();
+        pastFlux[pastNext] = ft.getCurrFlux(); pastHard[pastNext] = ft.getHardFlux();
         pastNext = (pastNext + 1) & 255;
         if (pastCount < 256) pastCount++;
         if (!ackFresh) return reconReady;
@@ -3953,7 +4007,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // our copy's position at that moment, from the record of the last few seconds
         int newest = (pastNext - 1) & 255, oldest = (pastNext - pastCount) & 255;
         if (when < pastT[oldest]) { reconMisses++; return reconReady; }
-        float x = pastX[newest], y = pastY[newest];
+        float x = pastX[newest], y = pastY[newest], fl = pastFlux[newest], hf = pastHard[newest];
         for (int n = 0; n < pastCount - 1; n++) {
             int b = (newest - n) & 255, a = (b - 1) & 255;
             if (when > pastT[b]) break;       // later than the newest record: use the newest
@@ -3961,14 +4015,48 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float span = pastT[b] - pastT[a], f = span <= 0f ? 1f : (when - pastT[a]) / span;
             x = pastX[a] + (pastX[b] - pastX[a]) * f;
             y = pastY[a] + (pastY[b] - pastY[a]) * f;
+            fl = pastFlux[a] + (pastFlux[b] - pastFlux[a]) * f;
+            hf = pastHard[a] + (pastHard[b] - pastHard[a]) * f;
             break;
         }
         reconX = t.x - x;
         reconY = t.y - y;
+        reconFlux = t.flux - fl;
+        reconHard = t.hardFlux - hf;
+        reconFluxReady = true;
         reconReady = true;
         reconChecks++;
         return true;
     }
+
+    /**
+     * Latency hiding for the flux bar of the ship in our hands ({@code hideLatency}): our guns, shield and vent
+     * change its flux here at once, as they do on the host a moment later. The host's figure is compared with
+     * ours at the moment the host's was true (the delay taken out, as for its position, see reconcile), and only
+     * that difference is closed, quickly once it is more than a little. Without it the bar showed the host's
+     * figure, a round trip late: firing, it rose only after the shots, and fell back after a vent ended.
+     * Returns false if the host's figure should simply be taken (not ready, or switched off).
+     */
+    private boolean ownFlux(FluxTrackerAPI flux, float room, float amount) {
+        if (cfg == null || !cfg.hideLatency || !cfg.predictOwnShip || !reconFluxReady || amount <= 0f) return false;
+        float slack = Math.max(15f, room * 0.01f);
+        float k = Math.min(1f, amount * 4f);
+        float cf = Math.abs(reconFlux) > slack ? reconFlux * k : 0f, ch = Math.abs(reconHard) > slack ? reconHard * k : 0f;
+        if (cf != 0f || ch != 0f) {
+            float f = Math.max(0f, Math.min(room, flux.getCurrFlux() + cf));
+            flux.setCurrFlux(f);
+            flux.setHardFlux(Math.max(0f, Math.min(f, flux.getHardFlux() + ch)));
+            for (int i = 0; i < 256; i++) { pastFlux[i] += cf; pastHard[i] += ch; }
+            reconFlux -= cf;
+            reconHard -= ch;
+            fluxFixes++;
+        }
+        return true;
+    }
+
+    private int fluxFixes;
+    /** Weapons on our ship whose host ammo count has been above ours since this battle time (see applyDamage). */
+    private final Map<WeaponAPI, Float> ammoAbove = new IdentityHashMap<WeaponAPI, Float>();
 
     /** Our copy has been moved by this much to follow the real ship: the record of where it was moves with it. */
     private void shiftPast(float sx, float sy) {
@@ -4038,6 +4126,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         Vector2f loc = ship.getLocation();
         float dx = tx - loc.x, dy = ty - loc.y;
         float k = Math.min(1f, amount * (pp.fighter ? 30f : 12f));
+        boolean smoothed = false;
         if (pp.module) {
             // carried by the ship it is part of: this game puts it where its slot is
         } else if (own && cfg != null && cfg.predictOwnShip) {
@@ -4094,6 +4183,20 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (err > ownWorst) ownWorst = err;
             ownErrSum += err;
             ownErrN++;
+        } else if (smoothing() && !pp.track.empty()) {
+            // Smooth corrections (and the jitter buffer): shown = the model of the host's ship + an offset that
+            // fades (see Smoother). The game moves it at the model's speed in between.
+            boolean buffered = cfg.jitterBuffer;
+            Smoother.Track tr = pp.track;
+            tr.sample(buffered ? bufferClock.showing(clock) : clock - gapMin, buffered, 1f, ACC_REACH, surging);
+            float fromX = loc.x, fromY = loc.y;
+            boolean leapt = tr.follow(loc.x, loc.y, ship.getFacing(), amount, tr.jumpedNow);
+            pp.jumped = false;
+            loc.set(tr.sx, tr.sy);
+            if (leapt && tr.jumpedNow) teleportTrail(pp, fromX - loc.x, fromY - loc.y);
+            ship.getVelocity().set(tr.mvx, tr.mvy);
+            smoothed = true;
+            if (buffered) { bufferedFrames++; if (tr.between) bufferedBetween++; }
         } else {
             // Every other ship and fighter is carried along by this game's own physics at the speed the host
             // gave, and its position is only corrected for what lies beyond a tolerance (see closing()).
@@ -4119,6 +4222,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float tf = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
         if (pp.module) {
             // turns with its ship
+        } else if (smoothed) {
+            ship.setFacing(pp.track.sf);
+            ship.setAngularVelocity(pp.track.mw);
         } else if (!own) {
             float turn = shortestTurn(ship.getFacing(), tf);
             float turnTol = (1.5f + Math.abs(t.angVel) * 0.05f) * slack;
@@ -4158,8 +4264,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         FluxTrackerAPI flux = ship.getFluxTracker();
         // Guard rail: never more flux than this copy of the ship can hold, whatever arrives.
         float room = Math.max(1f, ship.getMaxFlux());
-        flux.setCurrFlux(Math.min(t.flux, room));
-        flux.setHardFlux(Math.min(t.hardFlux, Math.min(t.flux, room)));
+        if (!(own && ownFlux(flux, room, amount))) {
+            flux.setCurrFlux(Math.min(t.flux, room));
+            flux.setHardFlux(Math.min(t.hardFlux, Math.min(t.flux, room)));
+        }
 
         if (amount <= 0f) return;
 
@@ -4263,20 +4371,32 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float aa = Math.min(age, ACC_REACH); // along its acceleration for a moment, as for ships
         float tx = t.x + (t.vx + 0.5f * t.ax * aa) * age, ty = t.y + (t.vy + 0.5f * t.ay * aa) * age;
         Vector2f loc = m.getLocation();
-        float dx = tx - loc.x, dy = ty - loc.y;
-        // Carried by its own flight at the host's speed; position corrected only beyond a tolerance, as for ships.
-        float err = (float) Math.sqrt(dx * dx + dy * dy);
-        float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
-        float k = err > 300f ? 1f : closing(err, (6f + speed * 0.06f) * slack, amount, 12f);
-        if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
-        m.getVelocity().set(t.vx + t.ax * aa, t.vy + t.ay * aa);
-        // Heading: where the host had it, turned on by its turn rate for the time since. Then let it keep turning
-        // at that rate until the next update, instead of jumping from one heading to the next.
-        float heading = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
-        float swing = shortestTurn(m.getFacing(), heading);
-        float sk = closing(Math.abs(swing), (3f + Math.abs(t.angVel) * 0.05f) * slack, amount, 30f);
-        if (sk > 0f) m.setFacing(m.getFacing() + swing * sk);
-        m.setAngularVelocity(t.angVel + t.angAcc * aa);
+        if (smoothing() && !mp.track.empty()) {
+            // Smooth corrections (see Smoother). Never the jitter buffer: a missile's end is the host's hit, which
+            // is not delayed, so a delayed missile would vanish short of its target.
+            Smoother.Track tr = mp.track;
+            tr.sample(clock - gapMin, false, 2f, ACC_REACH, false);
+            tr.follow(loc.x, loc.y, m.getFacing(), amount, false);
+            loc.set(tr.sx, tr.sy);
+            m.getVelocity().set(tr.mvx, tr.mvy);
+            m.setFacing(tr.sf);
+            m.setAngularVelocity(tr.mw);
+        } else {
+            float dx = tx - loc.x, dy = ty - loc.y;
+            // Carried by its own flight at the host's speed; position corrected only beyond a tolerance, as for ships.
+            float err = (float) Math.sqrt(dx * dx + dy * dy);
+            float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
+            float k = err > 300f ? 1f : closing(err, (6f + speed * 0.06f) * slack, amount, 12f);
+            if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
+            m.getVelocity().set(t.vx + t.ax * aa, t.vy + t.ay * aa);
+            // Heading: where the host had it, turned on by its turn rate for the time since. Then let it keep turning
+            // at that rate until the next update, instead of jumping from one heading to the next.
+            float heading = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
+            float swing = shortestTurn(m.getFacing(), heading);
+            float sk = closing(Math.abs(swing), (3f + Math.abs(t.angVel) * 0.05f) * slack, amount, 30f);
+            if (sk > 0f) m.setFacing(m.getFacing() + swing * sk);
+            m.setAngularVelocity(t.angVel + t.angAcc * aa);
+        }
         m.setHitpoints(100000f); // only the host decides when point defense kills it
         boolean hostOut = (t.flags & Snapshot.M_FIZZLING) != 0;
         if (hostOut && !mp.flamedOut) {

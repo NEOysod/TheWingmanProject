@@ -72,10 +72,20 @@ final class Settings {
                 "On: everything sent is compressed, if the other side can read it. Used from the next time you connect."));
         ITEMS.add(new Item(1, "useUdp", "Updates and controls by UDP", BOTH, false, YES_NO,
                 "On: a lost packet costs one update, not a freeze. Falls back to TCP by itself where UDP can't get through. Needed on both; used from the next time you connect."));
+        ITEMS.add(new Item(1, "bandwidthLimit", "Bandwidth limit per joiner (KB/s)", HOST, true, new String[] { "off", "24", "32", "48", "64", "96", "128" },
+                "When a big battle needs more than this, what matters most to each joiner (near their ship, ships before fighters before missiles, anything firing) goes first; the rest a moment later."));
         ITEMS.add(new Item(1, "trimUnseen", "Send unseen enemies less often", HOST, true, YES_NO,
                 "On: enemies nobody on your side can see are reported about once a second. Saves bandwidth in big battles."));
         ITEMS.add(new Item(1, "predictOwnShip", "My ship answers my controls at once", JOINER, true, YES_NO,
                 "On: your ship moves straight away and is quietly kept in step with the host. Off: it waits for the host's answer."));
+        ITEMS.add(new Item(1, "hideLatency", "My flux and ammo answer at once", JOINER, true, YES_NO,
+                "On: your ship's flux bar and ammo change the moment you fire, raise shields or vent, and are kept in step with the host. Off: they show the host's figures, a moment late."));
+        ITEMS.add(new Item(1, "smoothCorrections", "Smooth corrections", JOINER, true, YES_NO,
+                "On: other ships follow the host's exactly, and each correction fades out over a few frames. Off: the older way (corrected only beyond a tolerance)."));
+        ITEMS.add(new Item(1, "jitterBuffer", "Jitter buffer (uneven connection)", JOINER, true, YES_NO,
+                "On: other ships are shown a moment in the past (the link's unevenness, at most 0.25 s), so late updates make no difference. Your ship, shots and missiles are not delayed."));
+        ITEMS.add(new Item(1, "steadyControls", "Steady controls (lossy connection)", HOST, true, YES_NO,
+                "On: joiners send each set of controls with copies of the last two, and their ships play them back at an even pace, a little late. A lost or bunched-up packet then costs nothing."));
         ITEMS.add(new Item(1, "syncTolerance", "Difference from the host left alone", JOINER, true, new String[] { "0", "0.5", "1", "1.5", "2", "3" },
                 "1 is normal. Raise it if ships, fighters or missiles shake; lower it to follow the host more exactly."));
 

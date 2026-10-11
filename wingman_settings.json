@@ -149,6 +149,31 @@
     # a joiner's screen; the host sends the dice for each cut so most match).
     "wholeWrecks": true,
 
+    # Smooth corrections (joiner): other ships, fighters and missiles follow the host's exactly, and each
+    # correction (an update that changed the guess) fades out over a few frames. false: the older way, where a
+    # copy is corrected only once it is off by more than a tolerance.
+    "smoothCorrections": true,
+
+    # My flux and ammo answer at once (joiner): your own ship's flux bar and ammo counts change the moment you
+    # fire, raise shields or vent, and are kept in step with the host's (the delay taken out). false: they show
+    # the host's figures, a moment late. Needs predictOwnShip.
+    "hideLatency": true,
+
+    # Jitter buffer (joiner), for an uneven connection: other ships and fighters are shown a moment in the past
+    # (as much as the link's unevenness needs, at most 0.25 s), between updates that have already arrived, so
+    # late updates make no difference. Your own ship, shots and missiles are not delayed.
+    "jitterBuffer": false,
+
+    # Steady controls (host), for a lossy or uneven connection: joiners send each set of controls with copies
+    # of the last two, and the host plays them back at an even pace, a little late (as much as the link's
+    # unevenness needs, at most 0.12 s). A lost or bunched-up packet then costs nothing.
+    "steadyControls": false,
+
+    # Bandwidth limit per joiner (host), KB/s; 0 = none. When a big battle needs more than this, each update
+    # carries what matters most to that joiner first (near their ship; ships before fighters before missiles;
+    # anything firing), and the rest a moment later. Nothing waits more than 20 updates.
+    "bandwidthLimit": 0,
+
     # Shot counts (joiner): each weapon on a copy of a ship fires exactly as many times as the host's did.
     "shotCounts": true,
 

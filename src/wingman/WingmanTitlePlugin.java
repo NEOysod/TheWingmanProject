@@ -138,6 +138,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     public void advance(float amount, List<InputEventAPI> events) {
         if (broken || !onTitle()) return;
         CampaignStandIn.removeIfLeft(); // back on the title screen however the battle was left
+        wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
         ObjectiveMirror.restoreIfLeft();
         try {
             if (!firstRunChecked) { // the very first time: show the how-to pages without being asked

@@ -37,6 +37,9 @@ public final class HostSession {
         public final java.util.List<Object[]> subsystemPresses = new java.util.ArrayList<Object[]>();
         long subsystemWindow;
         int subsystemsInWindow;
+        /** Other mods' messages from this player in the current second (see ModChannel). */
+        long modWindow;
+        int modsInWindow;
         /** Ready-check report from this player. */
         public boolean ready;
         public int built, skipped;
@@ -64,6 +67,12 @@ public final class HostSession {
         volatile long udpHeardAt, ackAt;
         /** The latest controls that came by UDP, waiting for the game thread. */
         volatile byte[] udpInput;
+        /** Bundles of controls that came by UDP, each to be played in turn (see InputBuffer). */
+        final java.util.concurrent.ConcurrentLinkedQueue<byte[]> udpBundles = new java.util.concurrent.ConcurrentLinkedQueue<byte[]>();
+        /** This player's controls, played back at an even pace when steady controls are on. */
+        public final InputBuffer buffer = new InputBuffer();
+        /** This player's share of the bandwidth limit, if one is set (see Budget). */
+        public final Budget budget = new Budget();
         /** The player has seen our answer come back by UDP. */
         boolean udpReady;
         /** Updates go to this player by UDP right now, and it sends its controls the same way. */
@@ -154,6 +163,26 @@ public final class HostSession {
     public void kick(Player p, String reason) {
         banned.add(p.name.toLowerCase());
         reject(p.conn, reason);
+    }
+
+    private volatile boolean steadyControls;
+
+    /** Steady controls (see InputBuffer): joiners are told to send bundles, which the host plays back evenly. */
+    public void setSteadyControls(boolean on) {
+        if (on == steadyControls) return;
+        steadyControls = on;
+        for (Player p : players) { p.conn.send(Msg.INPUT_MODE, new byte[] { (byte) (on ? 1 : 0) }); p.buffer.clear(); }
+    }
+
+    public boolean steadyControls() { return steadyControls; }
+
+    /** The open session on this PC, or null (for other mods, through wingman.api.WingmanAPI). */
+    public static synchronized HostSession active() { return active; }
+
+    /** Send to one player whether or not they are in the battle yet. */
+    public boolean sendTo(int playerId, byte type, byte[] data) {
+        for (Player p : players) if (p.id == playerId) { p.conn.send(type, data); return true; }
+        return false;
     }
 
     public static synchronized void stopActive() {
@@ -294,6 +323,7 @@ public final class HostSession {
             p.built = 0;
             p.skipped = 0;
             p.input.flags = 0;
+            p.buffer.clear();
             p.encoder = null; // a new battle: nothing of the last one is to be built on
             p.needKey = true;
         }
@@ -325,6 +355,17 @@ public final class HostSession {
             sb.append(sb.length() == 0 ? "" : "; ").append(p.name).append(": ").append(p.udp ? "UDP" : p.udpReady ? "TCP (UDP works but is resting)" : "TCP")
               .append(", ").append(p.updatesByUdp).append(" by UDP, ").append(p.updatesByTcp).append(" by TCP, ").append(p.keysSent)
               .append(" in full, fell back ").append(p.udpFallbacks).append(" times");
+            if (Budget.bytesPerSecond > 0) {
+                sb.append("; limit ").append(Budget.bytesPerSecond / 1024).append(" KB/s: ").append(p.budget.cut).append(" updates cut down, ")
+                  .append(p.budget.leftOut).append(" states left out");
+                p.budget.cut = 0; p.budget.leftOut = 0;
+            }
+            if (steadyControls) {
+                InputBuffer b = p.buffer;
+                sb.append("; steady controls: ").append(b.played).append(" played, ").append(b.delayMs).append(" ms added, ")
+                  .append(b.recovered).append(" made good from copies, ").append(b.skipped).append(" skipped to catch up");
+                b.played = 0; b.recovered = 0; b.skipped = 0;
+            }
             p.updatesByUdp = 0; p.updatesByTcp = 0; p.keysSent = 0;
         }
         if (!udpProblem.isEmpty()) sb.append(" [").append(udpProblem).append("]");
@@ -438,6 +479,7 @@ public final class HostSession {
                 w.out.writeInt(snapshotRate);
                 w.out.writeUTF(hostName);
                 h.send(Msg.WELCOME, w.done());
+                if (steadyControls) h.send(Msg.INPUT_MODE, new byte[] { 1 });
                 h.offerCompression();
                 try {
                     Udp.Host u = udp();
@@ -450,6 +492,7 @@ public final class HostSession {
                     }
                 } catch (Throwable t) { udpProblem = String.valueOf(t); }
                 events.add(pl.name + (old != null ? " reconnected (" : " joined (") + (players.size() + 1) + "/" + maxPlayers + ").");
+                ModChannel.post(pl.name, pl.id, ModChannel.JOINED);
                 broadcastNotice(pl.name + (old != null ? " reconnected." : " joined."), pl);
             } catch (IOException e) {
                 h.close("bad hello");
@@ -490,6 +533,13 @@ public final class HostSession {
                         pl.claim = in.readInt();
                         pl.hasClaim = true;
                     }
+                    else if (p.type == Msg.INPUTS) pl.buffer.arrive(p.data, System.currentTimeMillis());
+                    else if (p.type == Msg.MOD) {
+                        long now = System.currentTimeMillis();
+                        if (now - pl.modWindow > 1000) { pl.modWindow = now; pl.modsInWindow = 0; }
+                        if (++pl.modsInWindow > ModChannel.PER_PLAYER_PER_SECOND) ModChannel.dropped.incrementAndGet();
+                        else if (!ModChannel.received(pl.name, pl.id, p.data) && ++pl.badMessages > 20) bye = true;
+                    }
                     else if (p.type == Msg.BYE) bye = true;
                 } catch (IOException e) {
                     // Guard rail: one garbled message is skipped. Only a player who keeps sending them is dropped.
@@ -501,6 +551,13 @@ public final class HostSession {
                 pl.udpInput = null;
                 try { pl.input.decodeIfNewer(byUdp); } catch (IOException e) { /* a garbled datagram is nothing */ }
             }
+            long nowMs = System.currentTimeMillis();
+            for (byte[] b; (b = pl.udpBundles.poll()) != null; ) {
+                try { pl.buffer.arrive(b, nowMs); } catch (IOException e) { /* a garbled datagram is nothing */ }
+            }
+            // (bundles still arriving just after steady controls were switched off are dropped: the plain ones rule)
+            if (steadyControls) { try { pl.buffer.playOut(nowMs, pl.input); } catch (IOException e) { pl.buffer.clear(); } }
+            else pl.buffer.clear();
             if (bye) pl.conn.close("left");
             boolean timedOut = !pl.conn.isClosed() && pl.conn.idleMillis() > LINK_TIMEOUT_MS;
             if (timedOut) pl.conn.close("timed out");
@@ -512,6 +569,7 @@ public final class HostSession {
                 String how = timedOut ? " lost connection." : " left.";
                 events.add(pl.name + how);
                 broadcastNotice(pl.name + how, null);
+                if (!pl.replaced) ModChannel.post(pl.name, pl.id, ModChannel.LEFT);
             }
         }
         return events;
@@ -592,7 +650,7 @@ public final class HostSession {
                 if (p.udp) base = p.encoder.has(p.ackTick) ? p.ackTick : -1;
                 else if (++p.sinceKey < KEY_EVERY) base = p.baseTick;
             }
-            byte[] data = p.encoder.encode(s, base);
+            byte[] data = p.budget.fit(s, p.encoder.encode(s, base), p.encoder, base);
             if (p.encoder.lastKey || !p.udp) {
                 // In full, or on the TCP road: by TCP. It will arrive, so the next one can be built on it at once.
                 if (p.conn.sendDroppable(Msg.SNAPSHOT_D, data)) {

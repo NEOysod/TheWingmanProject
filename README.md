@@ -142,6 +142,10 @@ battle with a `Co-op:` message rather than stopping the game.
 `docs/TECHNICAL.md` describes how each part works. Source is in `src/`; `build.bat` / `build.sh` rebuild the
 jar against your copy of the game.
 
+Other mods can work with Wingman through `wingman.api.WingmanAPI` (`docs/MOD_API.md`): which ships players fly
+(also written on the ships), messages between a mod's copies on the host and joiners, hosting from the campaign,
+and keeping a ship for a player.
+
 ## Safety
 Playing with this mod carries similar risks to hosting a private Minecraft server: hosting opens a network
 port, the connection is not encrypted, players are not verified, and in a campaign battle ships flown by

@@ -31,6 +31,9 @@ public final class ClientLink {
     }
 
     public String getError() { return error; }
+
+    /** The host's player name, once welcomed. */
+    public volatile String hostName = "Host";
     public Conn getConn() { return conn; }
 
     /** Connect in the background and say hello. Safe to call from the game thread. */
@@ -45,6 +48,9 @@ public final class ClientLink {
         if (state == State.CONNECTING) return;
         Redact.alsoHide(address); // a host name typed in stays out of the log too
         disconnect();
+        steady = false;
+        sentSets.clear();
+        sentTimes.clear();
         state = State.CONNECTING;
         Thread t = new Thread(new Runnable() {
             public void run() {
@@ -55,6 +61,19 @@ public final class ClientLink {
                         public boolean take(byte type, byte[] data) {
                             if (type == Msg.UDP_OFFER) {
                                 startUdp(c, address, data);
+                                return true;
+                            }
+                            if (type == Msg.MOD) { // another mod's message: waits for the game thread (WingmanAPI.deliver)
+                                ModChannel.received(hostName, ModChannel.HOST_ID, data);
+                                return true;
+                            }
+                            if (type == Msg.WELCOME) { // read here too, for other mods: who the host is (the game reads it as well)
+                                try { In in = Msg.reader(data); in.readInt(); in.readInt(); in.readInt(); hostName = in.readUTF(); }
+                                catch (IOException e) { /* the game's own reading reports it */ }
+                                return false;
+                            }
+                            if (type == Msg.INPUT_MODE) {
+                                steady = data.length > 0 && data[0] == 1;
                                 return true;
                             }
                             if (type == Msg.UDP_MODE) {
@@ -89,6 +108,10 @@ public final class ClientLink {
     }
 
     private volatile Udp.Client udp;
+    /** The host wants our controls as bundles (steady controls, see InputBuffer). */
+    public volatile boolean steady;
+    private final java.util.List<byte[]> sentSets = new java.util.ArrayList<byte[]>();
+    private final java.util.List<Integer> sentTimes = new java.util.ArrayList<Integer>();
     /** Why UDP is not in use, for the log; empty if it is or was never offered. */
     public volatile String udpProblem = "";
 
@@ -116,6 +139,16 @@ public final class ClientLink {
         Conn c = conn;
         if (c == null) return false;
         Udp.Client u = udp;
+        if (steady) { // with our clock and the sets before it (see InputBuffer)
+            if (sentSets.isEmpty() || !java.util.Arrays.equals(sentSets.get(0), controls)) {
+                sentSets.add(0, controls);
+                sentTimes.add(0, (int) (System.nanoTime() / 1000000L));
+                while (sentSets.size() > InputBuffer.COPIES + 1) { sentSets.remove(sentSets.size() - 1); sentTimes.remove(sentTimes.size() - 1); }
+            }
+            byte[] b = InputBuffer.bundle(sentSets, sentTimes);
+            if (u != null && u.up && u.sendControlsHere) { u.bundle(ackEpoch, ackTick, b); return true; }
+            return c.sendDroppable(Msg.INPUTS, b);
+        }
         if (u != null && u.up && u.sendControlsHere) { u.controls(ackEpoch, ackTick, controls); return true; }
         return c.sendDroppable(Msg.INPUT, controls);
     }

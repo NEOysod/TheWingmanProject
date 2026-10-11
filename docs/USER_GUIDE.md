@@ -217,7 +217,12 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Updates and controls by UDP | on | A lost packet costs one update instead of a freeze. Falls back by itself if blocked. |
 | Send unseen enemies less often | on | Enemies nobody on your side can see are reported about once a second. |
 | My ship answers my controls at once | on | Off: your ship waits for the host's answer before moving. |
-| Difference from the host left alone | 1 | Raise if things shake; lower to follow the host more exactly. |
+| My flux and ammo answer at once | on | Joiner: your flux bar and ammo change the moment you fire, raise shields or vent, kept in step with the host. |
+| Smooth corrections | on | Joiner: other ships follow the host's exactly and each correction fades out over a few frames. Off: the older way. |
+| Jitter buffer (uneven connection) | off | Joiner: other ships are shown a moment in the past (at most a quarter second), so late updates make no difference. Try it if ships stutter. |
+| Steady controls (lossy connection) | off | Host: joiners' controls arrive with copies and are played back evenly, a little late. Try it if a joiner's ship ignores quick taps or lurches. |
+| Bandwidth limit per joiner (KB/s) | off | Host: for a slow upload. When a big battle needs more, what matters most to each joiner goes first. |
+| Difference from the host left alone | 1 | With smooth corrections off: raise if things shake; lower to follow the host more exactly. |
 
 ### Keeping the games alike
 | Setting | Default | What it does |
@@ -276,9 +281,12 @@ Work down this list; stop when it is good enough.
    to TCP, open UDP 24816 on the host's firewall.
 3. **Host's upload is limited?** On the host, lower "Updates per second" from 30 to 20. (Raising it above 30
    costs bandwidth and is not smoother over an uneven connection.)
-4. **Still too much?** On the host, turn off "Send everything, every update".
-5. **Things shake or twitch?** On the joiner, raise "Difference from the host left alone" towards 2.
-6. **Your own ship rubber-bands on a very bad connection?** On the joiner, try turning off "My ship
+4. **Still too much?** On the host, set "Bandwidth limit per joiner" to what the upload can carry per friend
+   (say 32), or turn off "Send everything, every update".
+5. **Other ships stutter or twitch on an uneven connection?** On the joiner, turn on "Jitter buffer". Other ships
+   are then a moment (at most a quarter second) behind, but move evenly.
+6. **A joiner's ship ignores quick taps or lurches?** On the host, turn on "Steady controls".
+7. **Your own ship rubber-bands on a very bad connection?** On the joiner, try turning off "My ship
    answers my controls at once".
 
 All of these can be changed during a battle with Ctrl+Shift+O.

@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 48;
+    public static final int PROTOCOL_VERSION = 49;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -74,6 +74,12 @@ public final class Msg {
     public static final byte SUBSYSTEM = 50;
     /** host -> joiner: int ship id, int carrier id (or -1), byte 1 = landing on that carrier, 2 = launched again. */
     public static final byte LANDING = 51;
+    /** Either way: another mod's message carried for it (see ModChannel, wingman.api.WingmanAPI): UTF channel, int length, bytes. */
+    public static final byte MOD = 52;
+    /** host -> joiner: byte 1 = send controls as bundles with the joiner's clock and copies (see InputBuffer), 0 = plain. */
+    public static final byte INPUT_MODE = 53;
+    /** joiner -> host: a bundle of controls (see InputBuffer). */
+    public static final byte INPUTS = 54;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */
