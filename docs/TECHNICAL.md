@@ -843,6 +843,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `port` | 24816 | both | no | TCP and UDP port |
 | `snapshotRate` | 30 | host | yes | Updates per second (5-60) |
 | `sendEverything` | true | host | yes | Every entity in every update (5.2) |
+| `wholeWrecks` | true | host | yes | Break chance ×0 on every ship (`getBreakProb`, applied in `noteDeaths`): wrecks never break, on any screen |
 | `compactUpdates` | true | host | yes | Compact update format (5.3) |
 | `compressLink` | true | both | no | Deflate the connection |
 | `useUdp` | true | both | no | UDP for updates and controls |

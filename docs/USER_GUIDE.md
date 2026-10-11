@@ -406,8 +406,8 @@ battle with a `Co-op:` message and the game keeps running.
 - Flux bars on other players' and AI ships move in small steps.
 - Effects driven by mod scripts can be a few frames early or late compared with the host.
 - The CO-OP button is also drawn over the Missions and Settings screens.
-- Wrecks break up at the same moment on every screen and, nearly always, along the same lines. Only when several
-  ships die or wrecks break in the very same frame can a break line come out a little different on a joiner's
-  screen. Where pieces are and which exist follow the host either way.
+- Wrecks stay whole by default (host setting "Wrecks stay whole"), so every screen shows the same wrecks. With it
+  off, wrecks break up as normal, at the same moment everywhere, but a break line can come out a little
+  different on a joiner's screen.
 - Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. If a game update breaks
   it, the Wingman: Join Game mission still works.

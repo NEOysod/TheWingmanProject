@@ -881,18 +881,31 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         return true;
     }
 
-    /** Ships (not fighters, not pieces) that have died since the last look. */
+    private static final String WHOLE_KEY = "wingman_whole_wrecks";
+    /** Ships given the "stay whole" modifier (see noteDeaths). */
+    private final Map<ShipAPI, Boolean> wholeSet = new IdentityHashMap<ShipAPI, Boolean>();
+
+    /** Ships (not fighters, not pieces) that have died since the last look; also keeps "Wrecks stay whole" applied. */
     private List<ShipAPI> noteDeaths() {
         List<ShipAPI> now = new ArrayList<ShipAPI>(2);
         List<ShipAPI> all = engine.getShips();
+        boolean whole = cfg != null && cfg.wholeWrecks;
         for (int i = 0, n = all.size(); i < n; i++) {
             ShipAPI s = all.get(i);
+            // "Wrecks stay whole": the game decides at a ship's death whether its wreck will break, by this stat.
+            if (!s.isFighter() && s.isAlive() && whole != wholeSet.containsKey(s)) {
+                try {
+                    if (whole) { s.getMutableStats().getBreakProb().modifyMult(WHOLE_KEY, 0f); wholeSet.put(s, Boolean.TRUE); }
+                    else { s.getMutableStats().getBreakProb().unmodify(WHOLE_KEY); wholeSet.remove(s); }
+                } catch (Throwable t) { wholeSet.put(s, Boolean.TRUE); }
+            }
             if (s.isFighter() || (s.isAlive() && !s.isHulk()) || knownDead.contains(s)) continue;
             boolean piece = false;
             try { piece = s.isPiece(); } catch (Throwable t) { /* not a piece */ }
             knownDead.add(s);
             if (!piece) now.add(s);
         }
+        if (wholeSet.size() > 2000) wholeSet.keySet().retainAll(new java.util.HashSet<ShipAPI>(all));
         if (knownDead.size() > 2000) { knownDead.retainAll(new java.util.HashSet<ShipAPI>(all)); deathSeeds.keySet().retainAll(knownDead); cutBefore.retainAll(knownDead); }
         return now;
     }

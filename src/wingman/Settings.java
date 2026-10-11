@@ -84,6 +84,8 @@ final class Settings {
                 + "host: only the host's hits are shown. local: each PC judges for itself."));
         ITEMS.add(new Item(2, "matchWindowMs", "Same-hit window (ms)", JOINER, true, new String[] { "30", "50", "100", "150", "200", "300" },
                 "With \"match\": how far apart in time your hit and the host's may be and still count as the same one. 30 is about two frames."));
+        ITEMS.add(new Item(2, "wholeWrecks", "Wrecks stay whole", HOST, true, YES_NO,
+                "On: wrecks never break into pieces, in your battles too, so every screen shows the same wrecks. Off: they break up as normal; the break lines may differ a little on joiners' screens."));
         ITEMS.add(new Item(2, "shotCounts", "Weapons fire as often as the host's", JOINER, true, YES_NO,
                 "On: each weapon on a copy of a ship fires exactly as many times as the real one did."));
         ITEMS.add(new Item(2, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,

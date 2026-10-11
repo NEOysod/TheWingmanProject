@@ -19,6 +19,8 @@ public final class WingmanConfig {
     public int snapshotRate = 30;
     /** Host: send every ship, fighter and missile in every update, whether or not it has done anything new. */
     public boolean sendEverything = true;
+    /** Host: wrecks stay whole (no break-ups), so every screen shows the same wrecks. */
+    public boolean wholeWrecks = true;
     /** Host: send each position update as what changed since the one before (about a third of the size). */
     public boolean compactUpdates = true;
     /** Compress the whole connection. Each side compresses what it sends if the other can read it. */
@@ -130,6 +132,7 @@ public final class WingmanConfig {
             c.announceAddresses = j.optBoolean("announceAddresses", c.announceAddresses);
             c.syncTolerance = (float) j.optDouble("syncTolerance", c.syncTolerance);
             c.sendEverything = j.optBoolean("sendEverything", c.sendEverything);
+            c.wholeWrecks = j.optBoolean("wholeWrecks", c.wholeWrecks);
             c.compactUpdates = j.optBoolean("compactUpdates", c.compactUpdates);
             c.compressLink = j.optBoolean("compressLink", c.compressLink);
             c.useUdp = j.optBoolean("useUdp", c.useUdp);
@@ -160,6 +163,7 @@ public final class WingmanConfig {
         if ("maxPlayers".equals(key)) return String.valueOf(maxPlayers);
         if ("snapshotRate".equals(key)) return String.valueOf(snapshotRate);
         if ("sendEverything".equals(key)) return String.valueOf(sendEverything);
+        if ("wholeWrecks".equals(key)) return String.valueOf(wholeWrecks);
         if ("compactUpdates".equals(key)) return String.valueOf(compactUpdates);
         if ("compressLink".equals(key)) return String.valueOf(compressLink);
         if ("useUdp".equals(key)) return String.valueOf(useUdp);
@@ -203,6 +207,7 @@ public final class WingmanConfig {
             else if ("maxPlayers".equals(key)) maxPlayers = Integer.parseInt(value);
             else if ("snapshotRate".equals(key)) snapshotRate = Integer.parseInt(value);
             else if ("sendEverything".equals(key)) sendEverything = yes(value);
+            else if ("wholeWrecks".equals(key)) wholeWrecks = yes(value);
             else if ("compactUpdates".equals(key)) compactUpdates = yes(value);
             else if ("compressLink".equals(key)) compressLink = yes(value);
             else if ("useUdp".equals(key)) useUdp = yes(value);

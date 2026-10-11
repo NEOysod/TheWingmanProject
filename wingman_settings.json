@@ -144,6 +144,11 @@
     # own game did not produce, so scripts that react to a ship being hit still react.
     "damageReports": true,
 
+    # Wrecks stay whole (host): true: no wreck breaks into pieces, in the host's game too, so every screen
+    # shows the same wrecks. false: wrecks break up as normal (a break line may come out a little different on
+    # a joiner's screen; the host sends the dice for each cut so most match).
+    "wholeWrecks": true,
+
     # Shot counts (joiner): each weapon on a copy of a ship fires exactly as many times as the host's did.
     "shotCounts": true,
 
