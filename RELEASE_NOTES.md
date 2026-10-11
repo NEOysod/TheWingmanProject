@@ -1,4 +1,4 @@
-# The Wingman Project 0.6-beta — Release Notes
+# The Wingman Project 0.6.2-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -121,6 +121,9 @@ needs editing by hand, and every setting has a short explanation on the settings
   range, flux and the other kept-equal stats are corrected to the host's either way.
 - Wrecks break up at the same moment on every screen, but the break lines are the game's own random pick on
   each PC, so the pieces can be shaped a little differently. Where pieces are and which exist follow the host.
+- Phase cloaks and similar systems slow the whole battle down ("bullet time") for the ship the local player
+  flies. A battle has one clock, the host's: joiners don't get that slowdown when they phase, and when the host
+  phases the battle slows for everyone.
 - Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. If a game update breaks it,
   the mission **Wingman: Join Game** still works.
 

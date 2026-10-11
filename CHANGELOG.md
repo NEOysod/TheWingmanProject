@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.2-beta
+Protocol 47: everyone in a game needs 0.6.2. Includes everything in 0.6.
+
+- **Weapon groups fire the way the game fires the player's own** (worked out from the game's code; see
+  docs/TECHNICAL.md, GroupFire).
+  - Holding fire on an alternating group takes turns again. The game moves an alternating group on to its next
+    weapon while the button is held only for the local player's ship, so on the host only the first weapon fired
+    (the Isenoria's main guns). The host now does that rotation with the game's own timing.
+  - Linked groups fire the weapons whose arc covers the cursor, as in the game, also when the host has to fire
+    them directly.
+  - Each press of the fire button counts for weapons with ammo (bombs, missiles): the host keeps telling each one
+    the press fires to fire until it has (up to 0.6 s, 1.5 s while charging up), so a quick click is enough. On a
+    fighter, a weapon that still won't fire is fired by hand: its shot is launched from the weapon, using its ammo
+    and cooldown. This is what makes UAF's Rafflesya bomb drop.
+  - A fighter flown by the AI may have no weapon groups set up at all: a group the joiner fires is then fired from
+    its loadout, by slot.
+  - The 0.35 s "group did nothing" watchdog lasts one hold of the button instead of the rest of the battle. The
+    extra firing of "system" weapons from 0.6 is gone (the game doesn't treat them differently in a group).
+- **Back to the carrier when the fighter is done.** A joiner flying a fighter from their own carrier (UAF's
+  Rafflesya from the Isenoria) is put back in the carrier when the fighter is lost, lands, retreats or leaves the
+  battle. Before, they were left with no ship and had to use Transfer Command.
+- **Audit of the game's code** for everything it does differently for the local player's ship
+  (docs/GAME_CODE_AUDIT.md). Fixed from it:
+  - A joiner's ship running faster than battle time (phase cloak, temporal shell, mod time systems) is moved in
+    several steps a frame; the host answered only the first, so it coasted through the rest and turned,
+    accelerated and fired a fraction as well as on the joiner's screen. Every step is flown now.
+  - The fighter order (Z) is given as the game's own order: wings head for the cursor when told to engage, drop
+    what they were doing, and go for the joiner's R target (or come home) as they do for the player's carrier.
+  - Hold Fire is passed on to the host (new input bit).
+  - Interdictor Array, Energy Lash and Drone Strike aim at the joiner's R target or the enemy nearest their cursor
+    (they read an AI flag the host never set, and picked whatever was nearest the ship).
+
 ## 0.6-beta
 Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
 
@@ -53,34 +85,6 @@ Protocol 46: everyone in a game needs 0.6. Includes everything in 0.5.
   it to hold fire while it means to bring it home (the player's own ship ignores that; a joiner's fighter now does
   too), and the bomb is marked for system use, which the game leaves out of the fire order on a ship the local
   player isn't flying. When a joiner fires a group, the host now also fires that group's system-marked weapons.
-  And a fighter flown by the AI may have no weapon groups set up at all (the game makes them for a ship a player
-  flies): a group the joiner fires that the ship doesn't have is now fired from its loadout, weapon by weapon.
-  Each press of the fire button now counts for weapons with ammo (bombs, missiles): the host keeps telling each
-  one in the pressed group to fire until it has (up to 0.6 s, 1.5 s while charging up), so a quick click is
-  enough. On a fighter, a weapon that still won't fire is fired by hand: its shot is launched from the weapon,
-  using its ammo and cooldown. The host's fighter report shows the presses it saw and what each asked for.
-- A joiner flying a fighter from their own carrier (UAF's Rafflesya from the Isenoria) is put back in the carrier
-  when the fighter is done: lost, landing, retreating or gone from the battle. Before, they were left with no ship
-  and had to use Transfer Command. The host hands the carrier back to them and their game sits them down in it.
-- Audit of the game's code for everything it does differently for the local player's ship (docs/GAME_CODE_AUDIT.md).
-  Fixed from it:
-  - A joiner's ship running faster than battle time (phase cloak, temporal shell, mod time systems) is moved in
-    several steps a frame; the host answered only the first, so it coasted through the rest and turned,
-    accelerated and fired a fraction as well as on the joiner's screen. Every step is flown now.
-  - The fighter order (Z) is given as the game's own order: wings head for the cursor when told to engage, drop
-    what they were doing, and go for the joiner's R target (or come home) as they do for the player's carrier.
-  - Hold Fire is passed on to the host (new input bit; protocol 47).
-  - Interdictor Array, Energy Lash and Drone Strike aim at the joiner's R target or the enemy nearest their cursor
-    (they read an AI flag the host never set, and picked whatever was nearest the ship).
-- Weapon groups on a joiner's ship are now fired the way the game fires the player's own (worked out from the
-  game's code; see TECHNICAL.md, GroupFire). Holding fire on an alternating group takes turns again: the game
-  moves an alternating group on to its next weapon while the button is held only for the local player's ship,
-  so on the host only the first weapon fired (the Isenoria's main guns); the host now does that rotation with
-  the game's own timing. Linked groups fire the weapons whose arc covers the cursor, as in the game, also when
-  the host has to fire them directly. Presses that fire ammo weapons follow only those weapons, so an
-  alternating missile group no longer fires every launcher at once on a press. The 0.35 s watchdog lasts one
-  hold instead of the rest of the battle. The "system weapons" extra fire is gone (the game doesn't treat them
-  differently in a group).
 - Diagnostics for fighters handed to joiners (until they work like in single player): the host logs what is
   happening to such a fighter every 5 seconds (its AI, lock, landing, docking, drones out, system, ammo, whether its
   wing is calling it home); the joiner logs autopilot changes while flying one, and drones the host removes. (Use "Switch back to Isenoria"
