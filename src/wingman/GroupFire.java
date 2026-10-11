@@ -38,15 +38,15 @@ import com.fs.starfarer.api.loading.WeaponSpecAPI;
  *   the ship the local player flies. On any other ship the active weapon never changes while the button is held,
  *   so holding fire on a joiner's ship fired only the first gun. That turn-taking is done here.
  *
- * Charge-up works as in the game: a weapon with a charge-up (many bombs and missiles have one as a guard against
- * misfires) fires only if the button is held until it has charged; let go sooner and nothing fires. The host
- * gets the joiner's button as it is held, so it holds for as long as they did; nothing here extends a press.
+ * Charge-up works as in the game, because the game's own weapon code does it on the host and the host holds the
+ * button exactly as long as the joiner did (nothing here extends a press): a weapon with a charge-up fires only
+ * if the button is held until it has charged, unless it is marked "auto-charge" (then a charge, once begun,
+ * finishes); a burst is cut short on release only if it is marked "interruptible".
  *
  * On top of that, two things the game doesn't need on a player's own ship:
  * - A fighter flown by the AI may ignore the fire order for some weapons altogether (UAF's Rafflesya bomb never
- *   starts charging). Such a weapon, if it shows no sign of charging, is fired by hand once the button has been
- *   held for its charge-up time: its shot is launched from the weapon, with its ammo and cooldown (see launch);
- *   held on, again each time it is ready. Let go before that and, as in the game, nothing fires.
+ *   starts charging). Such a weapon with ammo is fired by hand, by the game's own rules for charge-up, auto-charge
+ *   and bursts (see followShots).
  * - A watch on each hold of the button: if, after a third of a second, no weapon of the group has done anything,
  *   the weapons the game would have fired are told to fire directly for the rest of that hold.
  * And a fighter flown by the AI may have no weapon groups at all: its loadout's groups are fired, by slot.
@@ -61,7 +61,7 @@ final class GroupFire {
     private int heldGroup = -1, mismatchLogs, stuckLogs, pressLines, rotateLogs;
     private float holdTime, altElapsed, mismatchFor;
 
-    // A fighter's ammo weapons the button is holding: weapon -> {seconds held, ammo at the press, charge seen (0/1), charge-up time}.
+    // A fighter's ammo weapons the button is holding (see entry for the layout).
     private final Map<WeaponAPI, float[]> shots = new IdentityHashMap<WeaponAPI, float[]>();
 
     /** For the host's report on fighters flown by joiners. */
@@ -244,7 +244,6 @@ final class GroupFire {
 
     private void onPress(WeaponGroupAPI g, int group, Vector2f aim, int groupCount) {
         pressesSeen++;
-        shots.clear();
         List<WeaponAPI> want = g != null ? wouldFire(g, aim) : inArc(loadoutWeapons(group), aim);
         StringBuilder sb = new StringBuilder();
         for (WeaponAPI w : want) {
@@ -255,63 +254,99 @@ final class GroupFire {
             if (w.isDisabled()) sb.append(" disabled");
             if (!ship.isFighter()) continue;
             if (!w.usesAmmo() || w.isBeam() || w.getAmmo() <= 0 || w.isDisabled() || w.getCooldownRemaining() > 0f) continue;
-            shots.put(w, new float[] {0f, w.getAmmo(), 0f, chargeUp(w)});
+            if (!shots.containsKey(w)) shots.put(w, entry(w));
         }
         lastPress = "group " + (group + 1) + " [" + sb + "]";
         if (ship.isFighter() && pressLines++ < 6) Global.getLogger(GroupFire.class).info("Wingman fire: " + ship.getHullSpec().getHullId()
                 + " fire pressed on " + lastPress + " (ship has " + groupCount + " groups)");
     }
 
-    /** A weapon's charge-up time, in seconds (0 if it has none). */
-    private static float chargeUp(WeaponAPI w) {
+    // Entry layout: 0 seconds held (charging), 1 ammo when that began, 2 the game was seen charging or firing it
+    // (0/1), 3 charge-up time, 4 auto-charge (0/1), 5 shots of our burst still to go, 6 time to the next one,
+    // 7 burst delay, 8 interruptible burst (0/1), 9 burst size.
+    private static float[] entry(WeaponAPI w) {
+        float[] f = new float[10];
+        f[1] = w.getAmmo();
+        f[9] = 1f;
         try {
             WeaponSpecAPI spec = w.getSpec();
-            if (spec instanceof ProjectileWeaponSpecAPI) return Math.max(0f, ((ProjectileWeaponSpecAPI) spec).getChargeTime());
-            return Math.max(0f, spec.getChargeTime());
-        } catch (Throwable t) { return 0f; }
+            f[3] = Math.max(0f, spec.getChargeTime());
+            if (spec instanceof ProjectileWeaponSpecAPI) {
+                ProjectileWeaponSpecAPI p = (ProjectileWeaponSpecAPI) spec;
+                f[3] = Math.max(0f, p.getChargeTime());
+                f[4] = p.isAutoCharge() ? 1f : 0f;
+                f[7] = Math.max(0f, p.getBurstDelay());
+                f[8] = p.isInterruptibleBurst() ? 1f : 0f;
+                f[9] = Math.max(1, Math.min(50, p.getBurstSize()));
+            }
+        } catch (Throwable t) { /* a single shot after no charge-up, then */ }
+        return f;
     }
 
     /**
-     * While the button is held: a fighter's ammo weapon that the game is charging or has fired is left to the game.
-     * One that shows no sign of either by the time the button has been held for its charge-up (plus a tenth of a
-     * second, for the order to have taken) is fired by hand. Let go before that: nothing, as in the game.
+     * A fighter's ammo weapon that ignores the fire order, fired by hand by the game's own rules for its charge-up
+     * and burst (combat.entities.ship.trackers.B, the weapon's state machine):
+     * - charge-up: it charges while the button is held; let go before it has charged and nothing fires, unless
+     *   the weapon "auto-charges", which finishes a charge once it has begun;
+     * - burst: its shots go out one burst delay apart; letting go stops an "interruptible" burst, any other
+     *   burst finishes; the cooldown starts after the last shot;
+     * - held on, it charges again once it is ready, as the game repeats.
+     * A weapon the game itself is charging or firing is left to the game.
      */
     private void followShots(boolean fire, float amount) {
         if (shots.isEmpty()) return;
-        if (!fire) { shots.clear(); return; }
         Iterator<Map.Entry<WeaponAPI, float[]>> it = shots.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<WeaponAPI, float[]> e = it.next();
             WeaponAPI w = e.getKey();
             float[] f = e.getValue();
             try {
-                if (!ship.isAlive() || w.isDisabled() || w.getAmmo() <= 0) { it.remove(); continue; }
-                // Firing or cooling down: wait. Held on, it is ready again later and fires again, as in the game.
+                if (!ship.isAlive() || w.isDisabled()) { it.remove(); continue; }
+                if (f[5] > 0f) { // our burst under way
+                    if (!fire && f[8] > 0f) { endBurst(w, f); it.remove(); continue; }
+                    f[6] -= amount;
+                    if (f[6] > 0f) continue;
+                    if (w.getAmmo() <= 0 || !launchOne(w)) { endBurst(w, f); it.remove(); continue; }
+                    f[5] -= 1f;
+                    f[6] = f[7];
+                    if (f[5] <= 0f) { endBurst(w, f); if (!fire) it.remove(); }
+                    continue;
+                }
+                boolean charging = f[0] > 0f && f[2] == 0f;
+                if (!fire && !(f[4] > 0f && charging)) { it.remove(); continue; } // let go: no charge goes on, unless auto-charge
+                if (w.getAmmo() <= 0) { it.remove(); continue; }
                 if (w.getCooldownRemaining() > 0f || w.getAmmo() < f[1]) { f[0] = 0f; f[1] = w.getAmmo(); f[2] = 0f; continue; }
                 f[0] += amount;
                 if (w.getChargeLevel() > 0f || w.isFiring()) f[2] = 1f; // the game has it in hand
                 if (f[2] > 0f || f[0] < f[3] + 0.1f) continue;
-                launch(w);
-                f[0] = 0f; f[1] = w.getAmmo();
+                f[5] = f[9];   // charged: its burst begins now
+                f[6] = 0f;
+                f[0] = 0f;
             } catch (Throwable t) { it.remove(); }
         }
     }
 
-    /** Fires one shot of a weapon that wouldn't fire when told to: its projectile, ammo and cooldown. */
-    private void launch(WeaponAPI w) {
+    private void endBurst(WeaponAPI w, float[] f) {
+        try { w.setRemainingCooldownTo(w.getCooldown()); } catch (Throwable t) { /* it can fire again at once */ }
+        f[0] = 0f; f[1] = w.getAmmo(); f[2] = 0f; f[5] = 0f; f[6] = 0f;
+    }
+
+    /** One shot of a weapon that wouldn't fire when told to: its projectile and one round of ammo. */
+    private boolean launchOne(WeaponAPI w) {
         try {
             Vector2f at = null;
             try { at = w.getFirePoint(0); } catch (Throwable t) { /* none */ }
             if (at == null) at = w.getLocation();
             Object shot = Global.getCombatEngine().spawnProjectile(ship, w, w.getId(), new Vector2f(at.x, at.y), w.getCurrAngle(),
                     new Vector2f(ship.getVelocity().x, ship.getVelocity().y));
-            if (shot == null) return;
+            if (shot == null) return false;
             w.setAmmo(Math.max(0, w.getAmmo() - 1));
-            w.setRemainingCooldownTo(w.getCooldown());
             if (shotsLaunched++ < 4) Global.getLogger(GroupFire.class).info("Wingman fire: " + w.getId() + " on " + ship.getHullSpec().getHullId()
                     + " did not fire when told to; launched its shot by hand");
+            return true;
         } catch (Throwable t) {
             Global.getLogger(GroupFire.class).warn("Wingman fire: could not launch " + w.getId() + " by hand", t);
+            return false;
         }
     }
 

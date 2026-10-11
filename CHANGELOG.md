@@ -1,5 +1,20 @@
 # Changelog
 
+## Since 0.6.3-beta (not released)
+
+- **Every charge-up weapon checked against the game's own weapon code** (its charge, burst and cooldown state
+  machine). Firing on the host is the game's own, with the button held exactly as long as the joiner held it, so
+  the game's rules apply as they are: a charge needs the button held to the end unless the weapon is marked
+  "auto-charge"; a burst is cut short on release only if it is marked "interruptible".
+  - **No more phantom shots on other screens.** A joiner's copy of a weapon is made to fire while the host's
+    weapon "is firing", and the game counts charging down as firing, including a charge-up let go of half way.
+    So a charge the host's player (or any pilot) abandoned carried on charging on everyone else's screen and fired
+    a shot that never happened. A beam likewise lingered while the host's was fading. A beam or charge-up weapon
+    whose charge is falling now counts as not firing.
+  - **The by-hand launch for a fighter's weapon that ignores the order** (the Rafflesya bomb) follows the same
+    rules: auto-charge finishes a begun charge, bursts go out one burst delay apart with one round each, an
+    interruptible burst stops on release, and the cooldown starts after the last shot.
+
 ## 0.6.3-beta
 Protocol 47, as 0.6.2. Includes everything in 0.6.2.
 

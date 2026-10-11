@@ -350,8 +350,10 @@ frame:
   had hull, did no damage, not fizzling), or destroyed.
 - **Scripted shots** (`trackShots`): non-missile projectiles whose spec has an on-hit script are reported once
   when they hit or vanish (`SHOT_HIT`, droppable, at most 120 a second). Ordinary bullets are left to each PC.
-- **Firing** (`trackFiring`, every frame): a weapon fired if `isFiring`, its cooldown restarted, or its ammo
-  dropped; shot counts and running totals per weapon. Ammo changes `touch` the ship for `HostDamage`.
+- **Firing** (`trackFiring`, every frame): a weapon's bit is set while it is heading for a shot (`wantsShot`:
+  `isFiring`, except that a beam or a charge-up weapon whose charge level is falling is charging down, which
+  includes a charge-up let go of before it was done), or if its cooldown restarted or its ammo dropped; shot
+  counts and running totals per weapon. Ammo changes `touch` the ship for `HostDamage`.
 
 ### 6.4 Players and the ships they fly
 
@@ -377,10 +379,13 @@ frame:
       charge-up, or a burst beam's burst + cooldown + charge-up/down) / weapons / rate-of-fire bonus seconds;
       the game does that held rotation only for the local player's ship, so the host does it
       (`WeaponGroup.setCurrentActive`, public on the game's class, through `MethodHandles.publicLookup`);
-    - charge-up as in the game: a weapon fires only if the button is held until it has charged (the host holds
-      as long as the joiner did; nothing extends a press). On a fighter, an ammo weapon that shows no sign of
-      charging or firing once the button has been held for its charge-up + 0.1 s is fired by hand (shot spawned,
-      ammo and cooldown used), again each time it is ready while held; let go sooner and nothing fires;
+    - charge-up as in the game, by the game's own weapon state machine (`combat.entities.ship.trackers.B`), with
+      the button held exactly as long as the joiner held it: a charge needs the button held to completion
+      unless the weapon is `autoCharge`; a burst stops on release only if `interruptibleBurst`. On a fighter, an
+      ammo weapon that shows no sign of charging or firing once the button has been held for its charge-up
+      + 0.1 s is fired by hand by the same rules (shots spawned one burst delay apart, one round each, cooldown
+      after the burst; auto-charge finishes a begun charge; release stops an interruptible burst), again each
+      time it is ready while held;
     - a hold that makes nothing happen for 0.35 s (not overloaded, venting or phased) fires the weapons the game
       would have fired directly, until release; a group the ship won't select for 0.25 s likewise;
     - a ship with no groups (an AI-flown fighter) fires its loadout's group of that number, by slot;

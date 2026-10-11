@@ -76,6 +76,29 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         byte[] totals = new byte[0];
         float[] cooldown = new float[0];
         int[] ammo = new int[0];
+        /** Per weapon: charge level last frame. */
+        float[] charge = new float[0];
+        /** Weapons heading for a shot right now (see wantsShot). */
+        long wants;
+    }
+
+    /**
+     * Whether a weapon is heading for a shot: charging up, firing, or in a burst. The game's "is firing" also
+     * covers charging down: the cooldown after a shot, and a charge-up let go of before it was done. A joiner's
+     * copy is made to fire while the host's weapon is "firing", so on that alone a charge the host's player
+     * abandoned carried on charging on the joiner's screen and fired a shot that never happened.
+     */
+    private static boolean wantsShot(WeaponAPI w, float chargeBefore, float cooldown) {
+        if (!w.isFiring()) return false;
+        if (w.isInBurst()) return true;
+        // Only a beam or a weapon with a charge-up can be let go of half-charged; for any other weapon the time
+        // after a shot is just its cooldown, and the copy may as well stay "firing" through it (it can't fire).
+        if (!w.isBeam() && chargeTime(w) <= 0f) return true;
+        return w.getChargeLevel() >= chargeBefore - 0.0001f; // falling: charging down, no shot coming
+    }
+
+    private static float chargeTime(WeaponAPI w) {
+        try { return w.getSpec().getChargeTime(); } catch (Throwable t) { return 0f; }
     }
     private final Map<Integer, FireTrack> fireTracks = new HashMap<Integer, FireTrack>();
 
@@ -1165,12 +1188,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             // Angles are measured from the hull, so a fixed gun on a turning ship counts as "not moved".
             // Worked out into a shared scratch buffer; a copy is only made for a ship whose angles get sent.
             byte[] angles = angleScratch;
+            FireTrack ft = fireTracks.get(id);
             for (int i = 0; i < n; i++) {
                 WeaponAPI w = weapons.get(i);
                 angles[i] = Snapshot.packAngle(w.getCurrAngle() - st.facing);
-                if (i < 64 && w.isFiring()) st.firing |= 1L << i;
+                if (i < 64 && (ft != null ? (ft.wants & (1L << i)) != 0 : w.isFiring())) st.firing |= 1L << i;
             }
-            FireTrack ft = fireTracks.get(id);
             if (ft != null) {
                 if (compact) st.shotTotals = ft.totals.clone(); // running totals: these survive a lost update
                 st.firing |= ft.fired;
@@ -1320,14 +1343,18 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 ft.shots = new byte[n];
                 ft.totals = new byte[n];
                 ft.ammo = new int[n];
-                for (int i = 0; i < n; i++) { ft.cooldown[i] = weapons.get(i).getCooldownRemaining(); ft.ammo[i] = weapons.get(i).getAmmo(); }
+                ft.charge = new float[n];
+                for (int i = 0; i < n; i++) { ft.cooldown[i] = weapons.get(i).getCooldownRemaining(); ft.ammo[i] = weapons.get(i).getAmmo(); ft.charge[i] = weapons.get(i).getChargeLevel(); }
                 fireTracks.put(e.getKey(), ft);
             }
             for (int i = 0; i < n; i++) {
                 WeaponAPI w = weapons.get(i);
                 float cd = w.getCooldownRemaining();
                 int ammo = w.getAmmo();
-                if (w.isFiring() || cd > ft.cooldown[i] + 0.02f || ammo < ft.ammo[i]) ft.fired |= 1L << i;
+                boolean wants = i < ft.charge.length && wantsShot(w, ft.charge[i], cd);
+                if (i < 64) { if (wants) ft.wants |= 1L << i; else ft.wants &= ~(1L << i); }
+                if (i < ft.charge.length) ft.charge[i] = w.getChargeLevel();
+                if (wants || cd > ft.cooldown[i] + 0.02f || ammo < ft.ammo[i]) ft.fired |= 1L << i;
                 if (cd > ft.cooldown[i] + 0.02f && ft.shots[i] < 100) ft.shots[i]++;
                 if (cd > ft.cooldown[i] + 0.02f) ft.totals[i]++;
                 if (ammo != ft.ammo[i]) damage.touch(e.getKey()); // its ammo count is news for the armor/ammo report
