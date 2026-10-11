@@ -871,6 +871,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) { return "?"; }
     }
 
+    /**
+     * Whether a cut off this wreck is its ship's first, worked out when the ship died. A piece's cuts, and a
+     * wreck's after its first, are worked out when they are made.
+     */
+    private boolean firstCut(ShipAPI parent) {
+        if (cutBefore.contains(parent)) return false;
+        try { if (parent.isPiece()) return false; } catch (Throwable t) { /* a whole wreck */ }
+        return true;
+    }
+
     /** Ships (not fighters, not pieces) that have died since the last look. */
     private List<ShipAPI> noteDeaths() {
         List<ShipAPI> now = new ArrayList<ShipAPI>(2);
@@ -984,12 +994,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         // Which seed each new piece was cut with: a first cut, the seed of its ship's death (if that was known);
         // a later cut, this frame's seed if it was the only roll of the frame.
         int rolls = diedNow.size();
-        for (ShipAPI parentShip : foundParents) if (parentShip != null && cutBefore.contains(parentShip)) rolls++;
+        for (ShipAPI parentShip : foundParents) if (parentShip != null && !firstCut(parentShip)) rolls++;
         if (frameSeed != 0L && rolls == 1 && diedNow.size() == 1) deathSeeds.put(diedNow.get(0), frameSeed);
         for (int k = 0; k < found.size(); k++) {
             long[] split = found.get(k);
             ShipAPI parentShip = foundParents.get(k);
-            if (parentShip != null && !cutBefore.contains(parentShip)) {
+            if (parentShip != null && firstCut(parentShip)) {
                 Long seed = deathSeeds.remove(parentShip);
                 if (seed != null) split[2] = seed;
             } else if (frameSeed != 0L && rolls == 1) {
