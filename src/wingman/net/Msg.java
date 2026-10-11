@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 47;
+    public static final int PROTOCOL_VERSION = 48;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -46,7 +46,7 @@ public final class Msg {
     public static final byte HURTS = 37;        // damage each ship took lately, by source and type (see Extras.Hurt)
     public static final byte STATS = 38;        // ship stats as they stand on the host (see Extras.Stats)
     public static final byte NOTES = 39;        // simple values scripts keep on ships and on the battle (see Extras.Note)
-    public static final byte WRECK_SPLIT = 36;  // a wreck broke in two: the wreck's id, and the id given to the piece that came off
+    public static final byte WRECK_SPLIT = 36;  // a wreck broke in two: the wreck's id, the id given to the piece that came off, the dice seed (long, 0 unknown), its place among that seed's cuts
     public static final byte MISSILE_TARGET = 30; // missile id, ship id: what a script-steered missile is aimed at
     public static final byte DAMAGE = 29;     // DamageState: armor grids and knocked-out weapons/engines, changed ships only
 

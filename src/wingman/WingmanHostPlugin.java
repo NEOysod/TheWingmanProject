@@ -291,7 +291,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (!endSent && readyPhase == 2 && gameClock > 3f && !engine.isSimulation() && engine.isCombatOver()) {
             endSent = true;
             session.endBattle();
-            Global.getLogger(WingmanHostPlugin.class).info("Wingman: battle over, joiners told to leave it");
+            Global.getLogger(WingmanHostPlugin.class).info("Wingman: battle over, joiners told to leave it"
+                    + (seededCuts + unseededCuts > 0 ? " (wreck cuts sent with their dice seed: " + seededCuts + " of " + (seededCuts + unseededCuts) + ")" : ""));
             return;
         }
         if (endSent) return;
@@ -344,8 +345,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 int wid = wreck.getKey();
                 p.conn.send(Msg.DESPAWN, new byte[] { (byte) (wid >>> 24), (byte) (wid >>> 16), (byte) (wid >>> 8), (byte) wid, Msg.DESPAWN_WRECKED });
             }
-            for (int[] split : wreckSplits) {
-                if (wrecks.containsKey(split[1])) p.conn.send(Msg.WRECK_SPLIT, Msg.twoInts(split[0], split[1]));
+            for (long[] split : wreckSplits) {
+                if (wrecks.containsKey((int) split[1])) p.conn.send(Msg.WRECK_SPLIT, splitMsg(split));
             }
             for (byte[] spawn : missileSpawnMsgs.values()) p.conn.send(Msg.MISSILE_SPAWN, spawn);
             for (Map.Entry<Integer, Integer> t : scriptedTargets.entrySet()) {
@@ -854,14 +855,50 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private final Map<ShipAPI, Integer> wreckIds = new IdentityHashMap<ShipAPI, Integer>();
     /** For players who join later: how to build each ship that is now a wreck, and every break-up so far, in order. */
     private final Map<Integer, byte[]> wreckSpawnMsgs = new LinkedHashMap<Integer, byte[]>();
-    private final List<int[]> wreckSplits = new ArrayList<int[]>();
+    /** Ships seen dead (they roll the wreck dice once, as they die); trimmed as they leave the field. */
+    private final Set<ShipAPI> knownDead = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+    /** A dead ship's first cut was worked out with this seed (see trackWrecks). */
+    private final Map<ShipAPI, Long> deathSeeds = new IdentityHashMap<ShipAPI, Long>();
+    /** Wrecks and pieces that have been cut at least once: their next cut is rolled when it is made. */
+    private final Set<ShipAPI> cutBefore = java.util.Collections.newSetFromMap(new IdentityHashMap<ShipAPI, Boolean>());
+    private int seededCuts, unseededCuts;
+
+    /** Ships (not fighters, not pieces) that have died since the last look. */
+    private List<ShipAPI> noteDeaths() {
+        List<ShipAPI> now = new ArrayList<ShipAPI>(2);
+        List<ShipAPI> all = engine.getShips();
+        for (int i = 0, n = all.size(); i < n; i++) {
+            ShipAPI s = all.get(i);
+            if (s.isFighter() || (s.isAlive() && !s.isHulk()) || knownDead.contains(s)) continue;
+            boolean piece = false;
+            try { piece = s.isPiece(); } catch (Throwable t) { /* not a piece */ }
+            knownDead.add(s);
+            if (!piece) now.add(s);
+        }
+        if (knownDead.size() > 2000) { knownDead.retainAll(new java.util.HashSet<ShipAPI>(all)); deathSeeds.keySet().retainAll(knownDead); cutBefore.retainAll(knownDead); }
+        return now;
+    }
+
+    /** Break-ups so far: { wreck, piece, seed it was cut with (0: not known), its place among that seed's cuts }. */
+    private final List<long[]> wreckSplits = new ArrayList<long[]>();
+
+    private static byte[] splitMsg(long[] split) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeInt((int) split[0]);
+            w.out.writeInt((int) split[1]);
+            w.out.writeLong(split[2]);
+            w.out.writeInt((int) split[3]);
+        } catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        return w.done();
+    }
     private final Map<Integer, Sent> sentWrecks = new HashMap<Integer, Sent>();
 
     /**
      * Wrecks that are gone are reported gone; a piece that has come off a wreck is given a number and joiners
-     * are told which wreck it came from, so they break their copy of that wreck too. (The break never falls
-     * along quite the same line on two PCs, but there are the same number of pieces and each follows the
-     * host's.) Where each wreck and piece is goes out with the ship positions.
+     * are told which wreck it came from, so they break their copy of that wreck too, along the same line: the
+     * seed the game's wreck dice had for that cut goes with it (see WreckDice). Where each wreck and piece is
+     * goes out with the ship positions.
      */
     private void trackWrecks() {
         if (!wrecks.isEmpty()) {
@@ -877,13 +914,32 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
         }
         if (wreckSplits.size() > 600) { // forget break-ups whose pieces are long gone
-            for (Iterator<int[]> it = wreckSplits.iterator(); it.hasNext();) if (!wrecks.containsKey(it.next()[1])) it.remove();
+            for (Iterator<long[]> it = wreckSplits.iterator(); it.hasNext();) if (!wrecks.containsKey((int) it.next()[1])) it.remove();
         }
-        if (wrecks.isEmpty() || wrecks.size() >= MAX_WRECKS) return;
-        // Looking for new pieces means going through every ship on the field: four times a second is plenty.
+        // The wreck dice (see WreckDice). The game rolls them for a wreck's cuts at two moments: the first cut is
+        // worked out the moment the ship dies (and made a little later), every later cut when it is made. So
+        // after each frame in which the dice were rolled, the host looks at what happened in that frame: ships
+        // that died and pieces cut off. If exactly one of those rolled them, the seed is that one's (a death's
+        // seed waits for its first cut); if several did, which rolled first can't be told, and their cuts go
+        // out without a seed (joiners cut those their own way, as before). Then the dice get a fresh seed.
+        long frameSeed = 0L;
+        WreckDice.Dice dice = WreckDice.dice();
+        if (dice != null && dice.draws > 0) {
+            frameSeed = dice.seed;
+            dice.setSeed(WreckDice.freshSeed());
+        }
+        List<ShipAPI> diedNow = noteDeaths();
+        if (wrecks.isEmpty() || wrecks.size() >= MAX_WRECKS) {
+            if (frameSeed != 0L && diedNow.size() == 1) deathSeeds.put(diedNow.get(0), frameSeed);
+            return;
+        }
+        // Looking for new pieces means going through every ship on the field: four times a second is plenty,
+        // unless the dice were just rolled.
         long nowNanos = System.nanoTime();
-        if (nowNanos - lastPieceSearch < 250000000L) return;
+        if (frameSeed == 0L && nowNanos - lastPieceSearch < 250000000L) return;
         lastPieceSearch = nowNanos;
+        List<long[]> found = new ArrayList<long[]>();
+        List<ShipAPI> foundParents = new ArrayList<ShipAPI>();
         List<ShipAPI> all = engine.getShips();
         for (int i = 0, n = all.size(); i < n; i++) {
             ShipAPI s = all.get(i);
@@ -904,9 +960,28 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             int id = nextNetId++;
             wrecks.put(id, s);
             wreckIds.put(s, id);
-            wreckSplits.add(new int[] { parent, id });
-            session.broadcast(Msg.WRECK_SPLIT, Msg.twoInts(parent, id));
+            found.add(new long[] { parent, id, 0L, 0L });
+            foundParents.add(wrecks.get(parent));
             if (wrecks.size() >= MAX_WRECKS) break;
+        }
+        // Which seed each new piece was cut with: a first cut, the seed of its ship's death (if that was known);
+        // a later cut, this frame's seed if it was the only roll of the frame.
+        int rolls = diedNow.size();
+        for (ShipAPI parentShip : foundParents) if (parentShip != null && cutBefore.contains(parentShip)) rolls++;
+        if (frameSeed != 0L && rolls == 1 && diedNow.size() == 1) deathSeeds.put(diedNow.get(0), frameSeed);
+        for (int k = 0; k < found.size(); k++) {
+            long[] split = found.get(k);
+            ShipAPI parentShip = foundParents.get(k);
+            if (parentShip != null && !cutBefore.contains(parentShip)) {
+                Long seed = deathSeeds.remove(parentShip);
+                if (seed != null) split[2] = seed;
+            } else if (frameSeed != 0L && rolls == 1) {
+                split[2] = frameSeed;
+            }
+            if (parentShip != null) cutBefore.add(parentShip);
+            if (split[2] != 0L) seededCuts++; else unseededCuts++;
+            wreckSplits.add(split);
+            session.broadcast(Msg.WRECK_SPLIT, splitMsg(split));
         }
         if (wreckIds.size() > MAX_WRECKS * 4) { // forget the ones marked "not ours" that have since left the field
             for (Iterator<Map.Entry<ShipAPI, Integer>> it = wreckIds.entrySet().iterator(); it.hasNext();) {

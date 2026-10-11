@@ -1141,6 +1141,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 wreckMisses = 0;
                 pendingSplits.clear();
                 splitDue.clear();
+                splitSeeds.clear();
+                cutChains.clear();
                 replays.clear();
                 replayShots.clear();
                 ghostShots.clear();
@@ -1209,7 +1211,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     if (wreck != null && engine.isEntityInPlay(wreck.ship)) engine.removeEntity(wreck.ship);
                     lostWrecks.remove(id);
                     for (int i = pendingSplits.size() - 1; i >= 0; i--) {
-                        if (pendingSplits.get(i)[1] == id) { pendingSplits.remove(i); splitDue.remove(i); }
+                        if (pendingSplits.get(i)[1] == id) { pendingSplits.remove(i); splitDue.remove(i); splitSeeds.remove(id); }
                     }
                     break;
                 }
@@ -1360,11 +1362,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             case Msg.WRECK_SPLIT: {
                 In in = Msg.reader(p.data);
-                int[] split = { in.readInt(), in.readInt(), 0 };
+                int[] split = { in.readInt(), in.readInt(), 0, 0 };
+                long seed = in.readLong();
+                split[3] = in.readInt();
                 Wreck from = wrecks.get(split[0]);
                 if (from != null) from.split = true;
                 // Tried now, and if the game finds no line to break along, again every couple of seconds for half a minute.
-                if (pendingSplits.size() < 300) { pendingSplits.add(split); splitDue.add(new float[] { clock, clock + 30f }); }
+                if (pendingSplits.size() < 300) {
+                    pendingSplits.add(split);
+                    splitDue.add(new float[] { clock, clock + 30f });
+                    if (seed != 0L) {
+                        splitSeeds.put(split[1], seed);
+                        if (cutChains.size() > 2000) cutChains.clear(); // (old seeds whose cuts are long done)
+                        if (!cutChains.containsKey(seed)) cutChains.put(seed, new long[] { WreckDice.Dice.stateOf(seed), 0L, 0L });
+                    }
+                }
                 else lostWrecks.add(split[1]);
                 break;
             }
@@ -1874,7 +1886,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + " made by the game, " + shotHitsForced + " by hand; ships built under a fleet commander's skills: " + underCommand + ", fighters with officers of their own: " + officeredFighters
                     + "; full updates asked for: " + keysAsked + " (" + decoder.missed + " updates could not be used, " + decoder.late + " arrived after a newer one); " + link.describeUdp() + "; link: " + (link.getConn() == null ? "none" : link.getConn().compressionState())
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
-                    + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone
+                    + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
                     + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
@@ -2933,7 +2945,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** Break-ups the host has reported and we have yet to carry out: { wreck, new piece, tries }; for each, { next try, give up } in battle time. */
     private final List<int[]> pendingSplits = new ArrayList<int[]>();
     private final List<float[]> splitDue = new ArrayList<float[]>();
-    private int wreckSplitsDone, wreckSplitsFailed;
+    private int wreckSplitsDone, wreckSplitsFailed, wreckCutsSame, wreckCutsOwn;
+    /** The dice seed each pending piece was cut with on the host (see WreckDice). */
+    private final Map<Integer, Long> splitSeeds = new HashMap<Integer, Long>();
+    /** Per seed: { dice state for its next cut, which cut is next, 1 if the chain is broken }. */
+    private final Map<Long, long[]> cutChains = new HashMap<Long, long[]>();
     private boolean wrecksBroken;
 
     /**
@@ -2952,8 +2968,22 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 boolean readyToBreak = parent != null && engine.isEntityInPlay(parent.ship) && parent.ship.isHulk();
                 ShipAPI piece = null;
                 if (readyToBreak) {
+                    // The same cut as the host's: the game's wreck dice set to where the host's were for this cut.
+                    // Cuts made with one seed are made in the host's order, each drawing on from the last.
+                    Long seed = splitSeeds.get(split[1]);
+                    long[] chain = seed == null ? null : cutChains.get(seed);
+                    if (chain != null && chain[2] == 0L && split[3] != chain[1]) {
+                        if (clock - (due[1] - 30f) < 3f) { due[0] = clock + 0.05f; continue; } // an earlier cut first
+                        chain[2] = 1L; // that one never came: this seed's cuts go their own way
+                    }
+                    WreckDice.Dice dice = chain != null && chain[2] == 0L ? WreckDice.dice() : null;
+                    if (dice != null) dice.restore(chain[0]);
                     parent.split = true;
                     try { piece = parent.ship.splitShip(); } catch (Throwable t) { /* tried again later */ }
+                    if (dice != null) {
+                        if (piece != null) { chain[0] = dice.state(); chain[1]++; wreckCutsSame++; }
+                        else chain[2] = 1L; // the host's cut can't be made here: let the game pick its own
+                    } else if (piece != null) wreckCutsOwn++;
                     if (piece == null) split[2]++; // the game found no line to break along this time
                 }
                 if (piece == null) {
@@ -2961,6 +2991,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     if (hopeless) {
                         pendingSplits.remove(i);
                         splitDue.remove(i);
+                        Long gone = splitSeeds.remove(split[1]);
+                        long[] chain = gone == null ? null : cutChains.get(gone);
+                        if (chain != null) chain[2] = 1L;
                         wreckSplitsFailed++;
                         lostWrecks.add(split[1]);
                     } else {
@@ -2970,6 +3003,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 pendingSplits.remove(i);
                 splitDue.remove(i);
+                splitSeeds.remove(split[1]);
                 wreckSplitsDone++;
                 Wreck w = new Wreck();
                 w.ship = piece;

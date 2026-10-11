@@ -1,5 +1,15 @@
 # Changelog
 
+## Since 0.6.4-beta (not released)
+Protocol 48.
+
+- **Wrecks break along the same lines on every screen.** The game cuts a wreck with one random generator of its own
+  (in its obfuscated `Tesselator`), seeded differently on each PC. Wingman now swaps in a generator whose state it
+  can read and set: the host notes which seed each cut was rolled with (a wreck's first cut is rolled as the ship
+  dies, later ones as they are made) and sends it with the break-up; a joiner sets the same seed before making the
+  same cut. When several ships die or wrecks break in the very same frame the host can't tell which roll was
+  whose, and those cuts are left to each PC as before. The battle-end log line says how many cuts went with a seed.
+
 ## 0.6.4-beta
 Protocol 47, as 0.6.2 and 0.6.3. Includes everything in 0.6.3.
 

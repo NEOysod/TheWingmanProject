@@ -163,7 +163,7 @@ its tap, and offers `sendControls`, `ack`, `pollUpdate`.
 
 ### 4.6 Messages
 
-Protocol version 47 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 48 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -199,7 +199,7 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 33 | CHECK | host → joiner | counts and id sums |
 | 34 | MISSILE_HIT | host → joiner | missile id, target, point, shield or hull |
 | 35 | SHOT_HIT | host → joiner | a scripted shot's hit |
-| 36 | WRECK_SPLIT | host → joiner | a wreck broke up |
+| 36 | WRECK_SPLIT | host → joiner | a wreck broke up: wreck, piece, dice seed, order |
 | 37 | HURTS | host → joiner | damage reports |
 | 38 | STATS | host → joiner | ship stats |
 | 39 | NOTES | host → joiner | script memory values |
@@ -334,8 +334,9 @@ frame:
   officer and skills (fighters only with their own officer), the fleet commander's skills (up to 80), and the
   host's max flux, hull and speed. Modules are announced just before their ship.
 - **Deaths:** `DESPAWN` with a reason. A dead non-fighter becomes a tracked wreck under the same id (up to 150).
-  `trackWrecks` reports wrecks gone and, four times a second, gives new hulk pieces an id and a parent
-  (`WRECK_SPLIT`). Split history is pruned past 600.
+  `trackWrecks` reports wrecks gone and, four times a second (at once after the wreck dice were rolled), gives
+  new hulk pieces an id and a parent (`WRECK_SPLIT`, with the dice seed of the cut when known). Split history is
+  pruned past 600.
 - **Side changes** (`checkSide`): a tracked ship's side is remembered at `announce`; a change to 0, 1 or 100 updates the
   cached `SPAWN` and broadcasts `SIDE`. A player whose ship leaves side 0 loses it with a notice.
 
@@ -586,7 +587,8 @@ react. Replayed damage is not counted as local.
 
 - **Wrecks:** a destroyed puppet always leaves one wreck (hulk chance 1, break-up 0); wrecks are sealed against local
   damage, follow the host (8/s, snapping beyond 400), and break up when the host's do (`splitShip`, retried for up
-  to 30 s). A whole wreck lost locally is rebuilt once. Up to 200.
+  to 30 s), with the wreck dice set to the host's seed for that cut when one came (`WreckDice`, see below). A
+  whole wreck lost locally is rebuilt once. Up to 200.
 - **Ships a local script makes** (an objective's turret, reinforcements, summons): on first sight made inert and
   invulnerable and noted (`localShips`). A host `SPAWN` for a plain ship first looks for a waiting local ship of the
   same side, hull and weapons (`sameShip`) and uses it as the puppet (moved to the host's spot, a pinned station
@@ -894,10 +896,19 @@ log and in connection errors.
 **Limits on load:** joiner shows at most 2,000 missiles, 800 fighters, 200 wrecks, 600 asteroids; host tracks 150
 wrecks; scripted shot reports 120/s; damage reports 120 per message.
 
-**Not matched on purpose:** wreck break lines. The host's game works out all of a dying ship's pieces at once
-(the obfuscated break-up helper `combat.entities.H`, dice from `Tesselator`'s private static `Random`); a
-joiner's `splitShip()` cuts its own line on demand. Matching them would mean driving `H` on joiners with replayed
-dice; judged not worth the crash risk for a cosmetic difference.
+**Wreck break lines (`WreckDice`).** A cut is worked out by `com.fs.starfarer.util.Tesselator` from the wreck's
+outline and one random generator, `Tesselator`'s private static `Random` (field `\u00d500000`; a clock re-seed
+mode exists but is off, flag `void` = true). Nothing else draws from it. The break-up helper
+`combat.entities.H` rolls it twice over a wreck's life: the first cut is worked out when the ship dies (kept,
+made later), each later cut when it is made; a joiner's `Ship.splitShip()` makes the same three `Tesselator`
+calls at the moment it cuts. Wingman replaces the generator (through `privateLookupIn`) with `WreckDice.Dice`,
+the same LCG as `java.util.Random` with readable/settable state. Host: after a frame in which the dice were
+rolled, it is re-seeded; the frame's deaths (non-fighter, non-piece) and later cuts are counted, and if exactly
+one rolled, its seed is kept (a death's for its wreck's first cut). `WRECK_SPLIT` carries the seed (0: unknown)
+and an order (always 0 so far). Joiner: the dice are set to the seed's state before `splitShip()`; a cut that
+can't be made with it breaks the chain and the game picks its own. Log: host "wreck cuts sent with their dice
+seed", joiner "cut as on the host / cut here". Same cut needs the same outline (armor and earlier cuts match) and
+the same float maths (same Java).
 
 **Not covered:** encryption (all traffic is plain; play over a private VPN); objectives created mid-battle; mods that
 keep overriding every ship's AI; ship types created at runtime from the campaign.
