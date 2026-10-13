@@ -9,8 +9,9 @@ accepted request changes anything in the host's campaign.
 - The joiner's screen is a list of rows (slots, bays, vents, capacitors, hull mods) with the choices for the marked
   row beside it, keyboard and mouse; the ship picture shows the new loadout but its slots aren't clickable.
 - The host's FRIEND REFITS button is drawn at the top right over whatever is showing (the dialog, or a core screen),
-  and opens Wingman's own panel; but a refit is **accepted only with no core screen open**, since the refit screen
-  keeps its own copy of the ship. So the host doesn't need to reopen anything, and nothing can be undone by it.
+  and opens Wingman's own panel. Accepted with the refit screen open, a refit is **done the moment that screen
+  closes** (its own copy of the ship would undo it otherwise), and the screen then opens again on that ship from the
+  market's dialog (setting `friendRefitReopen`).
 - Ctrl+Shift+R opens the panel (instead of a list on the settings page). Deny gives no typed reason.
 - Hull mods' `isApplicableToShip` isn't checked at all (it needs a ship that exists only in combat or the refit
   screen); the panel tells the host to judge it.

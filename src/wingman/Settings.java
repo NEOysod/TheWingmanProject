@@ -51,6 +51,8 @@ final class Settings {
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
                 "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
+        ITEMS.add(new Item(0, "friendRefitReopen", "Reopen the refit screen after a friend's refit", HOST, true, YES_NO,
+                "A friend's refit accepted in the refit screen is done when that screen closes. On: it then opens again on that ship, so you see the result."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,

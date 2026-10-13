@@ -60,7 +60,9 @@ and in a campaign friends can connect as soon as you load your save, while you a
    While you are docked at a market, friends can send you refits of the ship they picked. Your message feed
    says when one comes in, and a **FRIEND REFITS** button appears at the top right: click it (or press
    **Ctrl+Shift+R**) to see each one, with every change, its cost in credits and story points, and the result
-   of the checks. **A** accepts (with the fleet, cargo or refit screen closed), **D** denies. An accepted refit
+   of the checks. **A** accepts, **D** denies. If you accept with the refit (or fleet, cargo) screen open, the
+   refit is done the moment you close it, and the refit screen opens again on that ship so you can see it
+   (setting "Reopen the refit screen after a friend's refit"). An accepted refit
    is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
    paid, story points spent. Whether a hull mod suits the ship is for you to judge.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,

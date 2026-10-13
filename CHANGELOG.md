@@ -18,6 +18,9 @@ Protocol 60: host and joiners need this build.
   and the checks, all made again on the host's campaign. A accepts, D denies. Accepted refits are done as the
   game's own refit and market screens would: items move, markets are paid and hear of the trade, story points
   are spent with the usual bonus experience, and the ship gets a refit variant of its own.
+- The host can accept in the refit screen: the refit is done the moment that screen closes (it keeps its own
+  copy of the ship, which would undo a change made under it), and the refit screen then opens again on that ship.
+  Host setting `friendRefitReopen` (on by default).
 - Requests are refused with the reason if a check fails, and withdrawn when the host undocks, the pick changes or
   a battle starts. Whether a hull mod suits the ship isn't checked (the game can only tell in the refit screen):
   the host decides.

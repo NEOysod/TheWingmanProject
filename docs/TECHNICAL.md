@@ -637,8 +637,12 @@ changes in the host's campaign until the host accepts a refit.
   opens the panel (keys are its own while it is up): who, which ship, the note, each change with where items come
   from and go and their prices, the ordnance points, credits and story points, a warning if the joiner was shown
   other totals, and the checks (refreshed each second). A accepts, D denies, Left/Right between requests, Esc
-  closes. Accepting is refused while a core screen (fleet, cargo, refit) is open: it keeps its own copy of the ship
-  and would undo the change on closing.
+  closes. With a core screen (fleet, cargo, refit) open, A marks it accepted (`acceptOnClose`; the joiner hears so)
+  and it is done the moment the screen closes (`FriendRefit.applyWaiting`, each frame from the panel's rendering and
+  the lobby's script; checked once more then): the screen keeps its own copy of the ship and would undo a change
+  made under it. With `friendRefitReopen`, the refit screen then opens again on the last ship refitted, from the
+  market's dialog as the game's `OpenCoreTab` rule does it (`VisualPanelAPI.showCore(REFIT, target, member, trade
+  mode, listener)`, options cleared, `PopulateOptions` fired on closing); only for rule-based dialogs.
 - **Accepting** (`FriendRefit.accept`): checked once more; items taken out go first (to cargo, storage, or sold:
   added to the submarket's cargo, credits added), then items in (from cargo, storage, or bought: taken from the
   submarket's cargo, credits taken); the ship gets a clone of its variant with the source `REFIT` (never the
@@ -1343,6 +1347,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `readyCheck` | true | host | no | Hold the battle while everyone chooses a ship, then until everyone is ready |
 | `campaignLobby` | true | host | no | Open the session on the campaign map: friends connect and pick ships before a battle (6.5) |
 | `friendRefit` | true | host | yes | Friends may refit the ship they picked while the host is docked at a market (6.8) |
+| `friendRefitReopen` | true | host | yes | After a friend's refit accepted under the refit screen is done, that screen opens again on the ship (6.8) |
 | `playerList` | true | host | yes | A small list of connected players and their picks, top right of the campaign map (not over a dialog or a core screen) |
 | `modCheck` | content | host | no | `content` (utility mods may differ), `all`, `off` |
 | `autoJoin` | true | joiner | no | Join the host's battle by itself |

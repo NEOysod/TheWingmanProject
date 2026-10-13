@@ -63,6 +63,7 @@ final class CampaignLobby implements EveryFrameScript {
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
             FriendRefit.advance(s, cfg);
+            FriendRefit.applyWaiting();
             aftermath(s);
             // The fleet as joiners see it: sent when it (or who picked what) changes, and every few seconds anyway.
             if (s.getPlayers().isEmpty()) return;

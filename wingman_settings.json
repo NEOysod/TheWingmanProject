@@ -73,6 +73,10 @@
     # you a refit of it. Nothing changes in your campaign unless you accept it. false: no Refit button.
     "friendRefit": true,
 
+    # A friend's refit accepted while the refit screen is open is done the moment that screen closes (the screen
+    # keeps its own copy of the ship). true: the refit screen then opens again on that ship.
+    "friendRefitReopen": true,
+
     # ---- JOINING ----
     # Only used until an address has been typed into the CO-OP panel, which then takes over.
     # 127.0.0.1 is this PC itself (two copies of the game on one machine).

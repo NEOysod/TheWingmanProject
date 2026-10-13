@@ -368,6 +368,55 @@ final class FriendRefit {
         List<String> problems = new ArrayList<String>();
         /** The ordnance points of the new loadout as the game counts them on a copy of the ship, and the most it has. */
         int op, opMax;
+        /** The host accepted it with a core screen open: it is done the moment that screen closes. */
+        boolean acceptOnClose;
+    }
+
+    /**
+     * The host accepts with the fleet, cargo or refit screen open. That screen keeps its own copy of the ship, which
+     * would undo a change made under it, so the refit is done as soon as it closes (applyWaiting).
+     */
+    static void acceptOnClose(Pending pd) {
+        pd.acceptOnClose = true;
+        send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + ". It is done as soon as they close their refit screen."));
+    }
+
+    /**
+     * Each frame: refits accepted under a core screen are done once it has closed. Then, if the host wishes, the
+     * refit screen opens again on the (last) ship refitted, from the market's dialog as the game's own rules open it.
+     */
+    static void applyWaiting() {
+        if (broken || pending.isEmpty()) return;
+        try {
+            com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
+            if (ui == null || ui.getCurrentCoreTab() != null) return;
+            FleetMemberAPI last = null;
+            for (Pending pd : new ArrayList<Pending>(pending.values())) {
+                if (!pd.acceptOnClose) continue;
+                String why = accept(pd);
+                if (why != null) CampaignLobby.say("Co-op: the refit for " + pd.player.name + " couldn't be done: " + why);
+                else last = member(pd.request.memberId);
+            }
+            if (last != null && WingmanConfig.load().friendRefitReopen) reopen(last);
+        } catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: a friend's refit accepted under the refit screen failed", t);
+        }
+    }
+
+    /** The refit screen again, on that ship, opened by the market's dialog (as its OpenCoreTab rule does). */
+    private static void reopen(FleetMemberAPI m) {
+        final InteractionDialogAPI dialog = Global.getSector().getCampaignUI().getCurrentInteractionDialog();
+        if (dialog == null || !(dialog.getPlugin() instanceof com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl)) return;
+        final Map<String, com.fs.starfarer.api.campaign.rules.MemoryAPI> memory =
+                ((com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl) dialog.getPlugin()).getMemoryMap();
+        dialog.getOptionPanel().clearOptions();
+        dialog.getVisualPanel().showCore(com.fs.starfarer.api.campaign.CoreUITabId.REFIT, dialog.getInteractionTarget(), m,
+                tradeMode(dialog.getInteractionTarget()), new com.fs.starfarer.api.campaign.CoreInteractionListener() {
+                    public void coreUIDismissed() {
+                        // as the game's own OpenCoreTab: the dialog's options come back
+                        com.fs.starfarer.api.impl.campaign.rulecmd.FireAll.fire(null, dialog, memory, "PopulateOptions");
+                    }
+                });
     }
 
     /** Waiting requests by player id, oldest first. */

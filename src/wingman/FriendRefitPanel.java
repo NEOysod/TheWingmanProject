@@ -22,8 +22,9 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * each request: who, which ship, every change, the credits and story points, and the checks' result (all of
  * them made again on the host's campaign each second). A accepts, D denies, Left/Right go through the requests.
  *
- * A refit is applied only with no fleet, cargo or refit screen open: those screens keep their own copy of the
- * ship, which would undo the change when they close. Registered on each game load as a transient listener.
+ * Accepted with a fleet, cargo or refit screen open, a refit is done the moment that screen closes (those screens
+ * keep their own copy of the ship, which would undo a change made under them), and the refit screen can open again
+ * on that ship (host setting friendRefitReopen). Registered on each game load as a transient listener.
  */
 final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderingListener {
     private static final String SMALL = "graphics/fonts/orbitron12condensed.fnt";
@@ -74,12 +75,13 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                     break; // the list changed
                 } else if (key == 30) {                                                        // A: accept
                     CampaignUIAPI ui = Global.getSector().getCampaignUI();
-                    if (ui != null && ui.getCurrentCoreTab() != null) {
-                        say("Close the fleet, cargo or refit screen first: it keeps its own copy of the ship and would undo the refit.", Panel.BAD);
-                        continue;
-                    }
                     FriendRefit.Pending pd = list.get(at);
                     if (!pd.problems.isEmpty()) { say("It doesn't pass the checks (in red above), so it can't be accepted.", Panel.BAD); continue; }
+                    if (ui != null && ui.getCurrentCoreTab() != null) { // this screen's copy of the ship would undo it: done once it closes
+                        FriendRefit.acceptOnClose(pd);
+                        say("Accepted. It is done as soon as you close this screen" + (WingmanConfig.load().friendRefitReopen ? ", which then opens again on " + pd.ship + "." : "."), Panel.GOOD);
+                        continue;
+                    }
                     String why = FriendRefit.accept(pd);
                     if (why == null) say("Accepted: " + pd.ship + " is refitted.", Panel.GOOD);
                     else say(why, Panel.BAD);
@@ -102,6 +104,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
         try {
+            FriendRefit.applyWaiting(); // (also from the lobby's script, which may not run under a core screen)
             List<FriendRefit.Pending> list = requests();
             boolean down = Mouse.isButtonDown(0);
             if (list.isEmpty()) {
@@ -134,7 +137,8 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 lines.add("(" + pd.player.name + " was shown " + pd.request.expectCredits + " credits and " + pd.request.expectStoryPoints + " story points: something changed since.)");
                 colors.add(Panel.WARN);
             }
-            if (pd.problems.isEmpty()) { lines.add("All checks pass."); colors.add(Panel.GOOD); }
+            if (pd.acceptOnClose) { lines.add("ACCEPTED: done as soon as you close this screen (D cancels it)."); colors.add(Panel.GOOD); }
+            else if (pd.problems.isEmpty()) { lines.add("All checks pass."); colors.add(Panel.GOOD); }
             else for (String p : pd.problems) { lines.add(p); colors.add(Panel.BAD); }
             if (!pd.request.addMods.isEmpty()) {
                 lines.add("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.");
