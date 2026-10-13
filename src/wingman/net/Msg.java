@@ -93,6 +93,10 @@ public final class Msg {
     public static final byte REFIT_ASK = 63;
     /** host -> joiner: what the refit screen shows (RefitData); sent on REFIT_ASK and again when any of it changes. */
     public static final byte REFIT_DATA = 64;
+    /** joiner -> host: a refit the joiner wants for their picked ship (RefitRequest); a new one replaces the last. */
+    public static final byte REFIT_REQUEST = 65;
+    /** host -> joiner: what became of the refit request (RefitResult): received, accepted, denied, refused, withdrawn. */
+    public static final byte REFIT_RESULT = 66;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

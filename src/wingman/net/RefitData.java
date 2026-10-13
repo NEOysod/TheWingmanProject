@@ -67,6 +67,12 @@ public final class RefitData {
     public List<String> knownHullmods = new ArrayList<String>();
     /** Base value per unit, by item key: prices are this plus (buying) or minus (selling) the submarket's tariff. */
     public Map<String, Float> values = new LinkedHashMap<String, Float>();
+    /** Ordnance points each item named costs on this ship, with the host's skills, by item key. */
+    public Map<String, Integer> opCosts = new LinkedHashMap<String, Integer>();
+    /** Ordnance points each hull mod (known or fitted) costs on this hull size. */
+    public Map<String, Integer> modCosts = new LinkedHashMap<String, Integer>();
+    /** Hull mods that can't be built in (tagged no_build_in). */
+    public List<String> noBuildIn = new ArrayList<String>();
 
     public static String key(int kind, String id) { return (kind == WING ? "f:" : "w:") + id; }
 
@@ -80,6 +86,27 @@ public final class RefitData {
         int n = Math.min(l.size(), max);
         out.writeVarInt(n);
         for (int i = 0; i < n; i++) out.writeUTF(cap(l.get(i), len));
+    }
+
+    private static void writeInts(Out out, Map<String, Integer> m, int max) throws IOException {
+        int n = Math.min(m.size(), max);
+        out.writeVarInt(n);
+        int i = 0;
+        for (Map.Entry<String, Integer> e : m.entrySet()) {
+            if (i++ >= n) break;
+            out.writeUTF(cap(e.getKey(), 102));
+            out.writeVarInt(Math.max(0, Math.min(100000, e.getValue())));
+        }
+    }
+
+    private static void readInts(In in, Map<String, Integer> m, int max) throws IOException {
+        int n = count(in, max, "costs");
+        for (int i = 0; i < n; i++) {
+            String k = id(in, 102);
+            int v = in.readVarInt();
+            if (v < 0 || v > 100000) throw new IOException("impossible cost");
+            m.put(k, v);
+        }
     }
 
     private static void writeItems(Out out, List<Item> l) throws IOException {
@@ -137,6 +164,9 @@ public final class RefitData {
                 o.writeUTF(cap(e.getKey(), 102));
                 o.writeFloat(Math.max(0f, Math.min(MAX_CREDITS, e.getValue())));
             }
+            writeInts(o, opCosts, MAX_VALUES);
+            writeInts(o, modCosts, MAX_MODS);
+            writeStrings(o, noBuildIn, MAX_MODS, 100);
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -223,6 +253,9 @@ public final class RefitData {
             String k = id(in, 102);
             d.values.put(k, number(in, 0f, MAX_CREDITS));
         }
+        readInts(in, d.opCosts, MAX_VALUES);
+        readInts(in, d.modCosts, MAX_MODS);
+        readStrings(in, d.noBuildIn, MAX_MODS, 100, "hull mods");
         return d;
     }
 
@@ -231,6 +264,18 @@ public final class RefitData {
         int n = count(cargo, key) + count(storage, key);
         for (Market m : markets) if (m.usable && !m.cantBuy.contains(key)) n += count(m.stock, key);
         return n;
+    }
+
+    /** The submarket with that id, or null. */
+    public Market market(String id) {
+        for (Market m : markets) if (m.id.equals(id)) return m;
+        return null;
+    }
+
+    /** The weapon fitted in a slot, or null. */
+    public String weaponIn(String slot) {
+        int i = fitSlots.indexOf(slot);
+        return i < 0 ? null : fitWeapons.get(i);
     }
 
     public static int count(List<Item> l, String key) {

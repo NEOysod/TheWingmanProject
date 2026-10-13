@@ -17,6 +17,8 @@ import com.fs.starfarer.api.campaign.CoreUIAPI;
 import com.fs.starfarer.api.campaign.CampaignUIAPI.CoreUITradeMode;
 import com.fs.starfarer.api.ui.HintPanelAPI;
 import com.fs.starfarer.api.campaign.InteractionDialogAPI;
+import com.fs.starfarer.api.campaign.PlayerMarketTransaction;
+import com.fs.starfarer.api.campaign.listeners.ListenerUtil;
 import com.fs.starfarer.api.campaign.SectorEntityToken;
 import com.fs.starfarer.api.campaign.SubmarketPlugin;
 import com.fs.starfarer.api.campaign.econ.MarketAPI;
@@ -26,13 +28,21 @@ import com.fs.starfarer.api.characters.SkillsChangeRemoveVentsCapsEffect;
 import com.fs.starfarer.api.combat.ShipVariantAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
+import com.fs.starfarer.api.loading.HullModSpecAPI;
+import com.fs.starfarer.api.loading.VariantSource;
 import com.fs.starfarer.api.loading.WeaponSlotAPI;
+import com.fs.starfarer.api.loading.WeaponSpecAPI;
+import com.fs.starfarer.api.combat.ShipHullSpecAPI;
+import com.fs.starfarer.api.impl.campaign.ids.Tags;
 import com.fs.starfarer.api.util.Misc;
 
 import wingman.api.WingmanAPI;
 import wingman.net.HostSession;
 import wingman.net.Msg;
 import wingman.net.RefitData;
+import wingman.net.RefitPlan;
+import wingman.net.RefitRequest;
+import wingman.net.RefitResult;
 
 /**
  * Friend refit, host side (see docs/FRIEND_REFIT_DESIGN.md). While the host is docked at a market it can trade
@@ -113,6 +123,8 @@ final class FriendRefit {
         if (broken) return;
         try {
             for (HostSession.Player p : s.getPlayers()) {
+                byte[] rq = p.refitRequest;
+                if (rq != null) { p.refitRequest = null; receive(p, rq, cfg); }
                 String ask = p.refitAsk;
                 if (ask == null) continue;
                 p.refitAsk = null;
@@ -127,10 +139,11 @@ final class FriendRefit {
                 lastSent.remove(p.id);
                 lastChecked = 0; // send it now
             }
-            if (open.isEmpty()) return;
+            if (open.isEmpty() && pending.isEmpty()) return;
             long now = System.currentTimeMillis();
             if (now - lastChecked < 1000) return; // changes (a purchase, the cargo, the credits) show within a second
             lastChecked = now;
+            keepPending(s, cfg);
             for (Iterator<Map.Entry<Integer, String>> it = open.entrySet().iterator(); it.hasNext();) {
                 Map.Entry<Integer, String> e = it.next();
                 HostSession.Player p = playerById(s, e.getKey());
@@ -154,10 +167,12 @@ final class FriendRefit {
         }
     }
 
-    /** The host went into a battle: no refit screen stays open. */
+    /** The host went into a battle: no refit screen stays open, and no request waits. */
     static void closeAll() {
         open.clear();
         lastSent.clear();
+        for (Pending p : pending.values()) send(p.player, new RefitResult(RefitResult.WITHDRAWN, "The host went into a battle."));
+        pending.clear();
     }
 
     private static HostSession.Player playerById(HostSession s, int id) {
@@ -276,6 +291,26 @@ final class FriendRefit {
                 d.knownHullmods.add(id);
             }
         } catch (Throwable t) { /* none listed */ }
+        for (String k : keys) { // what each item costs in ordnance points on this ship
+            if (d.opCosts.size() >= RefitData.MAX_VALUES) break;
+            try {
+                String id = k.substring(2);
+                float op = k.startsWith("f:") ? Global.getSettings().getFighterWingSpec(id).getOpCost(m.getStats())
+                        : Global.getSettings().getWeaponSpec(id).getOrdnancePointCost(stats, m.getStats());
+                d.opCosts.put(k, Math.round(op));
+            } catch (Throwable t) { /* 0 */ }
+        }
+        Set<String> mods = new LinkedHashSet<String>(d.knownHullmods);
+        mods.addAll(d.hullmods);
+        mods.addAll(d.sMods);
+        for (String id : mods) {
+            if (d.modCosts.size() >= RefitData.MAX_MODS) break;
+            try {
+                HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
+                d.modCosts.put(id, spec.getCostFor(m.getHullSpec().getHullSize()));
+                if (spec.hasTag(Tags.HULLMOD_NO_BUILD_IN) && d.noBuildIn.size() < RefitData.MAX_MODS) d.noBuildIn.add(id);
+            } catch (Throwable t) { /* unknown here */ }
+        }
         for (String k : keys) {
             if (d.values.size() >= RefitData.MAX_VALUES) break;
             try {
@@ -319,5 +354,322 @@ final class FriendRefit {
         CargoStackAPI st = Global.getFactory().createCargoStack(type, id, null);
         st.setSize(1f);
         return st;
+    }
+
+    // ---- refit requests: received, checked, shown to the host, accepted or denied ----
+
+    /** A request waiting for the host: whose, for which ship, and what the checks found (refreshed each second). */
+    static final class Pending {
+        HostSession.Player player;
+        RefitRequest request;
+        String ship = "";
+        long at;
+        RefitPlan plan;
+        List<String> problems = new ArrayList<String>();
+        /** The ordnance points of the new loadout as the game counts them on a copy of the ship, and the most it has. */
+        int op, opMax;
+    }
+
+    /** Waiting requests by player id, oldest first. */
+    static final Map<Integer, Pending> pending = new java.util.LinkedHashMap<Integer, Pending>();
+
+    private static void send(HostSession.Player p, RefitResult r) {
+        try { p.conn.send(Msg.REFIT_RESULT, r.encode()); } catch (Throwable t) { /* gone */ }
+    }
+
+    private static void receive(HostSession.Player p, byte[] data, WingmanConfig cfg) {
+        RefitRequest r;
+        try { r = RefitRequest.decode(data); } catch (java.io.IOException e) { return; } // garbled: nothing to answer
+        String why = refusal(p, r.memberId, cfg);
+        if (why != null) { send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + ".")); return; }
+        Pending pd = new Pending();
+        pd.player = p;
+        pd.request = r;
+        pd.at = System.currentTimeMillis();
+        FleetMemberAPI m = member(r.memberId);
+        pd.ship = CampaignLobby.label(m);
+        check(pd, m);
+        if (pd.plan.isEmpty()) { send(p, new RefitResult(RefitResult.REFUSED, "Nothing changes in that refit.")); return; }
+        if (!pd.problems.isEmpty()) { // the design: a request that fails a check is refused with the reason
+            send(p, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
+            return;
+        }
+        boolean replaced = pending.remove(p.id) != null;
+        pending.put(p.id, pd);
+        send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
+        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+    }
+
+    /** Each second: requests that can't be done any more are withdrawn; the others are checked again. */
+    private static void keepPending(HostSession s, WingmanConfig cfg) {
+        for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
+            Pending pd = it.next();
+            if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
+            String why = refusal(pd.player, pd.request.memberId, cfg);
+            if (why != null) {
+                it.remove();
+                send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
+                continue;
+            }
+            check(pd, member(pd.request.memberId));
+        }
+    }
+
+    /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
+    static void check(Pending pd, FleetMemberAPI m) {
+        MarketAPI market = dockedMarket();
+        RefitData d = build(m, market);
+        pd.plan = new RefitPlan(d, pd.request, new Names(d));
+        List<String> problems = new ArrayList<String>(pd.plan.problems); // ordnance points: the game's count below
+        RefitRequest r = pd.request;
+        ShipVariantAPI v = m.getVariant();
+        ShipHullSpecAPI hull = m.getHullSpec();
+        for (RefitRequest.Change c : r.changes) {
+            if (pd.plan.sameAsBefore(c)) continue;
+            if (c.wing) {
+                int bay;
+                try { bay = Integer.parseInt(c.place); } catch (NumberFormatException e) { problems.add("No such fighter bay."); continue; }
+                int builtIn = 0;
+                try { builtIn = hull.getBuiltInWings().size(); } catch (Throwable t) { /* none */ }
+                if (bay < builtIn) problems.add("Fighter bay " + (bay + 1) + " holds a built-in wing.");
+                if (!c.item.isEmpty()) {
+                    try { Global.getSettings().getFighterWingSpec(c.item).getId(); } catch (Throwable t) { problems.add("Unknown fighter wing " + c.item + "."); }
+                }
+                continue;
+            }
+            WeaponSlotAPI slot = null;
+            try { slot = v.getSlot(c.place); } catch (Throwable t) { /* none */ }
+            if (slot == null || !slot.isWeaponSlot() || slot.isBuiltIn() || slot.isDecorative() || slot.isSystemSlot() || slot.isHidden() || slot.isStationModule()) {
+                problems.add("Slot " + c.place + " can't take a weapon.");
+                continue;
+            }
+            if (c.item.isEmpty()) continue;
+            WeaponSpecAPI spec;
+            try { spec = Global.getSettings().getWeaponSpec(c.item); } catch (Throwable t) { problems.add("Unknown weapon " + c.item + "."); continue; }
+            if (!slot.weaponFits(spec)) problems.add(spec.getWeaponName() + " doesn't fit slot " + c.place + " (" + slot.getSlotSize().name().toLowerCase() + " "
+                    + slot.getWeaponType().name().toLowerCase() + ").");
+        }
+        for (String id : r.addMods) {
+            try {
+                HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
+                if (spec.isHidden() || spec.isHiddenEverywhere()) problems.add(spec.getDisplayName() + " can't be fitted.");
+                if (hull.getBuiltInMods().contains(id)) problems.add(spec.getDisplayName() + " is built into the hull already.");
+            } catch (Throwable t) { problems.add("Unknown hull mod " + id + "."); }
+        }
+        // The real ordnance cost: the new loadout on a copy of the ship, counted by the game with the host's skills.
+        try {
+            ShipVariantAPI test = v.clone();
+            applyTo(test, pd);
+            MutableCharacterStatsAPI stats = Global.getSector().getPlayerStats();
+            pd.op = test.computeOPCost(stats);
+            pd.opMax = hull.getOrdnancePoints(stats);
+            if (pd.op > pd.opMax) problems.add("Ordnance points: " + pd.op + " used, " + pd.opMax + " available.");
+        } catch (Throwable t) {
+            pd.op = pd.plan.opUsed;
+            pd.opMax = d.opMax;
+            problems.addAll(pd.plan.opProblems);
+        }
+        pd.problems = problems;
+    }
+
+    /** The request's loadout put on a variant (a copy for the checks, the new one on accepting). */
+    private static void applyTo(ShipVariantAPI v, Pending pd) {
+        RefitRequest r = pd.request;
+        for (RefitRequest.Change c : r.changes) {
+            if (pd.plan.sameAsBefore(c)) continue;
+            if (c.wing) v.setWingId(Integer.parseInt(c.place), c.item.isEmpty() ? null : c.item);
+            else {
+                v.clearSlot(c.place);
+                if (!c.item.isEmpty()) v.addWeapon(c.place, c.item);
+            }
+        }
+        for (String id : r.removeMods) v.removeMod(id);
+        for (String id : r.addMods) v.addMod(id);
+        for (String id : r.buildIn) v.addPermaMod(id, true);
+        v.setNumFluxVents(r.vents);
+        v.setNumFluxCapacitors(r.caps);
+    }
+
+    /** The host denies a request. */
+    static void deny(Pending pd) {
+        pending.remove(pd.player.id);
+        send(pd.player, new RefitResult(RefitResult.DENIED, "The host denied your refit of " + pd.ship + "."));
+    }
+
+    /**
+     * The host accepts a request: checked once more, then done as the game's refit and market screens would do it.
+     * Returns null when done, else what stopped it (the joiner is told too).
+     */
+    static String accept(Pending pd) {
+        WingmanConfig cfg = WingmanConfig.load();
+        String why = refusal(pd.player, pd.request.memberId, cfg);
+        if (why != null) {
+            pending.remove(pd.player.id);
+            send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
+            return "It can't be done any more: " + why + ".";
+        }
+        FleetMemberAPI m = member(pd.request.memberId);
+        check(pd, m);
+        if (!pd.problems.isEmpty()) {
+            pending.remove(pd.player.id);
+            send(pd.player, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
+            return "It no longer passes the checks: " + pd.problems.get(0);
+        }
+        MarketAPI market = dockedMarket();
+        RefitPlan plan = pd.plan;
+        RefitData d = plan.d;
+        RefitRequest r = pd.request;
+        CampaignFleetAPI pf = Global.getSector().getPlayerFleet();
+        CoreUITradeMode mode = tradeMode(market.getPrimaryEntity());
+        Map<String, PlayerMarketTransaction> deals = new java.util.LinkedHashMap<String, PlayerMarketTransaction>();
+
+        // Out first (into cargo or storage, or sold), then in (from cargo, storage, or bought).
+        for (RefitRequest.Change c : r.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String old = plan.before(c);
+            if (old == null) continue;
+            String to = c.to.isEmpty() ? RefitRequest.CARGO : c.to;
+            move(cargoOf(to, pf, market), old, 1);
+            RefitData.Market rm = d.market(to);
+            if (rm != null) {
+                float price = d.sellPrice(rm, old);
+                pf.getCargo().getCredits().add(price);
+                PlayerMarketTransaction t = deal(deals, market, to, mode);
+                move(t.getSold(), old, 1);
+                t.setCreditValue(t.getCreditValue() + price);
+            }
+        }
+        for (RefitRequest.Change c : r.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String now = plan.after(c);
+            if (now == null) continue;
+            move(cargoOf(c.from, pf, market), now, -1);
+            RefitData.Market rm = d.market(c.from);
+            if (rm != null) {
+                float price = d.buyPrice(rm, now);
+                pf.getCargo().getCredits().subtract(price);
+                PlayerMarketTransaction t = deal(deals, market, c.from, mode);
+                move(t.getBought(), now, 1);
+                t.setCreditValue(t.getCreditValue() - price);
+            }
+        }
+        // The ship: a refit variant of its own (never the shared stock one), with the new loadout.
+        ShipVariantAPI nv = m.getVariant().clone();
+        nv.setSource(VariantSource.REFIT);
+        applyTo(nv, pd);
+        if (nv.hasUnassignedWeapons()) nv.assignUnassignedWeapons();
+        m.setVariant(nv, false, true);
+        m.updateStats();
+        // Story points for S-mods, with the bonus experience the game gives for building in.
+        for (String id : r.buildIn) {
+            try {
+                HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
+                Global.getSector().getPlayerStats().spendStoryPoints(1, true, null, true, Misc.getBuildInBonusXP(spec, m.getHullSpec().getHullSize()),
+                        "Built " + spec.getDisplayName() + " into " + pd.ship + " (refit for " + pd.player.name + ")");
+            } catch (Throwable t) {
+                Global.getLogger(FriendRefit.class).warn("Wingman: story point for building in " + id + " not spent", t);
+            }
+        }
+        // The markets hear of it as of any trade: prices, stock and standing react as usual.
+        for (Map.Entry<String, PlayerMarketTransaction> e : deals.entrySet()) {
+            PlayerMarketTransaction t = e.getValue();
+            try { market.getSubmarket(e.getKey()).getPlugin().reportPlayerMarketTransaction(t); } catch (Throwable x) { /* that report is missed */ }
+            try { Global.getSector().reportPlayerMarketTransaction(t); } catch (Throwable x) { /* that report is missed */ }
+            try { ListenerUtil.reportPlayerMarketTransaction(t); } catch (Throwable x) { /* that report is missed */ }
+        }
+        pending.remove(pd.player.id);
+        CampaignLobby.forgetLoadout(m.getId());
+        lastSent.remove(pd.player.id); // the joiner's refit screen gets the new loadout at once
+        lastChecked = 0;
+        int net = plan.net();
+        send(pd.player, new RefitResult(RefitResult.ACCEPTED, "The host accepted your refit of " + pd.ship + "."));
+        CampaignLobby.say("Co-op: refit of " + pd.ship + " for " + pd.player.name + " done"
+                + (net > 0 ? ", " + net + " credits paid" : net < 0 ? ", " + (-net) + " credits received" : "")
+                + (plan.storyPoints > 0 ? ", " + plan.storyPoints + " story point" + (plan.storyPoints > 1 ? "s" : "") : "") + ".");
+        Global.getLogger(FriendRefit.class).info("Wingman: friend refit applied for " + pd.player.name + " on " + pd.ship + " (credits " + (-net) + ", story points " + plan.storyPoints + ")");
+        return null;
+    }
+
+    private static PlayerMarketTransaction deal(Map<String, PlayerMarketTransaction> deals, MarketAPI market, String sub, CoreUITradeMode mode) {
+        PlayerMarketTransaction t = deals.get(sub);
+        if (t == null) { t = new PlayerMarketTransaction(market, market.getSubmarket(sub), mode); deals.put(sub, t); }
+        return t;
+    }
+
+    private static CargoAPI cargoOf(String id, CampaignFleetAPI pf, MarketAPI market) {
+        if (RefitRequest.CARGO.equals(id)) return pf.getCargo();
+        if (RefitRequest.STORAGE.equals(id)) return Misc.getStorageCargo(market);
+        return market.getSubmarket(id).getCargo();
+    }
+
+    /** Add (n > 0) or take (n < 0) items of a key to or from a cargo. */
+    private static void move(CargoAPI cargo, String key, int n) {
+        String id = key.substring(2);
+        boolean wing = key.startsWith("f:");
+        if (n > 0) { if (wing) cargo.addFighters(id, n); else cargo.addWeapons(id, n); }
+        else { if (wing) cargo.removeFighters(id, -n); else cargo.removeWeapons(id, -n); }
+    }
+
+    private static String join(List<String> l) {
+        StringBuilder sb = new StringBuilder();
+        for (String s : l) sb.append(sb.length() == 0 ? "" : "\n").append(s);
+        return sb.toString();
+    }
+
+    /** The host's view of a request, line by line, with names. */
+    static List<String> describe(Pending pd) {
+        List<String> out = new ArrayList<String>();
+        RefitPlan plan = pd.plan;
+        Names n = new Names(plan.d);
+        ShipHullSpecAPI hull = null;
+        try { hull = Global.getSettings().getHullSpec(plan.d.hullId); } catch (Throwable t) { /* plain ids */ }
+        for (RefitRequest.Change c : pd.request.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String old = plan.before(c), now = plan.after(c);
+            String place = c.wing ? "Bay " + (Integer.parseInt(c.place) + 1) : "Slot " + c.place + slotKind(hull, c.place);
+            String in = now == null ? "empty" : n.item(now) + " (" + (plan.d.market(c.from) != null ? "bought at " + n.source(c.from) + ", "
+                    + Math.round(plan.d.buyPrice(plan.d.market(c.from), now)) + " cr" : "from " + n.source(c.from)) + ")";
+            String outTo = old == null ? "" : ";  " + n.item(old) + (plan.d.market(c.to) != null ? " sold at " + n.source(c.to) + ", "
+                    + Math.round(plan.d.sellPrice(plan.d.market(c.to), old)) + " cr" : " to " + n.source(c.to.isEmpty() ? RefitRequest.CARGO : c.to));
+            out.add(place + ":  " + in + outTo);
+        }
+        for (String id : pd.request.removeMods) out.add("Hull mod off:  " + n.mod(id));
+        for (String id : pd.request.addMods) out.add("Hull mod on:  " + n.mod(id));
+        for (String id : pd.request.buildIn) out.add("Built in (S-mod, 1 story point):  " + n.mod(id));
+        if (pd.request.vents != plan.d.vents) out.add("Flux vents:  " + plan.d.vents + " -> " + pd.request.vents);
+        if (pd.request.caps != plan.d.caps) out.add("Flux capacitors:  " + plan.d.caps + " -> " + pd.request.caps);
+        return out;
+    }
+
+    private static String slotKind(ShipHullSpecAPI hull, String slotId) {
+        try {
+            WeaponSlotAPI s = hull.getWeaponSlotAPI(slotId);
+            return " (" + s.getSlotSize().name().toLowerCase() + " " + s.getWeaponType().name().toLowerCase().replace('_', ' ') + ")";
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** Names from this game's specs, and the submarkets' as the host's data has them. */
+    static final class Names implements RefitPlan.Names {
+        private final RefitData d;
+        Names(RefitData d) { this.d = d; }
+        public String item(String key) {
+            String id = key.length() > 2 ? key.substring(2) : key;
+            try {
+                return key.startsWith("f:") ? Global.getSettings().getFighterWingSpec(id).getWingName() + " LPC" : Global.getSettings().getWeaponSpec(id).getWeaponName();
+            } catch (Throwable t) {
+                return id;
+            }
+        }
+        public String mod(String id) {
+            try { return Global.getSettings().getHullModSpec(id).getDisplayName(); } catch (Throwable t) { return id; }
+        }
+        public String source(String id) {
+            if (RefitRequest.CARGO.equals(id)) return "cargo";
+            if (RefitRequest.STORAGE.equals(id)) return "storage";
+            RefitData.Market m = d == null ? null : d.market(id);
+            return m == null ? id : m.name;
+        }
     }
 }

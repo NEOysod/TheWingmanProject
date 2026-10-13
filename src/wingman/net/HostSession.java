@@ -48,6 +48,8 @@ public final class HostSession {
         public String pick;
         /** Friend refit: the member whose refit screen this player opened (Msg.REFIT_ASK), waiting for the game thread; "" closed. */
         public String refitAsk;
+        /** Friend refit: the latest refit request from this player (Msg.REFIT_REQUEST, undecoded), waiting for the game thread. */
+        public byte[] refitRequest;
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -553,6 +555,9 @@ public final class HostSession {
                     else if (p.type == Msg.REFIT_ASK) {
                         String id = Msg.reader(p.data).readUTF();
                         if (id.length() <= 64) pl.refitAsk = id; // likewise
+                    }
+                    else if (p.type == Msg.REFIT_REQUEST) {
+                        if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
                     }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();

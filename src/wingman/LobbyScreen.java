@@ -135,7 +135,7 @@ final class LobbyScreen {
             else report(m, contentTop, sw - 2 * m, contentTop - bottom);
 
             fill(m, bottom - 6f, sw - 2 * m, 1f, LINE);
-            String keys = page == REFIT ? "Esc: back to the fleet"
+            String keys = page == REFIT ? "Up/Down: choose   Enter or click: change   Left/Right: vents, capacitors   Delete: hull mod off   B: build in   S: where the old one goes   Z: undo   Ctrl+Enter: send   Esc: back"
                     : page == FLEET
                     ? "Up/Down, PgUp/PgDn: choose     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
                             + (v.refitMarket.isEmpty() ? "" : "     R: refit") + "     Tab: last battle     F1: how to     Esc: close"

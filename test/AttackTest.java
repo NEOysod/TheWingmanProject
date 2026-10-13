@@ -439,6 +439,10 @@ public class AttackTest {
         wingman.net.RefitData rfd = new wingman.net.RefitData(); rfd.memberId = "m"; rfd.hullId = "wolf"; rfd.fitSlots.add("WS1"); rfd.fitWeapons.add("lightac"); rfd.wings.add("");
         rfd.cargo.add(new wingman.net.RefitData.Item(0, "lightac", 2)); wingman.net.RefitData.Market rfm = new wingman.net.RefitData.Market(); rfm.name = "M"; rfm.stock.add(new wingman.net.RefitData.Item(1, "wasp_wing", 1)); rfm.cantBuy.add("f:wasp_wing");
         rfd.markets.add(rfm); rfd.knownHullmods.add("x"); rfd.values.put("w:lightac", 10f);
+        wingman.net.RefitRequest rfq = new wingman.net.RefitRequest(); rfq.memberId = "m"; rfq.note = "n"; wingman.net.RefitRequest.Change rfc = new wingman.net.RefitRequest.Change(); rfc.place = "WS1"; rfc.item = "lightac"; rfc.from = "cargo"; rfq.changes.add(rfc); rfq.addMods.add("x"); rfq.buildIn.add("x");
+        samples.put("RefitRequest", rfq.encode()); decs.put("RefitRequest", new Dec() { public void run(byte[] b) throws Exception { wingman.net.RefitRequest.decode(b); } });
+        samples.put("RefitResult", new wingman.net.RefitResult(3, "why\nand why").encode()); decs.put("RefitResult", new Dec() { public void run(byte[] b) throws Exception { wingman.net.RefitResult.decode(b); } });
+        rfd.opCosts.put("w:lightac", 4); rfd.modCosts.put("x", 5); rfd.noBuildIn.add("x");
         samples.put("RefitData", rfd.encode()); decs.put("RefitData", new Dec() { public void run(byte[] b) throws Exception { wingman.net.RefitData.decode(b); } });
         SnapshotCodec.Encoder en = new SnapshotCodec.Encoder(); snap.ships.get(0).shotTotals = new byte[] {1, 2};
         byte[] key = en.encode(snap, -1); snap.tick = 6; snap.ships.get(1).x += 50; byte[] delta = en.encode(snap, 5);

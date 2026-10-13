@@ -4,8 +4,19 @@ A joiner refits the ship they picked from the host's fleet, in a refit screen of
 host's game checks the request and asks the host, in the host's own refit screen, to accept or deny it. Only an
 accepted request changes anything in the host's campaign.
 
-**Status:** stage 1 (availability, the Refit button and the data, with a view-only refit screen) is built; see
-`docs/TECHNICAL.md` 6.8 for how. Stages 2 to 5 below are still a proposal.
+**Status:** all five stages are built; `docs/TECHNICAL.md` 6.8 says how. Where the build differs from this design:
+
+- The joiner's screen is a list of rows (slots, bays, vents, capacitors, hull mods) with the choices for the marked
+  row beside it, keyboard and mouse; the ship picture shows the new loadout but its slots aren't clickable.
+- The host's FRIEND REFITS button is drawn at the top right over whatever is showing (the dialog, or a core screen),
+  and opens Wingman's own panel; but a refit is **accepted only with no core screen open**, since the refit screen
+  keeps its own copy of the ship. So the host doesn't need to reopen anything, and nothing can be undone by it.
+- Ctrl+Shift+R opens the panel (instead of a list on the settings page). Deny gives no typed reason.
+- Hull mods' `isApplicableToShip` isn't checked at all (it needs a ship that exists only in combat or the refit
+  screen); the panel tells the host to judge it.
+- A hull mod that adds fighter bays gives its bays only once accepted; modules' loadouts aren't refitted.
+- Prices: base value × (1 + tariff) to buy and × (1 − tariff) to sell, rounded. To check against the game's own
+  market screen in play.
 
 ---
 

@@ -57,6 +57,12 @@ and in a campaign friends can connect as soon as you load your save, while you a
 4. **Load your save.** Friends can connect now. They see your fleet in their lobby and pick the ship they
    want to fly; your message feed says who joined and who picked what. (Setting "Friends can connect on the
    campaign map"; off: only once a battle starts.)
+   While you are docked at a market, friends can send you refits of the ship they picked. Your message feed
+   says when one comes in, and a **FRIEND REFITS** button appears at the top right: click it (or press
+   **Ctrl+Shift+R**) to see each one, with every change, its cost in credits and story points, and the result
+   of the checks. **A** accepts (with the fleet, cargo or refit screen closed), **D** denies. An accepted refit
+   is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
+   paid, story points spent. Whether a hull mod suits the ship is for you to judge.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
    player as loading, choosing a ship, or flying one and ready or not. Press **Enter** to start once everyone
@@ -93,10 +99,18 @@ and in a campaign friends can connect as soon as you load your save, while you a
      another player's name can't be picked.
    - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
    - **Refit:** while the host is docked at a market, the lobby says so, and the card of the ship you picked has
-     a **REFIT (R)** button. It opens your ship as it stands, with its ordnance points, vents, capacitors and
-     S-mods against the host's limits, and what the host has to fit it with: credits, story points, cargo,
-     storage and each market there. For now this only shows them; choosing weapons and sending the refit to the
-     host comes in a later version. **Esc** goes back to the fleet. (Host setting "Friends can refit their ships".)
+     a **REFIT (R)** button. It opens your ship with what the host has to fit it with: cargo, storage and each
+     market there.
+     - The middle column lists every slot, fighter bay, vents, capacitors and hull mods. **Enter** (or a click) on
+       a slot or bay shows what fits it, from cargo, storage or a market (with its price); pick one, or leave it
+       empty. **S** says where the weapon taken out goes: the host's cargo, storage, or sold to a market.
+     - **Left / Right** change vents and capacitors. On a hull mod, **Delete** takes it off and **B** builds it in
+       as an S-mod (1 story point). "Add a hull mod" lists the ones the host knows.
+     - The left column shows the ship with the new loadout, the ordnance points, credits and story points, and in
+       red anything that stops it. **Z** undoes a row (Shift+Z everything). You can add a short note.
+     - **Ctrl+Enter** (or SEND) sends it to the host, who checks it and accepts or denies it. Nothing changes
+       until then; the screen shows the answer. **Esc** goes back to the fleet. (Host setting "Friends can refit
+       their ships".)
    - **Esc** goes back to the CO-OP panel; **F4** there opens the lobby again.
 4. **Stay on the title screen.** When the host's battle begins, the panel counts down three seconds and
    takes you into it. Press **Enter** to go at once, or **Esc** to sit that battle out.
@@ -200,6 +214,8 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Lobby (joiner, title screen) | Up / Down, F, Delete | Choose a ship in the host's fleet; pick it; drop your pick |
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
 | Lobby (joiner, title screen) | R | Refit the ship you picked (while the host is docked at a market) |
+| Refit screen (joiner) | Enter, Left/Right, Delete, B, S, Z, Ctrl+Enter | Change the marked row; vents and capacitors; hull mod off; build in; where the old item goes; undo; send |
+| Campaign map (host) | **Ctrl+Shift+R**, then A / D | Friends' refits: accept / deny |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |

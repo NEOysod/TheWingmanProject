@@ -180,6 +180,58 @@ public class DataTest {
         check(rd2.buyPrice(rd2.markets.get(0), "w:lightac") == 130f && rd2.sellPrice(rd2.markets.get(0), "w:lightac") == 70f
                 && rd2.markets.get(0).cantSell.contains("w:hveldriver"), "refit data: prices with tariff, and what a market won't take");
 
+        // ---- friend refit: the request, and what it comes to ----
+        rd.opCosts.put("w:heavymauler", 12); rd.opCosts.put("w:hveldriver", 10); rd.opCosts.put("w:lightac", 4); rd.opCosts.put("f:talon_wing", 4); rd.opCosts.put("f:wasp_wing", 6);
+        rd.modCosts.put("hardenedshieldemitter", 15); rd.modCosts.put("heavyarmor", 15); rd.modCosts.put("unstable_injector", 15); rd.modCosts.put("itu", 30);
+        rd.knownHullmods.add("unstable_injector"); rd.knownHullmods.add("itu"); rd.noBuildIn.add("itu");
+        rd = wingman.net.RefitData.decode(rd.encode());
+        check(rd.opCosts.get("w:hveldriver") == 10 && rd.modCosts.get("itu") == 30 && rd.noBuildIn.contains("itu"), "refit data: ordnance costs and what can't be built in");
+        wingman.net.RefitRequest rq = new wingman.net.RefitRequest();
+        rq.memberId = "m1"; rq.vents = 20; rq.caps = 10; rq.note = "more dakka\n";
+        wingman.net.RefitRequest.Change ch1 = new wingman.net.RefitRequest.Change(); // the mauler out, sold at the open market; a light autocannon bought there
+        ch1.place = "WS0001"; ch1.item = "lightac"; ch1.from = "open_market"; ch1.to = "open_market";
+        wingman.net.RefitRequest.Change ch2 = new wingman.net.RefitRequest.Change(); // the second bay (empty) gets the wasp LPC from cargo
+        ch2.wing = true; ch2.place = "1"; ch2.item = "wasp_wing"; ch2.from = "cargo";
+        rq.changes.add(ch1); rq.changes.add(ch2);
+        wingman.net.RefitRequest rq2 = wingman.net.RefitRequest.decode(rq.encode());
+        check(rq2.memberId.equals("m1") && rq2.note.equals("more dakka") && rq2.changes.size() == 2 && rq2.changes.get(1).wing && rq2.change("1", true).item.equals("wasp_wing")
+                && rq2.change("WS0001", false).to.equals("open_market"), "refit request round trip");
+        wingman.net.RefitPlan pl = new wingman.net.RefitPlan(rd, rq2);
+        // OP: 148 - 12 (mauler) + 4 (light AC) + 6 (wasps) = 146. Credits: buy 130, sell the mauler (no value given: 0).
+        check(pl.opUsed == 146 && pl.buy == 130 && pl.sell == 0 && pl.net() == 130 && pl.allProblems().isEmpty() && !pl.isEmpty(), "refit plan: ordnance points and credits " + pl.opUsed + " " + pl.buy + " " + pl.allProblems());
+        rq2.removeMods.add("hardenedshieldemitter"); rq2.addMods.add("unstable_injector"); rq2.buildIn.add("unstable_injector"); rq2.vents = 25;
+        pl = new wingman.net.RefitPlan(rd, rq2);
+        // and: -15 shields, +15 injector -15 (built in: free) +5 vents = 136; one story point; S-mods 1 + 1
+        check(pl.opUsed == 136 && pl.storyPoints == 1 && pl.sMods == 2 && pl.allProblems().isEmpty(), "refit plan: hull mods, an S-mod, vents " + pl.opUsed + " " + pl.allProblems());
+        wingman.net.RefitRequest bad = wingman.net.RefitRequest.decode(rq2.encode());
+        bad.buildIn.add("itu"); bad.addMods.add("itu"); bad.removeMods.add("heavyarmor"); bad.vents = 31;
+        wingman.net.RefitRequest.Change ch3 = new wingman.net.RefitRequest.Change(); ch3.place = "WS0002"; ch3.item = "lightac"; ch3.from = "generic_military"; bad.changes.add(ch3);
+        wingman.net.RefitRequest.Change ch4 = new wingman.net.RefitRequest.Change(); ch4.place = "WS0003"; ch4.item = "lightac"; ch4.from = "black_market"; bad.changes.add(ch4);
+        wingman.net.RefitRequest.Change ch5 = new wingman.net.RefitRequest.Change(); ch5.place = "WS0004"; ch5.item = "lightac"; ch5.from = "cargo"; bad.changes.add(ch5);
+        wingman.net.RefitRequest.Change ch6 = new wingman.net.RefitRequest.Change(); ch6.place = "WS0005"; ch6.item = "lightac"; ch6.from = "cargo"; bad.changes.add(ch6);
+        wingman.net.RefitRequest.Change ch7 = new wingman.net.RefitRequest.Change(); ch7.place = "WS0006"; ch7.item = "lightac"; ch7.from = "cargo"; bad.changes.add(ch7);
+        wingman.net.RefitRequest.Change ch8 = new wingman.net.RefitRequest.Change(); ch8.place = "WS0007"; ch8.item = "lightac"; ch8.from = "cargo"; bad.changes.add(ch8);
+        pl = new wingman.net.RefitPlan(rd, bad);
+        String all = pl.allProblems().toString();
+        check(all.contains("can't be built in") && all.contains("can't be taken off") && all.contains("Flux vents") && all.contains("Military Market is shut")
+                && all.contains("won't sell") && all.contains("Not enough lightac in the host's cargo: 4 wanted, 3 there"), "refit plan: each problem named " + all);
+        // a weapon taken out to cargo can go into another slot
+        wingman.net.RefitRequest swap = new wingman.net.RefitRequest(); swap.memberId = "m1"; swap.vents = 20; swap.caps = 10;
+        wingman.net.RefitRequest.Change s1 = new wingman.net.RefitRequest.Change(); s1.place = "WS0001"; s1.item = ""; s1.to = "cargo";
+        wingman.net.RefitRequest.Change s2 = new wingman.net.RefitRequest.Change(); s2.place = "WS0009"; s2.item = "heavymauler"; s2.from = "cargo";
+        swap.changes.add(s1); swap.changes.add(s2);
+        pl = new wingman.net.RefitPlan(rd, swap);
+        check(pl.allProblems().isEmpty() && pl.opUsed == 148, "refit plan: a weapon moved from one slot to another through cargo " + pl.allProblems());
+        swap.changes.get(0).to = "black_market";
+        pl = new wingman.net.RefitPlan(rd, swap);
+        check(!pl.allProblems().isEmpty(), "refit plan: sold, it can't also go in elsewhere unless bought back");
+        // costs too much
+        rd.credits = 50f;
+        check(new wingman.net.RefitPlan(rd, rq2).allProblems().toString().contains("Credits"), "refit plan: not enough credits");
+        rd.credits = 123456.5f;
+        wingman.net.RefitResult res = wingman.net.RefitResult.decode(new wingman.net.RefitResult(wingman.net.RefitResult.REFUSED, "a\nb\u0007").encode());
+        check(res.status == wingman.net.RefitResult.REFUSED && res.text.equals("a\nb"), "refit result round trip, lines kept, control characters dropped");
+
         // ---- who ships and fleets are (mimics and the like) ----
         wingman.net.Person cap = new wingman.net.Person();
         cap.id = "sotf_sirius_mimic"; cap.first = "Sirius"; cap.faction = "sotf_dreaminggestalt"; cap.personality = "reckless"; cap.rank = "spaceCommander";

@@ -3,15 +3,24 @@
 ## Next (in progress)
 Protocol 60: host and joiners need this build.
 
-**Friend refit, stage 1 of 5** (design: `docs/FRIEND_REFIT_DESIGN.md`)
+**Friend refit** (design: `docs/FRIEND_REFIT_DESIGN.md`)
 
 - While the host is docked at a market, joiners are told so in the lobby, and the card of the ship they picked
   has a **REFIT (R)** button. Nothing opens by itself.
-- The refit screen shows that ship as it stands on the host: weapons by slot and the empty slots, fighter bays,
-  hull mods, S-mods and D-mods, with ordnance points, vents, capacitors and S-mods against the host's limits
-  (worked out with the host's skills). Beside it: the host's credits and story points, cargo, storage, and each
-  submarket with its tariff and stock, or why it is shut to the host. Viewing only for now.
-- It closes when the host undocks, when the pick changes, or with Esc. Nothing in the host's campaign changes.
+- The refit screen shows that ship as it stands on the host, with ordnance points, vents, capacitors and S-mods
+  against the host's limits (worked out with the host's skills), and what the host has: credits, story points,
+  cargo, storage, and each submarket with its tariff and stock, or why it is shut to the host.
+- Joiners choose a new loadout there: weapons (only what fits each slot) and fighter LPCs from the host's cargo,
+  storage or a market (bought at its price), where each removed item goes (cargo, storage, or sold), vents and
+  capacitors, hull mods the host knows on and off, S-mods built in for a story point each. The totals and
+  anything that stops it show as they choose. A short note can go with it.
+- The host gets a message and a FRIEND REFITS button (Ctrl+Shift+R): each request with every change, its cost
+  and the checks, all made again on the host's campaign. A accepts, D denies. Accepted refits are done as the
+  game's own refit and market screens would: items move, markets are paid and hear of the trade, story points
+  are spent with the usual bonus experience, and the ship gets a refit variant of its own.
+- Requests are refused with the reason if a check fails, and withdrawn when the host undocks, the pick changes or
+  a battle starts. Whether a hull mod suits the ship isn't checked (the game can only tell in the refit screen):
+  the host decides.
 - Host setting `friendRefit` (on by default): "Friends can refit their ships".
 
 **Changes**

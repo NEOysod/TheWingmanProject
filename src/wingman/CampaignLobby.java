@@ -81,7 +81,7 @@ final class CampaignLobby implements EveryFrameScript {
         }
     }
 
-    private static void say(String text) {
+    static void say(String text) {
         try { Global.getSector().getCampaignUI().addMessage(text, NOTE); } catch (Throwable t) { /* the log has it */ }
         Global.getLogger(CampaignLobby.class).info("Wingman: " + text);
     }
@@ -215,6 +215,9 @@ final class CampaignLobby implements EveryFrameScript {
     /** The ship card's details: picture, weapons ("2x Heavy Mauler"), hullmods, the officer's personality. */
     private static final Map<String, String[]> loadouts = new HashMap<String, String[]>();
     private static long loadoutsAt;
+
+    /** A ship was refitted: its card shows the new loadout at once. */
+    static void forgetLoadout(String memberId) { loadouts.remove(memberId); }
 
     private static void loadout(FleetMemberAPI m, Roster.Member rm) {
         long now = System.currentTimeMillis();

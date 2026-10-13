@@ -302,6 +302,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         wingman.net.RefitData d = wingman.net.RefitData.decode(p.data);
                         if (d.memberId.equals(refitMember)) refitData = d;
                     } catch (java.io.IOException e) { /* a garbled one is skipped: the next one replaces it */ }
+                } else if (p.type == Msg.REFIT_RESULT) { // friend refit: what the host made of our request
+                    try {
+                        wingman.net.RefitResult r = wingman.net.RefitResult.decode(p.data);
+                        lobby.refit.onResult(r);
+                        if (refitMember.isEmpty() || r.status == wingman.net.RefitResult.ACCEPTED) {
+                            note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED ? Panel.GOOD : Panel.WARN);
+                        }
+                    } catch (java.io.IOException e) { /* skipped */ }
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
                     StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
@@ -361,7 +369,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     continue;
                 }
                 if (lobbyOpen && open && ClientLink.get().getState() == ClientLink.State.CONNECTED) { // the lobby takes every key while it is up
-                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue());
+                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue(), e.getEventChar(), e.isCtrlDown(), e.isShiftDown());
                     e.consume();
                     continue;
                 }
@@ -451,12 +459,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     }
 
     /** Keys on the lobby page: Up/Down choose, F (or Enter on the map) pick, Delete no pick, Enter join, Esc back. */
-    private void lobbyKey(int key) {
+    private void lobbyKey(int key, char ch, boolean ctrl, boolean shift) {
         int n = roster == null ? 0 : roster.members.size();
         int page = TitleMenu.isHidden() ? lobby.rows : LOBBY_ROWS;
-        if (lobby.page == LobbyScreen.REFIT) {                                         // the refit screen: Esc back to the fleet
-            if (key == 1) closeRefit(null);
-            else if (key == 59) helpPage = 0;
+        if (lobby.page == LobbyScreen.REFIT) {                                         // the refit screen takes every key
+            refitAction(lobby.refit.key(key, ch, ctrl, shift));
             return;
         }
         if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
@@ -500,6 +507,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         refitData = null;
         lobby.page = LobbyScreen.REFIT;
         note("", Panel.DIM);
+    }
+
+    /** What the refit screen asked for: close it, or send the refit to the host. */
+    private void refitAction(int action) {
+        if (action == RefitScreen.CLOSE) closeRefit(null);
+        else if (action == RefitScreen.SEND) {
+            Conn c = ClientLink.get().getConn();
+            if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+            c.send(Msg.REFIT_REQUEST, lobby.refit.request().encode());
+        }
     }
 
     /** Close the refit screen (telling the host), with a note why if it wasn't the player's doing. */
@@ -660,6 +677,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             if (full) {
                 float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
                 if (down && !wasClickDown && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
+                else if (down && !wasClickDown && lobby.page == LobbyScreen.REFIT) {
+                    refitAction(lobby.refit.click(Global.getSettings().getMouseX(), Global.getSettings().getMouseY()));
+                }
                 lobby.render(lobbyView());
             }
             wasClickDown = down;
