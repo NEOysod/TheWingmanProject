@@ -106,6 +106,14 @@ final class Settings {
                 "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
         ITEMS.add(new Item(2, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
+        ITEMS.add(new Item(2, "playerList", "Player list in battle", HOST, false, YES_NO,
+                "A small list of the players at the top right: who flies what, on autopilot or watching, and whose link has gone quiet. Scrolls with the mouse wheel over it beyond four rows; F3 hides it with the tags."));
+        ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
+                "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
+        ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,
+                "Mods' LunaLib settings are the host's while a battle runs, so copies of the host's ships behave as there. Your own keys stay yours, and your settings come back after the battle."));
+        ITEMS.add(new Item(2, "shipMastery", "Ship Mastery follows the host", JOINER, false, YES_NO,
+                "With Ship Mastery System: the host's masteries (and the enemy's) apply to the copies of ships here. Needs the stand-in campaign. Off: if it misbehaves."));
         ITEMS.add(new Item(2, "hostMessages", "Battle messages follow the host", BOTH, true, YES_NO,
                 "Lines mods' scripts write to the message feed (an objective's hail, a system's warning) come from the host's game, so every screen reads the same. Needed on both."));
         ITEMS.add(new Item(2, "fighterHangars", "Fighters in their carriers' hangars", JOINER, false, YES_NO,

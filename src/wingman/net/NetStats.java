@@ -58,6 +58,25 @@ public final class NetStats {
             case Msg.SHOT_HIT: return "scripted shot hits";
             case Msg.MISSILE_HIT: return "missile hits";
             case Msg.BATTLE_END: return "battle end";
+            case Msg.CAMPAIGN: return "campaign copy";
+            case Msg.FLEET: return "fleets";
+            case Msg.LUNA: return "mod settings";
+            case Msg.LUNA_KEYS: return "mod keys";
+            case Msg.SIDE: return "side changes";
+            case Msg.OBJECTIVE_TEXT: return "objective texts";
+            case Msg.COMBAT_MSG: return "battle messages";
+            case Msg.SUBSYSTEM: return "extra abilities";
+            case Msg.LANDING: return "landings";
+            case Msg.MOD: return "other mods' messages";
+            case Msg.UDP_OFFER: return "UDP set-up";
+            case Msg.UDP_READY: return "UDP set-up";
+            case Msg.UDP_MODE: return "UDP set-up";
+            case Msg.ROSTER: return "lobby fleet";
+            case Msg.PICK: return "ship picks";
+            case Msg.INPUT_MODE: return "controls mode";
+            case Msg.INPUTS: return "controls (steady)";
+            case Msg.REPORT: return "after-action report";
+            case Msg.AFTERMATH: return "aftermath";
             case Msg.CHECK: return "sync checks";
             default: return "type " + type;
         }

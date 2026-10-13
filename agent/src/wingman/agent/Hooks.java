@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.EveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.MutableStat;
@@ -324,8 +325,12 @@ public final class Hooks {
         ShipAPI a = ((ShipAPI) Shared.acting);
         Bridge b = Shared.bridge;
         if (a != null && b != null) { Shared.keyAnswers++; return b.keyDown(a, key); } // never the host's keys
+        if (key > 0 && key < 256) Shared.polledKeys[key >> 6] |= 1L << (key & 63);
         return org.lwjgl.input.Keyboard.isKeyDown(key);
     }
+
+    /** The keys asked about so far (see Shared.polledKeys), as a copy. */
+    public static long[] polledKeys() { return Shared.polledKeys.clone(); }
 
     private static float[] cursor(ShipAPI a) {
         Bridge b = Shared.bridge;
@@ -334,6 +339,44 @@ public final class Hooks {
 
     private static ViewportAPI view() { return Global.getCombatEngine().getViewport(); }
 
+
+    // ---- campaign lookups a joiner's stand-in can't answer (recorded only while Wingman asks: Shared.recording) ----
+
+    /** Wingman turns recording on for a joiner's battle and off when it ends. */
+    public static void setRecording(boolean on) { Shared.recording = on; }
+
+    /** The lookups recorded since the last call, most asked first; clears them. Key -> times asked. */
+    public static Map<String, Integer> takeMisses() { return Shared.takeMisses(); }
+    // (No nested or anonymous classes in Hooks: a copy of Hooks in another class loader couldn't reach them.)
+
+    private static void missIfAbsent(MemoryAPI m, String key) {
+        try { if (!m.contains(key)) Shared.miss(key); } catch (Throwable t) { /* not counted */ }
+    }
+
+    public static Object memGet(MemoryAPI m, String key) {
+        Object v = m.get(key);
+        if (v == null && Shared.recording) missIfAbsent(m, key);
+        return v;
+    }
+    public static String memString(MemoryAPI m, String key) { if (Shared.recording) missIfAbsent(m, key); return m.getString(key); }
+    public static float memFloat(MemoryAPI m, String key) { if (Shared.recording) missIfAbsent(m, key); return m.getFloat(key); }
+    public static boolean memBoolean(MemoryAPI m, String key) { if (Shared.recording) missIfAbsent(m, key); return m.getBoolean(key); }
+    public static long memLong(MemoryAPI m, String key) { if (Shared.recording) missIfAbsent(m, key); return m.getLong(key); }
+    public static int memInt(MemoryAPI m, String key) { if (Shared.recording) missIfAbsent(m, key); return m.getInt(key); }
+    public static boolean memContains(MemoryAPI m, String key) {
+        boolean has = m.contains(key);
+        if (!has && Shared.recording) Shared.miss(key);
+        return has;
+    }
+    public static boolean memIs(MemoryAPI m, String key, Object value) { if (Shared.recording) missIfAbsent(m, key); return m.is(key, value); }
+    public static boolean memIsF(MemoryAPI m, String key, float value) { if (Shared.recording) missIfAbsent(m, key); return m.is(key, value); }
+    public static boolean memIsZ(MemoryAPI m, String key, boolean value) { if (Shared.recording) missIfAbsent(m, key); return m.is(key, value); }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> persistentData(com.fs.starfarer.api.campaign.SectorAPI sector) {
+        Map<String, Object> m = sector.getPersistentData();
+        return Shared.recording && m != null && !(m instanceof RecordingMap) ? new RecordingMap(m) : m;
+    }
 
     /** One line for the log. */
     public static String report() {

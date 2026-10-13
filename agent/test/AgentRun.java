@@ -238,6 +238,7 @@ public class AgentRun {
         check(Hooks.report().contains("left alone (their loader can't reach the agent)"), "isolated loader counted: " + Hooks.report());
 
         System.out.println(Hooks.report());
+        lookups();
         System.out.println(fails == 0 ? "AGENT RUN PASSED (" + checks + " checks)" : "AGENT RUN FAILED: " + fails + " of " + checks);
         if (fails > 0) System.exit(1);
     }
@@ -255,6 +256,7 @@ public class AgentRun {
         check(ModScript.time(e) == realTime, when + ": the real time multiplier");
         check(ModScript.mx() == 0 && ModScript.my() == 0, when + ": the real mouse");
         check(!ModScript.key(30), when + ": the real keyboard");
+        check((Hooks.polledKeys()[0] & (1L << 30)) != 0, when + ": a key asked about outside a joiner's ship is noted");
         check(ModScript.busy(e, 2) == 2 + 1 + 10 + 1 + 2, when + ": busy method, got " + ModScript.busy(e, 2));
         engineCalls.clear();
         ModScript.camera(e, new org.lwjgl.util.vector.Vector2f(1f, 2f));
@@ -280,6 +282,7 @@ public class AgentRun {
         check(realTime.getModifiedValue() == 1f, when + ": the real time multiplier untouched");
         check(ModScript.mx() == 50 && ModScript.my() == 30, when + ": the joiner's cursor, got " + ModScript.mx() + "," + ModScript.my());
         check(ModScript.key(30) && !ModScript.key(31), when + ": the joiner's keys");
+        check((Hooks.polledKeys()[0] & (1L << 31)) == 0, when + ": a key asked about for a joiner's ship is not noted as this PC's");
         check(ModScript.busy(e, 30) == 4 + 10 + 100 + 1 + 2, when + ": busy method, got " + ModScript.busy(e, 30));
         engineCalls.clear();
         ModScript.camera(e, new org.lwjgl.util.vector.Vector2f(1f, 2f));
@@ -300,5 +303,56 @@ public class AgentRun {
         engineCalls.clear();
         ModScript.move(e, other);
         check(moves.equals(Arrays.asList("joiner->other")) && !engineCalls.contains("setPlayerShipExternal"), when + ": move is the joiner's: " + moves);
+    }
+
+    /** Campaign lookups: passed straight through, and the ones that find nothing listed only while recording. */
+    static void lookups() {
+        final java.util.Map<String, Object> mem = new java.util.HashMap<String, Object>();
+        mem.put("$known", Boolean.TRUE);
+        mem.put("$num", Float.valueOf(3f));
+        com.fs.starfarer.api.campaign.rules.MemoryAPI m = (com.fs.starfarer.api.campaign.rules.MemoryAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(),
+                new Class<?>[] { com.fs.starfarer.api.campaign.rules.MemoryAPI.class }, new InvocationHandler() {
+            public Object invoke(Object p, Method x, Object[] a) {
+                String n = x.getName();
+                if (n.equals("get")) return mem.get(a[0]);
+                if (n.equals("contains")) return mem.containsKey(a[0]);
+                if (n.equals("getFloat")) { Object v = mem.get(a[0]); return v instanceof Float ? v : Float.valueOf(0f); }
+                if (n.equals("is")) return a[1].equals(mem.get(a[0]));
+                return null;
+            }
+        });
+        final java.util.Map<String, Object> saved = new java.util.HashMap<String, Object>();
+        saved.put("modState", "x");
+        com.fs.starfarer.api.campaign.SectorAPI sector = (com.fs.starfarer.api.campaign.SectorAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(),
+                new Class<?>[] { com.fs.starfarer.api.campaign.SectorAPI.class }, new InvocationHandler() {
+            public Object invoke(Object p, Method x, Object[] a) { return x.getName().equals("getPersistentData") ? saved : null; }
+        });
+        Hooks.takeMisses();
+        // Not recording: plain answers, nothing listed.
+        check(Boolean.TRUE.equals(testmod.Lookups.get(m, "$known")) && testmod.Lookups.get(m, "$gone") == null, "lookups: memory answers pass through");
+        check(testmod.Lookups.number(m, "$num") == 3f && testmod.Lookups.flag(m, "$known"), "lookups: number and flag pass through");
+        check("x".equals(testmod.Lookups.saved(sector, "modState")) && testmod.Lookups.saved(sector, "other") == null, "lookups: saved data passes through");
+        check(Hooks.takeMisses().isEmpty(), "lookups: nothing listed while not recording");
+        Hooks.setRecording(true);
+        testmod.Lookups.get(m, "$known");
+        testmod.Lookups.get(m, "$gone");
+        testmod.Lookups.get(m, "$gone");
+        testmod.Lookups.has(m, "$alsoGone");
+        testmod.Lookups.number(m, "$noNumber");
+        testmod.Lookups.flag(m, "$noFlag");
+        check(!testmod.Lookups.has(m, "$x") && testmod.Lookups.number(m, "$num") == 3f, "lookups: answers unchanged while recording");
+        check("x".equals(testmod.Lookups.saved(sector, "modState")) && testmod.Lookups.saved(sector, "missingState") == null
+                && !testmod.Lookups.savedHas(sector, "missingToo"), "lookups: saved data answers unchanged while recording");
+        saved.put("added", 1);
+        check(testmod.Lookups.savedHas(sector, "added"), "lookups: the saved data seen is the real map");
+        Hooks.setRecording(false);
+        java.util.Map<String, Integer> missed = Hooks.takeMisses();
+        check(Integer.valueOf(2).equals(missed.get("$gone")) && missed.containsKey("$alsoGone") && missed.containsKey("$noNumber")
+                && missed.containsKey("$noFlag") && missed.containsKey("$x") && !missed.containsKey("$known") && !missed.containsKey("$num"),
+                "lookups: memory misses listed with counts: " + missed);
+        check(missed.containsKey("saved data: missingState") && missed.containsKey("saved data: missingToo") && !missed.containsKey("saved data: modState"),
+                "lookups: saved data misses listed: " + missed);
+        check(missed.keySet().iterator().next().equals("$gone"), "lookups: most asked first");
+        check(Hooks.takeMisses().isEmpty(), "lookups: taking them clears them");
     }
 }

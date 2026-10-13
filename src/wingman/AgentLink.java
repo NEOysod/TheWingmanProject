@@ -28,6 +28,9 @@ final class AgentLink implements Bridge {
 
     private static ShipAPI ship(Object o) { return o instanceof ShipAPI ? (ShipAPI) o : null; }
     static String report() { return Hooks.report(); }
+    static void recordLookups(boolean on) { Hooks.setRecording(on); }
+    static java.util.Map<String, Integer> takeMisses() { return Hooks.takeMisses(); }
+    static long[] polledKeys() { return Hooks.polledKeys(); }
 
     public boolean live() { return host.agentLive(); }
 
@@ -67,6 +70,22 @@ final class AgentLink implements Bridge {
         return p == null || !host.onAutopilot(p.id);
     }
 
-    /** Joiners' own keys aren't sent to the host: a script asking here hears "not pressed" (never the host's keys). */
-    public boolean keyDown(Object s, int key) { return false; }
+    /**
+     * A key a script asks about while it runs for a joiner's ship (a hullmod's ability on a hotkey, say): held if
+     * that joiner's game says it is (see InputState.keys; their own copy of the script asked about it there).
+     * Never the host's keys. A module or fighter answers for the player of the ship it belongs to.
+     */
+    public boolean keyDown(Object s, int key) {
+        ShipAPI ship = ship(s);
+        HostSession.Player p = playerIn(ship);
+        if (p == null && ship != null && ship.getParentStation() != null) p = playerIn(ship.getParentStation());
+        if (p == null || System.currentTimeMillis() - p.input.receivedAt > 1000) return false;
+        // Their key for the same setting, if they have bound it to another (LunaLib keys, see LunaCopy).
+        if (!p.input.keyHeld(key) && !LunaCopy.heldByBinding(key, p.lunaKeys, p.input)) return false;
+        if (key != lastKeyHeard && keysHeard++ < 10) Global.getLogger(AgentLink.class).info("Wingman agent: " + p.name + " holds "
+                + org.lwjgl.input.Keyboard.getKeyName(key) + " for a script on their ship");
+        lastKeyHeard = key;
+        return true;
+    }
+    private int keysHeard, lastKeyHeard;
 }

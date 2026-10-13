@@ -13,7 +13,7 @@ import com.fs.starfarer.api.combat.StatBonus;
 final class ShipStats {
     private ShipStats() {}
 
-    static final int COUNT = 43;
+    static final int COUNT = 57;
     private static final String KEY = "wingman_host";
     /** A bonus is measured by what it makes of this base value. */
     private static final float BASE = 1000f;
@@ -43,6 +43,14 @@ final class ShipStats {
             case 36: return s.getRecoilPerShotMult();
             case 37: return s.getMaxRecoilMult();
             case 38: return s.getRecoilDecayMult();
+            case 46: return s.getBeamWeaponFluxCostMult();
+            case 47: return s.getShieldUpkeepMult();
+            case 48: return s.getShieldSoftFluxConversion();
+            case 52: return s.getWeaponRangeThreshold();
+            case 53: return s.getWeaponRangeMultPastThreshold();
+            case 54: return s.getBallisticAmmoRegenMult();
+            case 55: return s.getEnergyAmmoRegenMult();
+            case 56: return s.getMissileAmmoRegenMult();
             default: return null;
         }
     }
@@ -69,6 +77,12 @@ final class ShipStats {
             case 40: return s.getPeakCRDuration();
             case 41: return s.getPhaseCloakCooldownBonus();
             case 42: return s.getCRLossPerSecondPercent();
+            case 43: return s.getEnergyWeaponFluxCostMod();
+            case 44: return s.getBallisticWeaponFluxCostMod();
+            case 45: return s.getMissileWeaponFluxCostMod();
+            case 49: return s.getPhaseCloakUpkeepCostBonus();
+            case 50: return s.getPhaseCloakActivationCostBonus();
+            case 51: return s.getSystemFluxCostBonus();
             default: return null;
         }
     }
@@ -126,7 +140,10 @@ final class ShipStats {
             "zero-flux threshold", "ballistic range", "energy range", "missile range", "beam range", "weapon turn rate", "beam turn rate",
             "shield arc", "sight radius", "missile speed", "missile acceleration", "missile turn rate", "system range", "system cooldown",
             "system recharge", "point-defence range", "beam point-defence range", "recoil per shot", "greatest recoil", "recoil recovery",
-            "speed while phased", "peak performance time", "phase cloak cooldown", "readiness loss rate" };
+            "speed while phased", "peak performance time", "phase cloak cooldown", "readiness loss rate",
+            "energy weapon flux cost", "ballistic weapon flux cost", "missile weapon flux cost", "beam flux cost", "shield upkeep",
+            "shield soft-flux conversion", "phase cloak upkeep", "phase cloak activation cost", "system flux cost",
+            "range cap", "range past the cap", "ballistic reload rate", "energy reload rate", "missile reload rate" };
 
     static String name(int i) { return i >= 0 && i < NAMES.length ? NAMES[i] : "stat " + i; }
 }

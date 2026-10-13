@@ -1,5 +1,121 @@
 # Changelog
 
+## 0.8-beta
+Protocol 59: host and joiners need this build.
+
+**Fixes from playtesting**
+
+- The title screen's own menu could stay hidden for good after a few battles (the lobby hid it, and back from a
+  battle it was taken to be showing). It is shown again whenever the lobby isn't up.
+- A carrier's fighter panel on a joiner could list a wing twice: when a wing was lost and replaced, the old one
+  stayed in the fleet's deployed list naming the carrier. It is taken out now.
+- The battle keeps running when the host opens the command map (Tab), while friends are in it: a pause on the
+  host pauses everyone. Space still pauses. Host setting `keepRunningInCommandMap` (on by default).
+- Player tags (P1, P2...) sit clear of the officer portrait the game draws by a ship, with the player's name after
+  the number in a smaller font.
+- **Settings on the campaign map:** Ctrl+Shift+O opens the same settings page there (the campaign waits while it
+  is up). The session kept open for friends takes the changes when it closes.
+- **Player list for the host**, top right in battle: each player in their colour with the ship they fly (or
+  "watching", "no ship", "autopilot", and "link quiet" when their connection goes silent). Four rows at a time;
+  more scroll with the mouse wheel over the list. F3 hides it with the tags. Host setting `playerList`.
+- Sixteen player colours (P1 to P16), one for each player a game can have; before, P5 and up were all white.
+- The ready check and ship choice start when the host's battle does, even if the host left the flagship out or
+  took no ship (flying the command shuttle); before they waited until the host deployed a ship.
+- A joiner who changes their name while connected is reconnected under the new name (the host only hears the name
+  on connecting, so the old one stuck until the host started hosting afresh).
+- Ship cards in the lobby show D-mods (on their own line, near the top), S-mods marked "(S)", and hull mods built
+  into the hull.
+
+**Mods behave on joiners as on the host**
+
+- **Hotkey abilities work for joiners.** Abilities a hull mod puts on a key (Special Hullmod Upgrades' subsystems
+  on Left Alt, armaa's repair kit) run on the host for a joiner's ship, and never heard the joiner's key. Now the
+  keys mods ask about travel with the joiner's controls. Each player keeps their own bindings: if you bound an
+  ability to another key in LunaLib, your key counts for it. Needs the agent on the host.
+- **Mod settings follow the host.** Mods' LunaLib settings (which effects are on, Special Hullmod Upgrades'
+  custom stats, armaa's repair rules) are the host's while a battle runs, so copies of the host's ships behave
+  the same. Your keys stay yours; your settings come back after the battle and nothing is saved. Setting
+  `hostModSettings`.
+- **Ship Mastery System.** The host's masteries, and those of the fleets it fights, now apply to the copies of
+  ships on joiners. Before, joiners' copies had none. Your own campaign gets its own masteries back on its next
+  load. Setting `shipMastery`.
+- **Whole fleets.** The stand-in fleets now hold every ship of the host's fleets, not only those on the field, so
+  scripts that look over a fleet (armaa's carrier bonus for strike craft, fleet-wide skills) count the same.
+- Fixed: the LunaLib and Ship Mastery copies never ran (the game forbids its mods Java's reflection, which they
+  used; they use method handles now, and the build fails if reflection creeps back in).
+- Fixed: a ship carrying a weapon in a slot its hull doesn't list (UAF's corvettes, "SYS_FAKE") couldn't be built on
+  joiners and was missing there; it is built without that weapon now (the host's ship still fires it).
+- **14 more ship stats follow the host:** weapon and beam flux costs, shield upkeep and soft-flux conversion,
+  phase cloak upkeep and activation cost, ship system flux cost, the range cap some hull mods set, and reload
+  rates. Mostly felt on the flux bar and ammo of the ship you fly.
+
+**Changing ship as a joiner**
+
+- **No more stutter when you change ship.** The ship you just sat down in answers your controls at once. Before,
+  for one round trip to the host, your controls pushed it one way while the host's positions pulled it the other.
+- The "ship you flew last time" note is written to disk when the battle ends, not on every change of ship.
+- A slow frame in the few seconds after a change of ship is noted in the log, with how much of it was co-op code.
+- **A ship a joiner leaves gets its own AI back.** A ship given back to the AI (left, taken back by the host, put
+  on autopilot, or a carrier freed after its fighter) gets the AI the game would pick in single player. That
+  includes a mod's own AI for its ships. Before, it always got the game's usual AI.
+
+**The lobby and the after-action report**
+
+- **Ship cards show the officer and the loadout with pictures:** the officer's portrait, level, personality and
+  skills as icons (elite skills framed in gold, with their names below), and each weapon and fighter wing with its
+  picture and how many are fitted. The ship's picture has its weapons drawn in their slots, as in the refit screen
+  (modules' weapons too), placed, faced and mounted as the hull's .ship file (and a skin's .skin changes) has them. Protocol 58.
+
+- With LunaLib installed, the lobby's heading starts to the right of LunaLib's "Mod Settings" and "Version Checker"
+  buttons, and its content below them; they no longer overlap.
+
+- **The lobby is a screen of its own.** On connecting, the CO-OP LOBBY fills the screen (the game's menu steps
+  aside): the host's fleet with a card for each ship (picture, class, CR, officer, weapons and wings, hull mods),
+  who is here and what they picked, and the last battle. Tab switches to the full report. If the game's menu
+  can't be moved aside (another game version), the lobby is the box in the corner as before.
+- **After-action report.** At the end of a battle the host sends how it went: victory or defeat, battle time, each
+  player's ship, kills (ships and fighters), damage dealt and taken and whether they made it out, and both sides'
+  losses. Joiners see it in the lobby.
+- **Aftermath.** Once the host has closed the battle's dialog on the campaign map, joiners are told what changed in
+  the fleet: credits, ships recovered or gone, and the biggest cargo changes.
+- **No more mission results screen for joiners.** Leaving a battle goes straight back to the lobby (on the report).
+  If the game's internals differ, the battle ends the usual way.
+
+**Mimics and other scripted enemies (UAF's Lingering Echoes and mimic bounties, Secrets of the Frontier)**
+
+- Each campaign fleet in the battle is now described to joiners (faction, name, flags, and its commander with
+  their skills and identity), and a joiner's copies of its ships belong to a stand-in of that very fleet. Mods
+  that make enemies from a fleet's flag and commander skill (UAF's mimics: `$UAFmimicFleet`, the `uaf_mimic` skill)
+  now see the same fleet, flag and commander on every PC.
+- A ship's description also carries its variant's tags (UAF's `uaf_mimic_ship`), its fleet member id, and its
+  officer's identity: id, faction, rank, post, personality, tags and memory flags (Secrets of the Frontier tests
+  captains like Sirius, Sierra or Barrow by id and memory). Hidden hullmods were already copied.
+
+**Fixes from a long hosted session**
+
+- Carriers' hangars on a joiner's PC: in some copies of the game the hangar's private field has another scrambled
+  name, and fighters weren't put in their carriers there. It is now found by its type, from the class file itself.
+- The host's log no longer gets a "Loading JSON from [wingman_settings.json]" line every five seconds on the
+  campaign map (the file is read once per game; changes made in game are kept apart and read as before).
+- The traffic summary names every kind of message ("lobby fleet" instead of "type 55").
+- After the host's battle ends, a joiner's game no longer rebuilds ships it clears away while leaving ("was lost or
+  destroyed here but is alive on the host; rebuilt" at the end of simulator battles).
+- The lobby's ship card shows a multi-part ship whole: each module's picture in its slot, turned as the slot is.
+- The campaign lookups line says "not recorded" for a battle that had no stand-in campaign (simulator, missions),
+  instead of "every lookup was answered".
+
+**Mods' battle scripts and the campaign**
+
+- **A much larger copy of the host's campaign** for joiners' stand-in campaign: mods' saved data (the sector's
+  persistent data), the memory of the sector, the player, the player's fleet and faction, the enemy fleet, its
+  commander and faction, and the place; faction standings; the enemy's faction, name and commander; the place's
+  name and tags. Plain data only (yes/no, numbers, text and lists or tables of those): nothing a message holds can
+  make a joiner's game create a class it names. Everything put into what outlives the battle is taken away after.
+- The battle's context (`engine.getContext()`) on a joiner now holds the stand-in fleets.
+- **Missed lookups (with the agent).** On a joiner's PC, the agent notes what mods' battle scripts ask the
+  campaign's memory and saved data for and don't find; leaving the battle writes the list to the log, split into
+  what the host has but couldn't send and what wasn't in the copy.
+
 ## 0.7-beta
 Protocol 52.
 

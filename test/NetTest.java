@@ -465,6 +465,14 @@ public class NetTest {
         InputState junk = new InputState(); junk.flags = InputState.FIRE; junk.mouseX = Float.NaN; junk.facing = 45f;
         held.decode(junk.encode());
         check("guard rails: controls with impossible numbers are ignored, last good ones kept", held.flags == InputState.ACCEL && held.mouseX == 10f && held.facing == 90f);
+        InputState withKeys = new InputState(); withKeys.keys = new int[] { 56, 200 }; withKeys.seq = 9;
+        byte[] wk = withKeys.encode(); InputState gotKeys = new InputState(); gotKeys.decode(wk);
+        InputState noKeys = new InputState(); noKeys.seq = 9;
+        check("held hotkeys travel with the controls, and count as a change", gotKeys.keyHeld(56) && gotKeys.keyHeld(200) && !gotKeys.keyHeld(30)
+                && gotKeys.keys.length == 2 && InputState.differ(wk, noKeys.encode()));
+        byte[] tooMany = wk.clone(); tooMany[wk.length - 2 - 3] = 40; // the key count, made impossible
+        InputState kept = new InputState(); kept.decode(wk); kept.decode(tooMany);
+        check("guard rails: controls claiming too many keys are ignored", kept.keys.length == 2);
 
         // input reaches the right player
         InputState in = new InputState(); in.flags = InputState.ACCEL | InputState.FIRE | InputState.VENT | InputState.PULL_BACK | InputState.AUTOPILOT; in.mouseX = 55f; in.mouseY = -66f; in.group = 2; in.target = 41; in.autofire = 0b1010; in.facing = 271.5f;

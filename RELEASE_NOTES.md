@@ -1,4 +1,4 @@
-# The Wingman Project 0.7-beta — Release Notes
+# The Wingman Project 0.8-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,24 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.8-beta
+
+- **A lobby screen of its own** for joiners: the host's fleet with a card per ship (picture with its weapons in
+  their slots, CR, D-mods, officer portrait and skills, weapons, hull mods), and after each battle the host's
+  **after-action report** (who flew what, kills, damage, losses, what the battle changed in the fleet). No more
+  results screen of the joiner's own.
+- **Joiners' battles match the host's more closely:** the host's campaign is copied for mods' scripts (saved data,
+  flags, fleets with all their ships, commanders and their skills, UAF mimics and the like), mods' **LunaLib
+  settings** follow the host's for the battle, **Ship Mastery System** masteries apply, and 14 more ship stats
+  are kept in step.
+- **Hotkey abilities** in hull mods (Special Hullmod Upgrades, armaa's repair kit...) work for joiners, each with
+  their own key.
+- **For the host:** a player list at the top right, the battle keeps running in the command map while friends
+  play, the settings page on the campaign map too (Ctrl+Shift+O), and ships handed back to the AI get the AI a
+  mod gives them.
+- Smoother ship changes for joiners, 16 player colours with names by the tags, and many fixes from playtesting.
+- **Protocol 59:** the host and every joiner need 0.8-beta. Full list in CHANGELOG.md.
 
 ## What it is
 
@@ -81,14 +99,15 @@ a `Co-op:` message, and the game keeps running.
 
 1. Click **CO-OP** on the title screen, type the host's address, your name and the password (if any), and
    press **Enter**. You stay connected for the whole session.
-2. **The lobby.** While the host is on the campaign map, the **LOBBY** page shows their fleet (ship, class, size,
-   CR, officer), who is connected and who picked what. Up/Down and **F** pick the ship you want; **Delete**
-   drops your pick.
-3. **Stay on the title screen.** When the host's battle begins you are taken into it after a short countdown.
+2. **The lobby.** Once connected, the **CO-OP LOBBY** fills the screen: the host's fleet with a card for each
+   ship (picture, CR, officer, weapons, hull mods), who is here and what they picked. Up/Down and **F** pick the
+   ship you want; **Delete** drops your pick; **Tab** shows the last battle's report.
+3. **Stay in the lobby.** When the host's battle begins you are taken into it after a short countdown.
 4. **Step 1: choose your ship.** If the host deployed the ship you picked, you are already in it. Otherwise
    Up/Down and **Enter** or **F** take one, or **W** watches without a ship.
 5. **Step 2: ready.** **Enter** for ready; **Backspace** goes back to step 1 to change ship.
-6. When the battle ends you return to the title screen, still connected, and join the next one the same way.
+6. When the battle ends you go straight back to the lobby, still connected, with the host's report of the battle
+   (who flew what, kills, damage, losses, and what the battle changed in the fleet), and join the next one the same way.
 
 ### In the battle
 

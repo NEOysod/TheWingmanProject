@@ -53,6 +53,8 @@ public final class HostSession {
         public int slot;
         /** This player's next position update must be one in full: they are new, or missed the last one. */
         public boolean needKey = true;
+        /** The player's own keys for mods' LunaLib settings ("mod/field" -> key code), as their game told us. */
+        public volatile java.util.Map<String, Integer> lunaKeys;
 
         // ---- position updates: what this player holds, and how they are reached ----
         /** Packs this player's updates; a new one for each battle. */
@@ -531,6 +533,9 @@ public final class HostSession {
                         if (cls.length() <= 200 && ++pl.subsystemsInWindow <= 10 && pl.subsystemPresses.size() < 20) {
                             pl.subsystemPresses.add(new Object[] { ship, cls });
                         }
+                    }
+                    else if (p.type == Msg.LUNA_KEYS) {
+                        pl.lunaKeys = LunaKeys.decode(p.data);
                     }
                     else if (p.type == Msg.CLAIM) {
                         In in = Msg.reader(p.data);

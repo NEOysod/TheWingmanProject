@@ -104,6 +104,31 @@ final class AgentGate {
         r.run();
     }
 
+    /**
+     * List campaign lookups that find nothing (a joiner's battle, from the moment its stand-in campaign is set up
+     * until it is left; see MissedLookups). Without the agent there is nothing to list.
+     */
+    /** Whether lookups were listed in this battle (the log says "not recorded" otherwise). */
+    static volatile boolean recordedThisBattle;
+
+    static void recordLookups(boolean on) {
+        if (on) recordedThisBattle = true;
+        if (!present()) return;
+        try { AgentLink.recordLookups(on); } catch (Throwable t) { /* an older agent: no list */ }
+    }
+
+    /** The lookups listed since the last call (key -> times asked), or null without the agent. */
+    static java.util.Map<String, Integer> takeMisses() {
+        if (!present()) return null;
+        try { return AgentLink.takeMisses(); } catch (Throwable t) { return null; }
+    }
+
+    /** The keys mods' scripts here have asked about (see Hooks.isKeyDown), or null without the agent. */
+    static long[] polledKeys() {
+        if (!present() || failed) return null;
+        try { return AgentLink.polledKeys(); } catch (Throwable t) { return null; } // (an older agent: none)
+    }
+
     /** One line for the log, or null without the agent. */
     static String report() {
         if (!present()) return null;

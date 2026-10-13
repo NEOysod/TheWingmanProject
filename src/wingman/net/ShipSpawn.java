@@ -65,6 +65,16 @@ public final class ShipSpawn {
     /** The weapon actually sitting in each of those slots on the host, whatever put it there. */
     public List<String> weaponOrderIds = new ArrayList<String>();
 
+    // ---- who the ship is, for scripts that ask (a mod's own mimics, bosses, special officers) ----
+    /** The host's fleet member id ("" if none). */
+    public String memberId = "";
+    /** The variant's tags (scripts test them: UAF's "uaf_mimic_ship"). */
+    public List<String> variantTags = new ArrayList<String>();
+    /** The officer's identity beyond name and skills (id, faction, rank, post, personality, tags, memory); null if none. */
+    public Person captain;
+    /** The fleet the ship belongs to on the host (see FleetInfo), or -1. */
+    public int fleetKey = -1;
+
     private static void writeList(Msg.W w, List<String> l) throws IOException {
         w.out.writeShort(l.size());
         for (String s : l) w.out.writeUTF(s == null ? "" : s);
@@ -128,6 +138,11 @@ public final class ShipSpawn {
                 w.out.writeBoolean(g.autofire);
                 writeList(w, g.slots);
             }
+            w.out.writeUTF(memberId == null ? "" : memberId.length() > 100 ? memberId.substring(0, 100) : memberId);
+            writeList(w, variantTags.size() > 200 ? variantTags.subList(0, 200) : variantTags);
+            w.out.writeBoolean(captain != null);
+            if (captain != null) captain.write(w.out);
+            w.out.writeInt(fleetKey);
         } catch (IOException e) { throw new IllegalStateException(e); }
         return w.done();
     }
@@ -193,6 +208,11 @@ public final class ShipSpawn {
             g.slots = readList(in);
             s.groups.add(g);
         }
+        s.memberId = in.readUTF();
+        s.variantTags = readList(in);
+        if (s.variantTags.size() > 200) throw new IOException("too many variant tags");
+        if (in.readBoolean()) s.captain = Person.read(in);
+        s.fleetKey = in.readInt();
         return s;
     }
 }

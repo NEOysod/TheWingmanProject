@@ -45,6 +45,11 @@ final class Panel {
         return l;
     }
 
+    /** Where the last box was drawn (screen units: left, bottom, width, height), for the mouse. */
+    float lastX, lastY, lastW, lastH;
+
+    boolean contains(float mx, float my) { return lastW > 0f && mx >= lastX && mx <= lastX + lastW && my >= lastY && my <= lastY + lastH; }
+
     /** How wide the box being drawn is, and where: centred on the screen, or hung from a corner point. */
     private float width = WIDTH, anchorRight, anchorTop;
     private boolean anchored;
@@ -100,6 +105,7 @@ final class Panel {
             quad(GL11.GL_LINE_LOOP, x, y, width, h);
             GL11.glPopAttrib();
 
+            lastX = x; lastY = y; lastW = width; lastH = h;
             float cy = y + h - PAD;
             cy = draw(t, x + PAD, cy) - GAP * 2f;
             for (LabelAPI l : body) cy = draw(l, x + PAD, cy) - GAP;

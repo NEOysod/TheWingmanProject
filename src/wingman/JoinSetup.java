@@ -95,7 +95,20 @@ public final class JoinSetup {
     public static void remember(BattleInfo b) { known = b; }
 
     /** The host's battle is over: its battlefield no longer applies. */
-    public static void battleOver() { known = null; }
+    public static void battleOver() { known = null; knownCampaign = null; }
+
+    /** The host's larger campaign copy for this battle (Msg.CAMPAIGN), if it sent one. */
+    private static volatile wingman.net.CampaignCopy knownCampaign;
+
+    /** Note the host's campaign copy (called wherever a CAMPAIGN message is read). */
+    public static void rememberCampaign(byte[] data) {
+        try {
+            knownCampaign = wingman.net.CampaignCopy.decode(data);
+        } catch (Throwable t) {
+            knownCampaign = null;
+            com.fs.starfarer.api.Global.getLogger(JoinSetup.class).warn("Wingman: the host's campaign copy could not be read; the basic stand-in is used", t);
+        }
+    }
 
     public static synchronized Info fetch() {
         long now = System.currentTimeMillis();
@@ -140,6 +153,8 @@ public final class JoinSetup {
                 info.status = "The host refused the connection: " + rejectReason.replace('\n', ' ');
                 return;
             }
+            if (p.type == Msg.CAMPAIGN) { rememberCampaign(p.data); continue; }
+            if (p.type == Msg.LUNA) { LunaCopy.remember(p.data); continue; }
             if (p.type != Msg.BATTLE_INFO) continue;
             BattleInfo b = BattleInfo.decode(p.data);
             known = b;
@@ -158,10 +173,14 @@ public final class JoinSetup {
      * campaign in place for mods' scripts to find (see CampaignStandIn).
      */
     public static void prepareCampaign() {
+        try { if (WingmanConfig.load().hostModSettings) LunaCopy.apply(); } catch (Throwable t) { /* this PC's own settings, then */ }
         try {
             BattleInfo b = lastBattle;
             if (b == null || !WingmanConfig.load().campaignStandIn) return;
-            CampaignStandIn.install(b);
+            CampaignStandIn.install(b, knownCampaign);
+            if (CampaignStandIn.isInstalled() && WingmanConfig.load().shipMastery) ShipMasteryBridge.install();
+            AgentGate.takeMisses(); // anything left from before starts afresh
+            AgentGate.recordLookups(CampaignStandIn.isInstalled());
         } catch (Throwable t) {
             com.fs.starfarer.api.Global.getLogger(JoinSetup.class).warn("Wingman: could not set up the stand-in campaign", t);
         }

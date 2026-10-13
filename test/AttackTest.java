@@ -460,7 +460,26 @@ public class AttackTest {
         Orders ord = new Orders(); Orders.Assignment as = new Orders.Assignment(); as.type = "DEFEND"; as.members.add(3); ord.assignments.add(as);
         samples.put("Orders", ord.encode()); decs.put("Orders", new Dec() { public void run(byte[] b) throws Exception { Orders.decode(b); } });
         Msg.W mw = new Msg.W(); MODS.write(mw.out); samples.put("ModList", mw.done()); decs.put("ModList", new Dec() { public void run(byte[] b) throws Exception { ModList.read(Msg.reader(b)); } });
-        samples.put("Controls", new InputState().encode()); decs.put("Controls", new Dec() { public void run(byte[] b) throws Exception { new InputState().decode(b); } });
+        wingman.net.CampaignCopy cc = new wingman.net.CampaignCopy(); java.util.Map<String, Object> pm = new java.util.LinkedHashMap<String, Object>(); pm.put("$x", java.util.Arrays.asList("a", 1, 2.5f)); pm.put("$m", new java.util.HashMap<String, Object>());
+        cc.persistent.put("mod", pm); cc.memories.put("sector", pm); cc.relations.put("pirates", -0.5f); cc.enemyFaction = "pirates"; cc.locationTags.add("t"); cc.skippedKeys.add("$o");
+        samples.put("CampaignCopy", cc.encode()); decs.put("CampaignCopy", new Dec() { public void run(byte[] b) throws Exception { wingman.net.CampaignCopy.decode(b); } });
+        wingman.net.BattleReport brp = new wingman.net.BattleReport(); brp.sides[0].lost.add("ISS A (Wolf)"); wingman.net.BattleReport.Pilot bp = new wingman.net.BattleReport.Pilot(); bp.name = "P"; bp.ship = "S"; brp.pilots.add(bp);
+        samples.put("BattleReport", brp.encode()); decs.put("BattleReport", new Dec() { public void run(byte[] b) throws Exception { wingman.net.BattleReport.decode(b); } });
+        wingman.net.FleetInfo fli = new wingman.net.FleetInfo(); fli.key = 1; fli.faction = "f"; fli.memory.put("$x", true); fli.commander = new wingman.net.Person(); fli.commander.skillIds.add("s"); fli.commander.skillLevels.add(1f); fli.commander.memory.put("$y", 2);
+        samples.put("FleetInfo", fli.encode()); decs.put("FleetInfo", new Dec() { public void run(byte[] b) throws Exception { wingman.net.FleetInfo.decode(b); } });
+        wingman.net.ShipSpawn spi = new wingman.net.ShipSpawn(); spi.hullId = "wolf"; spi.variantTags.add("t"); spi.captain = new wingman.net.Person(); spi.captain.id = "c"; spi.captain.memory.put("$z", "q"); spi.fleetKey = 1;
+        samples.put("ShipSpawn (identity)", spi.encode()); decs.put("ShipSpawn (identity)", new Dec() { public void run(byte[] b) throws Exception { wingman.net.ShipSpawn.decode(b); } });
+        wingman.net.Aftermath afm = new wingman.net.Aftermath(); afm.credits = 5; afm.shipsLost.add("A"); afm.cargoNames.add("Supplies"); afm.cargoChanges.add(-3f);
+        samples.put("Aftermath", afm.encode()); decs.put("Aftermath", new Dec() { public void run(byte[] b) throws Exception { wingman.net.Aftermath.decode(b); } });
+        InputState ctl2 = new InputState(); ctl2.keys = new int[] { 56, 45 };
+        samples.put("Controls", ctl2.encode()); decs.put("Controls", new Dec() { public void run(byte[] b) throws Exception { new InputState().decode(b); } });
+        wingman.net.FleetInfo flr = new wingman.net.FleetInfo(); flr.key = 2; wingman.net.FleetInfo.Reserve rs = new wingman.net.FleetInfo.Reserve(); rs.id = "m1"; rs.hullId = "wolf"; rs.hullmods.add("hm"); rs.sMods.add("sm"); rs.permaMods.add("sm"); rs.wings.add("w"); flr.reserves.add(rs); flr.reserves.add(rs);
+        samples.put("FleetInfo (reserves)", flr.encode()); decs.put("FleetInfo (reserves)", new Dec() { public void run(byte[] b) throws Exception { wingman.net.FleetInfo.decode(b); } });
+        java.util.Map<String, Integer> lk = new java.util.LinkedHashMap<String, Integer>(); lk.put("shu/hotkey", 56); lk.put("armaa/key", 45);
+        samples.put("LunaKeys", wingman.net.LunaKeys.encode(lk)); decs.put("LunaKeys", new Dec() { public void run(byte[] b) throws Exception { wingman.net.LunaKeys.decode(b); } });
+        java.util.Map<String, Object> lm = new java.util.LinkedHashMap<String, Object>(); java.util.Map<String, Object> lmi = new java.util.LinkedHashMap<String, Object>(); lmi.put("a", true); lmi.put("b", 2.5); lm.put("shu", lmi);
+        wingman.net.Msg.W lw = new wingman.net.Msg.W(); wingman.net.Plain.writeMap(lw.out, lm);
+        samples.put("Luna settings", lw.done()); decs.put("Luna settings", new Dec() { public void run(byte[] b) throws Exception { wingman.net.Plain.readMap(wingman.net.Msg.reader(b)); } });
 
         int perDecoder = 30000;
         for (Map.Entry<String, byte[]> e : samples.entrySet()) {

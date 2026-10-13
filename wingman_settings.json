@@ -129,6 +129,23 @@
     # flags) for the battle, and puts the copies of ships in stand-in fleets. Turn off if a mod misbehaves.
     "campaignStandIn": true,
 
+    # Mod settings follow the host (joiner): mods' LunaLib settings (what an effect does, whether it is on) are
+    # the host's while a battle runs, so the copies of the host's ships behave as they do there. Your own keys
+    # for mods' abilities stay yours. Your settings come back when the battle ends; nothing is saved.
+    "hostModSettings": true,
+
+    # Command map (host): opening the command map (Tab) normally pauses the battle, and a pause on the host
+    # pauses it for everyone. With this on, the battle keeps running while you give orders. Space still pauses.
+    "keepRunningInCommandMap": true,
+
+    # Player list (host): who is in the battle and what they fly, at the top right. Beyond four rows it scrolls
+    # with the mouse wheel over it. F3 hides it along with the player tags.
+    "playerList": true,
+
+    # Ship Mastery System (joiner): the host's masteries, and those of the fleets it fights, apply to the copies
+    # of ships here as they do on the host. Needs the stand-in campaign above. Turn off if it misbehaves.
+    "shipMastery": true,
+
     # Battle messages follow the host: lines mods' scripts write to the combat message feed (an objective's
     # hail, a system's warning) are sent from the host's game, and a joiner shows those instead of its own
     # scripts' lines, so every screen reads the same. The game's own lines (ship destroyed, objective taken)

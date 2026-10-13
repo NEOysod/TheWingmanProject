@@ -17,15 +17,35 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * Drawn on the screen, not in the world, so the tag stays the same size at any zoom.
  */
 final class PlayerTags {
+    /** One colour per player, as many as a game can have (16), told apart from each other and from the HUD's. */
     private static final Color[] COLORS = {
         new Color(110, 255, 120),  // P1: green
         new Color(90, 170, 255),   // P2: blue
         new Color(255, 225, 70),   // P3: yellow
         new Color(240, 240, 240),  // P4: white
+        new Color(255, 150, 50),   // P5: orange
+        new Color(235, 110, 235),  // P6: magenta
+        new Color(80, 235, 230),   // P7: cyan
+        new Color(255, 105, 105),  // P8: red
+        new Color(185, 140, 255),  // P9: violet
+        new Color(190, 240, 90),   // P10: lime
+        new Color(255, 180, 200),  // P11: pink
+        new Color(150, 200, 255),  // P12: sky
+        new Color(220, 190, 120),  // P13: sand
+        new Color(70, 200, 150),   // P14: teal
+        new Color(255, 215, 160),  // P15: peach
+        new Color(170, 170, 255),  // P16: periwinkle
     };
     private static final String FONT = "graphics/fonts/orbitron20aabold.fnt";
 
     private final Map<Integer, LabelAPI> labels = new HashMap<Integer, LabelAPI>();
+    /** The player's name beside the number, in a smaller font: slot + name -> label. */
+    private final Map<String, LabelAPI> names = new HashMap<String, LabelAPI>();
+    /**
+     * The game draws a ship's officer portrait just off its top right corner, the same size at any zoom: the
+     * tag starts this far (screen units) to the right of that corner, clear of the portrait.
+     */
+    private static final float PAST_PORTRAIT = 46f;
     /** F3 in a battle hides and shows the tags and outlines. Lasts until the game is closed. */
     static volatile boolean hidden;
 
@@ -80,7 +100,10 @@ final class PlayerTags {
     }
 
     /** Draw one player's tag by their ship. Never throws; if drawing ever fails, tags switch off quietly. */
-    void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline) {
+    void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline) { draw(vp, ship, slot, outline, null); }
+
+    /** The same, with the player's name after the number. */
+    void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline, String name) {
         if (broken || hidden || vp == null || ship == null || slot < 1) return;
         try {
             if (!Global.getCombatEngine().isEntityInPlay(ship) || ship.isHulk()) return;
@@ -91,7 +114,7 @@ final class PlayerTags {
             float vw = vp.getVisibleWidth(), vh = vp.getVisibleHeight();
             if (vw <= 0f || vh <= 0f) return;
             // World to screen, in the same units the interface is drawn in.
-            float sx = (wx - vp.getLLX()) / vw * sw, sy = (wy - vp.getLLY()) / vh * sh;
+            float sx = (wx - vp.getLLX()) / vw * sw + PAST_PORTRAIT, sy = (wy - vp.getLLY()) / vh * sh;
             if (sx < -40f || sy < -40f || sx > sw + 40f || sy > sh + 40f) return;
             LabelAPI l = labels.get(slot);
             if (l == null) {
@@ -101,6 +124,21 @@ final class PlayerTags {
             }
             l.getPosition().setLocation(sx, sy);
             l.render(1f);
+            if (name != null && !name.isEmpty()) {
+                String key = slot + "|" + name;
+                LabelAPI n = names.get(key);
+                if (n == null) {
+                    if (names.size() > 32) names.clear();
+                    n = Global.getSettings().createLabel(name.length() > 24 ? name.substring(0, 24) : name, Global.getSettings().getString("defaultFont"));
+                    Color c = color(slot);
+                    n.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 210));
+                    names.put(key, n);
+                }
+                // after the number, its bottom on the number's baseline
+                float nh = n.getPosition().getHeight(), lh = l.getPosition().getHeight();
+                n.getPosition().setLocation(sx + l.computeTextWidth("P" + slot) + 6f, sy + Math.max(0f, (lh - nh) * 0.5f) - 1f);
+                n.render(1f);
+            }
         } catch (Throwable t) {
             broken = true;
             Global.getLogger(PlayerTags.class).warn("Wingman: player tags could not be drawn and are switched off", t);

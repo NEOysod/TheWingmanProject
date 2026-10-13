@@ -84,11 +84,14 @@ and in a campaign friends can connect as soon as you load your save, while you a
    between boxes, Ctrl+V pastes. Press **Enter**.
    - It connects at once, so a wrong address, a wrong password or a mod mismatch shows up here.
    - What you typed is remembered for next time.
-3. **The lobby.** If the host is on the campaign map, the **LOBBY** page opens: the host's fleet (ship, class,
-   size, CR, officer), who else is connected, and who picked which ship.
-   - **Up / Down** moves through the fleet. **F** picks the marked ship for the next battle; **Delete** drops
-     your pick. Ships marked *host's flagship*, *mothballed*, *can't be flown* or with another player's name
-     can't be picked.
+3. **The lobby.** Once you are connected, the **CO-OP LOBBY** fills the screen (the game's menu steps aside):
+   - **FLEET**: the host's fleet (when the host is in a campaign), with a card for the marked ship: its picture,
+     class and size, CR, officer, weapons and wings, and hull mods. Beside it: your ship for the next battle, who
+     else is here and what they picked, and how the last battle went.
+   - **Up / Down** (Page Up / Page Down for big fleets) moves through the fleet. **F** picks the marked ship for
+     the next battle; **Delete** drops your pick. Ships marked *flagship*, *mothballed*, *can't fly* or with
+     another player's name can't be picked.
+   - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
    - **Esc** goes back to the CO-OP panel; **F4** there opens the lobby again.
 4. **Stay on the title screen.** When the host's battle begins, the panel counts down three seconds and
    takes you into it. Press **Enter** to go at once, or **Esc** to sit that battle out.
@@ -105,8 +108,16 @@ and in a campaign friends can connect as soon as you load your save, while you a
 7. **Step 2 of 2: ready check.** It shows your ship and every player's. Press **Enter** for ready
    (**Backspace** goes back to step 1 to change ship). The battle starts when the host presses Enter.
 
-**When the battle ends** you are returned to the title screen, still connected. Stay there and you are
-taken into the host's next battle the same way, for as long as the session lasts.
+**When the battle ends** you go straight back to the lobby (the game's own mission results, which only know your
+copy of the battle, are skipped), still connected, and it opens on **LAST BATTLE**: the host's report of the battle.
+- Victory or defeat and the battle time, as the host's game counted it.
+- Every player: their ship, whether they made it out, kills (ships and fighters), damage dealt (and to shields),
+  damage taken.
+- Both sides' losses, with the biggest ships lost.
+- **Aftermath**, once the host has closed the battle's dialog on the campaign map: credits gained or spent, ships
+  added (recovered) or gone, and the biggest cargo changes (salvage, supplies used).
+
+Stay there and you are taken into the host's next battle the same way, for as long as the session lasts.
 
 If you leave a battle that is still going, you are not pulled back into it; open CO-OP and press Enter if
 you change your mind. The panel also lists who else is in the host's game.
@@ -176,11 +187,13 @@ start **Wingman: Join Game** instead. It does the same thing.
 | CO-OP panel | F5 | Switch crashed-out mod systems back on (only shown when there are any) |
 | CO-OP panel | Esc | Close |
 | Battle (anyone) | **Ctrl+Shift+O** | **Settings** |
+| Campaign map | **Ctrl+Shift+O** | **Settings** (the campaign waits while the page is open) |
 | Battle (anyone) | F3 | Hide / show the player tags and outlines |
 | Battle (host) | Enter / Ctrl+Enter | Start after the ready check / start without waiting |
 | Battle (host) | Ctrl+Shift+2…9 | Remove that player (by their P number) |
 | Battle (host) | Ctrl+Shift+T | Take back the targeted ship |
 | Lobby (joiner, title screen) | Up / Down, F, Delete | Choose a ship in the host's fleet; pick it; drop your pick |
+| Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |
@@ -192,7 +205,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 
 ## 6. Settings
 
-Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle.
+Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle or on the campaign map.
 
 - **Up / Down** picks a setting. **Left / Right** changes it. **Tab** turns the page.
 - **Delete** puts a setting back to its default.
@@ -247,6 +260,8 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Ship stats follow the host | on | Speed, turn rate, flux, ranges, rate of fire. |
 | Script memory follows the host | on | Simple values that mods' scripts keep on a ship are copied from the host. |
 | Damage reports | on | Damage from scripts is shown on joiners even if their own game did not produce it. |
+| Mod settings follow the host | on | (Joiner) Mods' LunaLib settings are the host's while a battle runs, so copies of the host's ships behave as there. Your own keys stay yours, and your settings come back after the battle. |
+| Ship Mastery follows the host | on | (Joiner) With Ship Mastery System: the host's masteries, and the enemy's, apply to the copies of ships here. |
 
 ### Troubleshooting
 | Setting | Default | What it does |
@@ -359,7 +374,8 @@ only for "the player's ship" (a "take control of a fighter" override, an ability
 effect, a status line) never does it for a joiner there. **Wingman's agent** fixes that for every mod at once: while the
 host's game runs a joiner's ship (its hullmods, ship system, weapons' scripts, MagicLib abilities), those scripts
 see that ship as the player's ship, the mouse as the joiner's cursor, and a hand-over of "the player" to another
-ship moves the joiner, not the host. Things meant only for the player's own screen and speed (the status lines in
+ship moves the joiner, not the host. Abilities on a key (Special Hullmod Upgrades' subsystems, armaa's repair kit)
+hear the joiner's key, not the host's: each player uses their own key for them, as set in their own LunaLib menu. Things meant only for the player's own screen and speed (the status lines in
 the corner, slowing the whole battle down) do nothing for a joiner on the host; the joiner's own game shows them.
 
 It works the same way on joiners' PCs: there, the host's ship and the other joiners' ships are treated as their
@@ -407,7 +423,7 @@ only.
 
 | Risk | Kind of mod | What can happen | Covered? |
 | --- | --- | --- | --- |
-| **Was a crash, now covered** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign loaded. It now gets a stand-in copied from the host's (cargo, credits, level, skills, story points, simple flags), so these scripts find something. | Mostly. Not copied: the player character itself (if the game has none on the title screen), faction standings, markets, and flags holding anything other than yes/no, numbers or short text. Ship systems and objectives that still crash are switched off on that PC after one crash. |
+| **Was a crash, now covered** | Combat scripts that read the campaign: the player fleet, its cargo or credits, the player's skills or story points, campaign flags. Common in battle objectives, "rewards on kill" and special encounters. | A joiner has no campaign loaded. It now gets a stand-in copied from the host's: cargo, credits, level, skills, story points, mods' saved data, the campaign's flags (the sector's, the player's and their fleet's and faction's, the enemy fleet's, its commander's and faction's, the place's), faction standings, the enemy's faction, name and commander, and the place's name and tags. | Mostly. Copied only when it is plain data (yes/no, numbers, text, and lists or tables of those): a mod's own objects can't be. Not copied: the player character itself (if the game has none on the title screen), markets, the date. Ship systems and objectives that still crash are switched off on that PC after one crash. With Wingman's agent, a joiner's log lists what mods' scripts asked for and didn't find ("Wingman campaign lookups"), which is worth including in a report. |
 | **Was a crash, now covered** | Hullmods or skills that read a ship's fleet or fleet commander during battle (`member.getFleetData()`). | A joiner's copies now belong to stand-in fleets, one per side; the players' side is led by a copy of the host's character. | Yes. Fleet-size bonuses a script works out from that fleet may differ a little from the host's; the key stats are kept equal anyway. |
 | **Crash (joiner)** | Combat scripts that assume the player's ship is a real, armed ship. | A joiner without a ship sits in an invisible stand-in with no weapons; a script that reads its weapons or officer may fail. | Partly: the stand-in is a normal small ship, so most scripts are fine. |
 | **Covered** | Carrier scripts that look at the carrier's own fighters (`getAllWings()`), and carrier panels. | Used to find no fighters on a joiner's copy (greyed carrier panel, effects missing). | Yes: the host's fighters sit in the copy's hangars. |

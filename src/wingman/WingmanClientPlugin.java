@@ -231,6 +231,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     public void init(CombatEngineAPI engine) {
         this.engine = engine;
         engine.getCustomData().put(WingmanHostPlugin.CLIENT_FLAG, Boolean.TRUE);
+        CampaignStandIn.giveContext(engine); // "the fleets in this battle", for scripts that ask the context
+        saveRememberedShip(); // (left last time before the battle ended)
     }
 
     @Override
@@ -240,7 +242,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (!ready) {
                 if (!prepare()) return;
             }
+            long frameStart = System.nanoTime();
+            long frameGap = lastFrameNanos == 0 ? 0 : frameStart - lastFrameNanos;
+            lastFrameNanos = frameStart;
             step(amount);
+            noteHitch(frameStart, frameGap, System.nanoTime() - frameStart);
         } catch (Throwable t) {
             Global.getLogger(WingmanClientPlugin.class).error("Wingman client error, co-op stopped", t);
             AgentGate.stop();
@@ -257,6 +263,22 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 disabled = true;
             }
         }
+    }
+
+    // Slow frames, for the log: always noted for a few seconds after a change of ship, otherwise only when the
+    // co-op code itself took long. A handful per battle at most.
+    private long lastFrameNanos, shipChangeNanos;
+    private int hitchLines;
+    private static final int MAX_HITCH_LINES = 8;
+
+    private void noteHitch(long frameStart, long gap, long ours) {
+        if (hitchLines >= MAX_HITCH_LINES || engine.isPaused()) return;
+        boolean afterChange = shipChangeNanos != 0 && frameStart - shipChangeNanos < 3000000000L;
+        if (!(afterChange && (gap > 150000000L || ours > 40000000L)) && ours < 200000000L) return;
+        hitchLines++;
+        Global.getLogger(WingmanClientPlugin.class).info("Wingman slow frame: " + gap / 1000000L + " ms since the last one, of which the co-op code took "
+                + ours / 1000000L + " ms" + (afterChange ? " (" + (frameStart - shipChangeNanos) / 1000000L + " ms after changing ship)" : "")
+                + (hitchLines == MAX_HITCH_LINES ? "; no more of these this battle" : ""));
     }
 
     private MessageSpy spy;
@@ -475,6 +497,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (!autopilot) { matchSystemReadiness(own, amount); confirmSystemUse(own); }
         // On autopilot our ship is flown by the host's AI, so show it exactly like any other host-flown ship.
         Puppet handsOn = autopilot ? null : own;
+        if (handsOn == null && !autopilot && claimedId >= 0) {
+            Puppet asked = puppets.get(claimedId);
+            if (asked != null && asked.ship == engine.getPlayerShip()) handsOn = asked;
+        }
         for (Puppet pp : puppets.values()) apply(pp, pp == handsOn, amount);
         prof.mark(2);
         for (MissilePuppet mp : missiles.values()) applyMissile(mp, amount);
@@ -643,7 +669,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         leaveAtMillis = 0;
         watch.objectivesSurvived();
         watch.battleEnded();
+        MissedLookups.log(CampaignStandIn.copyInUse());
         CampaignStandIn.remove();
+        LunaCopy.restore();
         compat.save();
         WingmanTitlePlugin.rejoinRequested = rejoin;
         // Back on the title screen: if the host's battle is over, wait for the next; if we walked out of one
@@ -653,12 +681,39 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (rejoin) WingmanTitlePlugin.lastAutoRejoin = System.currentTimeMillis();
         JoinSetup.forget(); // the next join asks the host about its battlefield afresh
         try {
-            engine.setDoNotEndCombat(false);
             if (engine.isPaused()) engine.setPaused(false);
-            engine.endCombat(0.1f);
+            // Straight back to the title screen (the lobby), without the join mission's own results screen: it
+            // only knows this PC's copy of the battle, and the host's report is shown in the lobby instead.
+            // (The battle is kept from ending by itself meanwhile, so the results screen can't open during the fade.)
+            if (!straightOut()) {
+                engine.setDoNotEndCombat(false);
+                engine.endCombat(0.1f);
+            }
         } catch (Throwable t) {
             Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not end the battle here; leave it from the game's own menu", t);
             Ui.say(engine, "Co-op: could not leave automatically. Use the game's menu (Esc) to leave the battle.");
+        }
+    }
+
+    /**
+     * Leave the battle the way the results screen's "Continue" would, without showing that screen: the battle's
+     * end-of-combat work, then back to the title screen. Uses the game's internals (0.98a-RC8); false if they
+     * aren't as expected, and the battle is then ended the usual way (with the results screen).
+     */
+    private boolean straightOut() {
+        try {
+            Object ui = engine.getCombatUI();
+            if (!(ui instanceof com.fs.starfarer.combat.CombatState) || !(engine instanceof com.fs.starfarer.combat.CombatEngine)) return false;
+            com.fs.starfarer.combat.CombatEngine ce = (com.fs.starfarer.combat.CombatEngine) engine;
+            String back = ce.getStateToReturnTo();
+            if (!com.fs.starfarer.title.TitleScreenState.STATE_ID.equals(back)) return false; // only a battle started from the title screen
+            ce.doEndOfCombatProcessing();
+            ((com.fs.starfarer.combat.CombatState) ui).goToState(back);
+            Global.getLogger(WingmanClientPlugin.class).info("Wingman: leaving the battle straight to the lobby (no results screen)");
+            return true;
+        } catch (Throwable t) {
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not skip the results screen; leaving the usual way", t);
+            return false;
         }
     }
 
@@ -720,7 +775,16 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // A fighter only when a mod's script handed us one from the ship we flew (UAF's Isenoria does).
         boolean ok = now != null && (!now.fighter || WingmanHostPlugin.linked(ps, was));
         claim(conn, ok ? now.netId : -1);
+        claimedId = ok && !now.fighter ? now.netId : -1;
+        shipChangeNanos = System.nanoTime();
     }
+
+    /**
+     * The ship we just sat down in and asked the host for, until its answer comes. Meanwhile it is flown here as
+     * our own (see step): otherwise, for one round trip, this game's controls pushed it one way while the host's
+     * positions pulled it the other, and the change of ship felt like a stutter.
+     */
+    private int claimedId = -1;
 
     /**
      * MagicLib subsystems of the ship we fly that the player just switched on with their key: tell the host,
@@ -994,6 +1058,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 in.readInt();
                 String host = in.readUTF();
                 welcomed = true;
+                WingmanTitlePlugin.sendLunaKeys(link.getConn());
                 Ui.say(engine, "Co-op: joined " + host + "'s game (up to " + max + " players).");
                 break;
             }
@@ -1002,6 +1067,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 rejected = true;
                 alert("CONNECTION REFUSED", Msg.readUtf(p.data));
                 alertLines.add("Fix the difference, then restart the game and this mission.");
+                break;
+            case Msg.FLEET:
+                CampaignStandIn.onFleet(wingman.net.FleetInfo.decode(p.data));
+                break;
+            case Msg.REPORT:
+                AfterAction.onReport(p.data);
+                break;
+            case Msg.AFTERMATH:
+                AfterAction.onAftermath(p.data);
+                break;
+            case Msg.LUNA: // kept for a rejoin; this battle's were put in place as the mission was set up
+                LunaCopy.remember(p.data);
+                break;
+            case Msg.CAMPAIGN: // kept for a rejoin; this battle's stand-in was set up from the one heard on the title screen
+                JoinSetup.rememberCampaign(p.data);
                 break;
             case Msg.BATTLE_INFO:
                 // Remembered, so that hopping out and back in (below) builds the right map at once.
@@ -1316,6 +1396,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     }
                 }
                 ownId = id;
+                if (seq == claimSeq) claimedId = -1; // answered: the ship is ours now, or not
                 if (id >= 0) { pickId = id; rememberShip(puppets.get(id)); }
                 // Back after a dropped connection, and the battle has been loaded again: sit down in the ship we
                 // were flying, if it is still there. The game then sees us change ship, and the host is asked
@@ -1425,6 +1506,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 hostPaused = false;
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman: the host says its battle is over");
                 hostEnded = true;
+                saveRememberedShip();
                 JoinSetup.battleOver();
                 if (leaveAtMillis == 0) {
                     alertWith("BATTLE OVER", "The host's battle has ended. Leaving in a moment.\n"
@@ -1610,8 +1692,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             String line = pp.info.hullId + "\n" + (pp.info.name == null ? "" : pp.info.name.replace('\n', ' ')) + "\n";
             if (line.equals(rememberedShip)) return;
             rememberedShip = line;
-            Global.getSettings().writeTextFileToCommon(SHIP_FILE, line);
+            // Written to disk when the battle ends, not now: a file write in the middle of a battle can hold up a
+            // frame (an antivirus scanning it, a slow disk), and this happens on every change of ship.
+            rememberUnsaved = true;
         } catch (Throwable t) { /* asked again next battle, that is all */ }
+    }
+
+    private static boolean rememberUnsaved;
+
+    /** The ship we flew last, to disk (see rememberShip). At the end of a battle, and at the start of the next. */
+    private static void saveRememberedShip() {
+        if (!rememberUnsaved || rememberedShip == null) return;
+        rememberUnsaved = false;
+        try { Global.getSettings().writeTextFileToCommon(SHIP_FILE, rememberedShip); } catch (Throwable t) { /* asked again next battle */ }
     }
 
     /**
@@ -2184,11 +2277,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (disabled || !ready) return;
         if (!joinScreen && cfg != null && cfg.playerTags) { // who is flying what: the host is P1, the rest as the host numbers them
             Puppet hostShip = puppets.get(hostFlagship);
-            if (hostShip != null) tags.draw(viewport, hostShip.ship, 1, cfg.playerOutlines);
+            if (hostShip != null) tags.draw(viewport, hostShip.ship, 1, cfg.playerOutlines, lobby == null ? null : lobby.hostName);
             if (lobby != null) {
                 for (Lobby.Entry e : lobby.players) {
                     Puppet pp = e.shipNetId >= 0 ? puppets.get(e.shipNetId) : null;
-                    if (pp != null) tags.draw(viewport, pp.ship, e.slot, cfg.playerOutlines);
+                    if (pp != null) tags.draw(viewport, pp.ship, e.slot, cfg.playerOutlines, e.name);
                 }
             }
         }
@@ -2489,6 +2582,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         ShipVariantAPI v = Global.getSettings().createEmptyVariant("wingman_" + sp.netId, spec);
         v.setNumFluxVents(sp.vents);
         v.setNumFluxCapacitors(sp.caps);
+        // The variant's tags, which hullmods and skills test (UAF's mimics: "uaf_mimic_ship").
+        for (String tag : sp.variantTags) { try { v.addTag(tag); } catch (Throwable t) { /* that one is left out */ } }
         // Hullmods, each added the way the host has it: built in with a story point (which gives its bonus),
         // permanent, or ordinary. Their effects then come from the hullmods' own scripts, the same as on the host.
         for (String mod : sp.hullMods) {
@@ -2505,7 +2600,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) { /* extras only */ }
         for (int i = 0; i < sp.weaponSlots.size() && i < sp.weaponIds.size(); i++) {
             try {
-                if (Global.getSettings().getWeaponSpec(sp.weaponIds.get(i)) != null) {
+                if (Global.getSettings().getWeaponSpec(sp.weaponIds.get(i)) != null && hasSlot(v, sp.weaponSlots.get(i), sp.hullId, sp.weaponIds.get(i))) {
                     v.addWeapon(sp.weaponSlots.get(i), sp.weaponIds.get(i));
                 }
             } catch (Throwable t) { /* weapon from a mod we don't have */ }
@@ -2519,7 +2614,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (slot.isEmpty() || id.isEmpty()) continue;
             try {
                 if (id.equals(v.getWeaponId(slot))) continue;
-                if (Global.getSettings().getWeaponSpec(id) == null) continue;
+                if (Global.getSettings().getWeaponSpec(id) == null || !hasSlot(v, slot, sp.hullId, id)) continue;
                 v.clearSlot(slot);
                 v.addWeapon(slot, id);
             } catch (Throwable t) { /* reported by the loadout check after the ship is built */ }
@@ -2580,8 +2675,29 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not recreate the officer for " + sp.hullId, t);
             }
         } // a new fleet member defaults to the player's side whichever fleet spawns it
-        underCommander(member, sp);
-        CampaignStandIn.enlist(member, sp.owner); // a fleet of its own side, for scripts that ask
+        if (!sp.memberId.isEmpty()) { try { member.setId(sp.memberId); } catch (Throwable t) { /* its own id */ } }
+        // The ship's own fleet as the host has it (faction, flags, commander), if the host described it;
+        // otherwise a commander with its fleet's skills and its side's stand-in fleet, as before.
+        com.fs.starfarer.api.campaign.CampaignFleetAPI home = cfg != null && !cfg.campaignStandIn ? null : CampaignStandIn.fleetByKey(sp.fleetKey);
+        boolean housed = false;
+        if (home != null) {
+            try {
+                CampaignStandIn.dropMember(home, sp.memberId);
+                home.getFleetData().addFleetMember(member);
+                member.setOwner(sp.owner);
+                PersonAPI boss = home.getCommander();
+                if (boss != null && !boss.isDefault()) member.setFleetCommanderForStats(boss, home.getFleetData());
+                else underCommander(member, sp);
+                housed = true;
+            } catch (Throwable t) {
+                Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not put " + sp.hullId + " in its fleet's stand-in", t);
+            }
+        }
+        if (!housed) {
+            underCommander(member, sp);
+            CampaignStandIn.enlist(member, sp.owner); // a fleet of its own side, for scripts that ask
+        }
+        ShipMasteryBridge.track(member); // (in its fleet now: the commander whose masteries apply is known)
         CombatFleetManagerAPI fm = engine.getFleetManager(sp.owner);
         fm.setSuppressDeploymentMessages(true);
         ShipAPI ship = fm.spawnFleetMember(member, new Vector2f(sp.x, sp.y), sp.facing, 0f);
@@ -2610,6 +2726,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 captain.getStats().setSkillLevel(sp.skillIds.get(i), sp.skillLevels.get(i));
             } catch (Throwable t) { /* skill from a mod we don't have */ }
         }
+        // Who they are, for scripts that ask: id ("is this captain Sirius?"), faction, rank, personality, tags, memory.
+        if (sp.captain != null) CampaignStandIn.fillPerson(captain, sp.captain, false);
         return captain;
     }
 
@@ -2756,7 +2874,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 for (ShipAPI m : group.getWingMembers()) {
                     if (m != null && byShip.containsKey(m) && m.isAlive() && !m.isHulk()) { alive = true; break; }
                 }
-                if (!alive) group = null;
+                if (!alive) {
+                    // The wing it replaces goes from the fleet's deployed list: left there, still naming the carrier
+                    // as its own, it showed in the carrier's fighter panel beside the new one, a group twice over.
+                    if (group != own) {
+                        try { fm.removeDeployed(group, false); } catch (Throwable t) { /* it stays listed */ }
+                    }
+                    group = null;
+                }
             }
             if (group == null || group == own) {
                 hostWings.put(sp.wingNet, own);
@@ -3830,6 +3955,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * description and, if it was ours, we are put back at its helm. Checked twice a second.
      */
     private void rescueLostShips() {
+        if (hostEnded) return; // the battle is over and being left: ships the game clears away now stay gone
         long now = System.currentTimeMillis();
         if (now - lastRescueMillis < 500) return;
         lastRescueMillis = now;
@@ -4784,11 +4910,81 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     }
     private float sysCoolOffFor;
 
+    private static final int[] NO_KEYS = new int[0];
+    private int keysLogged;
+
+    /**
+     * Keys held right now that mods' scripts here have asked about (a hullmod's ability on a hotkey, say; see
+     * the agent's Hooks.isKeyDown), at most InputState.MAX_KEYS. Sent with our controls: on the host the same
+     * scripts run for our ship and hear these. None while we have no ship, or with the game window in the
+     * background. Mods' LunaLib keys count as asked about even before their script has asked (or without the
+     * agent here).
+     */
+    private int[] heldModKeys(Puppet own) {
+        if (own == null || autopilot) return NO_KEYS;
+        try {
+            if (!org.lwjgl.opengl.Display.isActive()) return NO_KEYS;
+            long[] polled = AgentGate.polledKeys();
+            if (polled == null) polled = new long[4];
+            long[] bound = lunaKeyBits();
+            for (int i = 0; i < 4; i++) polled[i] |= bound[i];
+            int[] held = null;
+            int n = 0;
+            for (int k = 1; k < 256 && n < InputState.MAX_KEYS; k++) {
+                if ((polled[k >> 6] & (1L << (k & 63))) == 0 || !org.lwjgl.input.Keyboard.isKeyDown(k)) continue;
+                if (held == null) held = new int[InputState.MAX_KEYS];
+                held[n++] = k;
+            }
+            if (n == 0) return NO_KEYS;
+            if (keysLogged < 10 && held[0] != lastKeyLogged) {
+                keysLogged++;
+                lastKeyLogged = held[0];
+                Dbg.info(WingmanClientPlugin.class, "Wingman keys: holding " + org.lwjgl.input.Keyboard.getKeyName(held[0])
+                        + (n > 1 ? " and " + (n - 1) + " more" : "") + ", which a mod's script for our ship asks about; the host is told");
+            }
+            return java.util.Arrays.copyOf(held, n);
+        } catch (Throwable t) {
+            return NO_KEYS;
+        }
+    }
+    private int lastKeyLogged;
+    private long[] lunaBits;
+    private long lunaBitsAt;
+
+    /** This PC's keys for mods' LunaLib settings, as key bits (see LunaCopy.readKeys); read every half minute. */
+    private long[] lunaKeyBits() {
+        long now = System.currentTimeMillis();
+        if (lunaBits == null || now - lunaBitsAt > 30000) {
+            lunaBitsAt = now;
+            long[] b = new long[4];
+            try { for (Integer k : LunaCopy.readKeys().values()) if (k > 0 && k < 256) b[k >> 6] |= 1L << (k & 63); } catch (Throwable t) { /* none */ }
+            lunaBits = b;
+        }
+        return lunaBits;
+    }
+
+    private final java.util.Set<String> slotsMissing = new java.util.HashSet<String>();
+
+    /**
+     * Does the hull have this weapon slot? The host's ship can carry a weapon in a slot its hull doesn't list (a
+     * script put it there once the ship was made; UAF's ships have a "SYS_FAKE" one), and a variant naming such
+     * a slot makes the game refuse to build the ship at all. Such a weapon is left out of our copy (noted once).
+     */
+    private boolean hasSlot(ShipVariantAPI v, String slot, String hullId, String weapon) {
+        try {
+            if (v.getSlot(slot) != null) return true;
+        } catch (Throwable t) { return true; } // can't tell: as before
+        if (slotsMissing.add(hullId + "/" + slot)) Global.getLogger(WingmanClientPlugin.class).info("Wingman: " + hullId + " has no slot " + slot
+                + " here (the host's ship has " + weapon + " in it, put there by a script); built without it, the host's ship fires it");
+        return false;
+    }
+
     private void captureInput(Puppet own) {
         input.flags = 0;
         input.group = -1;
         input.target = -1;
         input.autofire = 0;
+        input.keys = heldModKeys(own);
         if (own == null) return;
         if (autopilot) { input.flags = InputState.AUTOPILOT; return; } // hands off: the host's AI has the ship
         ShipAPI s = own.ship;

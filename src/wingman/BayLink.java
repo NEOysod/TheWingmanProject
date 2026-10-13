@@ -55,7 +55,16 @@ final class BayLink {
                 MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                         MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
                 MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(bayClass, MethodHandles.lookup());
-                setter = l.findSetter(bayClass, FIELD, dfmClass);
+                try {
+                    setter = l.findSetter(bayClass, FIELD, dfmClass);
+                } catch (NoSuchFieldException e) {
+                    // Another copy of the game (a localised or patched jar) may have scrambled the name differently:
+                    // find the one field of that type in the class file itself.
+                    String name = ClassFields.nameOfFieldWithType(bayClass, "Lcom/fs/starfarer/combat/CombatFleetManager$O0;");
+                    if (name == null) throw e;
+                    setter = l.findSetter(bayClass, name, dfmClass);
+                    Global.getLogger(BayLink.class).info("Wingman fighters: the hangar field has another name in this game (found by its type)");
+                }
             }
             wing.setSourceShip(carrier);
             wing.setSourceBay(bay);

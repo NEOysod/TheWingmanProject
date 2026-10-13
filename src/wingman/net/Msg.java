@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 52;
+    public static final int PROTOCOL_VERSION = 59;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -84,6 +84,12 @@ public final class Msg {
     public static final byte ROSTER = 55;
     /** joiner -> host: the fleet member (by id) this player wants to fly in the next battle; "" for none. */
     public static final byte PICK = 56;
+    public static final byte CAMPAIGN = 57;     // host -> joiner: the larger campaign copy for the stand-in (CampaignCopy), before BATTLE_INFO
+    public static final byte REPORT = 58;       // host -> joiners: the after-action report, just before BATTLE_END (BattleReport)
+    public static final byte AFTERMATH = 59;    // host -> joiners: what the battle changed in the host's fleet, once back on the map (Aftermath)
+    public static final byte LUNA = 61;         // host -> joiner: the host's LunaLib settings for the battle, keys left out (see LunaCopy)
+    public static final byte LUNA_KEYS = 62;    // joiner -> host: the joiner's own keys for LunaLib settings ("mod/field" -> key code)
+    public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */

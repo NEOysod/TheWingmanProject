@@ -30,6 +30,19 @@ public final class InputState {
     public int sysUses;
     /** For a drone system: 1 + the drone order the player has set (recall, deploy, attack). 0 = not a drone system. */
     public int sysOrders;
+    /**
+     * Other keys the player is holding that mods' scripts for their ship ask about (a hullmod's ability on a
+     * hotkey, say), as key codes; at most MAX_KEYS. See Hooks.isKeyDown in the agent.
+     */
+    public int[] keys = NO_KEYS;
+    public static final int MAX_KEYS = 8;
+    private static final int[] NO_KEYS = new int[0];
+
+    public boolean keyHeld(int key) {
+        for (int k : keys) if (k == key) return true;
+        return false;
+    }
+
     /** A running number the player's game gives each set of controls it sends (the low 16 bits travel). */
     public int seq;
     /** Host-side: the number of the controls the ship last acted on, and for how long (battle seconds) it has. */
@@ -52,6 +65,9 @@ public final class InputState {
             w.out.writeFloat(facing);
             w.out.writeByte(sysUses);
             w.out.writeByte(sysOrders);
+            int n = Math.min(keys.length, MAX_KEYS);
+            w.out.writeByte(n);
+            for (int i = 0; i < n; i++) w.out.writeByte(keys[i]);
             w.out.writeShort(seq); // last, so that everything before it can be compared as "the same controls"
         } catch (IOException e) { throw new IllegalStateException(e); }
         return w.done();
@@ -86,6 +102,10 @@ public final class InputState {
         int newAutofire = in.readShort() & 0xFFFF;
         float newFacing = in.readFloat();
         int newUses = in.readByte() & 0xFF, newOrders = in.readByte() & 0xFF;
+        int nKeys = in.readByte() & 0xFF;
+        if (nKeys > MAX_KEYS) return; // impossible: ignored whole, like the other guard rails below
+        int[] newKeys = nKeys == 0 ? NO_KEYS : new int[nKeys];
+        for (int i = 0; i < nKeys; i++) newKeys[i] = in.readByte() & 0xFF;
         int newSeq = in.readShort() & 0xFFFF;
         // Guard rail: controls with impossible numbers in them are ignored whole; the last good ones stand
         // until they go stale, at which point the ship coasts to a stop.
@@ -105,6 +125,7 @@ public final class InputState {
         facing = newFacing;
         sysUses = newUses;
         sysOrders = newOrders > 3 ? 0 : newOrders;
+        keys = newKeys;
         seq = newSeq;
         receivedAt = System.currentTimeMillis();
     }

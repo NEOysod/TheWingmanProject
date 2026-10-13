@@ -76,6 +76,14 @@ public final class WingmanConfig {
     public boolean syncScriptMemory = true;
     /** Joiner: give mods' battle scripts a stand-in campaign and stand-in fleets copied from the host's (see CampaignStandIn). */
     public boolean campaignStandIn = true;
+    /** Host: a list of the players, top right, in battle. */
+    public boolean playerList = true;
+    /** Host: opening the command map (Tab) doesn't pause the battle while friends are in it. */
+    public boolean keepRunningInCommandMap = true;
+    /** Joiner: mods' LunaLib settings follow the host's for the battle (keys excepted; see LunaCopy). */
+    public boolean hostModSettings = true;
+    /** Joiner: the host's Ship Mastery System masteries apply to the copies of ships (see ShipMasteryBridge). */
+    public boolean shipMastery = true;
     /** Scripts' lines in the combat message feed come from the host's game (see MessageTap). */
     public boolean hostMessages = true;
     /** Joiner: the host's fighters go in the hangars of the copy of their carrier (see BayLink). */
@@ -118,11 +126,16 @@ public final class WingmanConfig {
         return c;
     }
 
+    private static JSONObject fileJson;
+
     /** The settings as wingman_settings.json alone gives them. */
     static WingmanConfig fromFile() {
         WingmanConfig c = new WingmanConfig();
         try {
-            JSONObject j = Global.getSettings().loadJSON("wingman_settings.json", MOD_ID);
+            // Read once per game: the game logs every read of a JSON file, and the settings are looked at every few
+            // seconds (changes made in game are kept apart, see Settings, and read every time).
+            JSONObject j = fileJson;
+            if (j == null) fileJson = j = Global.getSettings().loadJSON("wingman_settings.json", MOD_ID);
             c.playerName = j.optString("playerName", c.playerName);
             c.hostEnabled = j.optBoolean("hostEnabled", c.hostEnabled);
             c.hostAddress = j.optString("hostAddress", c.hostAddress);
@@ -157,6 +170,10 @@ public final class WingmanConfig {
             c.syncStats = j.optBoolean("syncStats", c.syncStats);
             c.syncScriptMemory = j.optBoolean("syncScriptMemory", c.syncScriptMemory);
             c.campaignStandIn = j.optBoolean("campaignStandIn", c.campaignStandIn);
+            c.playerList = j.optBoolean("playerList", c.playerList);
+            c.keepRunningInCommandMap = j.optBoolean("keepRunningInCommandMap", c.keepRunningInCommandMap);
+            c.hostModSettings = j.optBoolean("hostModSettings", c.hostModSettings);
+            c.shipMastery = j.optBoolean("shipMastery", c.shipMastery);
             c.hostMessages = j.optBoolean("hostMessages", c.hostMessages);
             c.fighterHangars = j.optBoolean("fighterHangars", c.fighterHangars);
             c.joinerSubsystems = j.optBoolean("joinerSubsystems", c.joinerSubsystems);
@@ -207,6 +224,10 @@ public final class WingmanConfig {
         if ("syncStats".equals(key)) return String.valueOf(syncStats);
         if ("syncScriptMemory".equals(key)) return String.valueOf(syncScriptMemory);
         if ("campaignStandIn".equals(key)) return String.valueOf(campaignStandIn);
+        if ("playerList".equals(key)) return String.valueOf(playerList);
+        if ("keepRunningInCommandMap".equals(key)) return String.valueOf(keepRunningInCommandMap);
+        if ("hostModSettings".equals(key)) return String.valueOf(hostModSettings);
+        if ("shipMastery".equals(key)) return String.valueOf(shipMastery);
         if ("hostMessages".equals(key)) return String.valueOf(hostMessages);
         if ("fighterHangars".equals(key)) return String.valueOf(fighterHangars);
         if ("joinerSubsystems".equals(key)) return String.valueOf(joinerSubsystems);
@@ -257,6 +278,10 @@ public final class WingmanConfig {
             else if ("syncStats".equals(key)) syncStats = yes(value);
             else if ("syncScriptMemory".equals(key)) syncScriptMemory = yes(value);
             else if ("campaignStandIn".equals(key)) campaignStandIn = yes(value);
+            else if ("playerList".equals(key)) playerList = yes(value);
+            else if ("keepRunningInCommandMap".equals(key)) keepRunningInCommandMap = yes(value);
+            else if ("hostModSettings".equals(key)) hostModSettings = yes(value);
+            else if ("shipMastery".equals(key)) shipMastery = yes(value);
             else if ("hostMessages".equals(key)) hostMessages = yes(value);
             else if ("fighterHangars".equals(key)) fighterHangars = yes(value);
             else if ("joinerSubsystems".equals(key)) joinerSubsystems = yes(value);

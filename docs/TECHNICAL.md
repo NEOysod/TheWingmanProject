@@ -24,7 +24,8 @@ Three constraints shape almost every detail:
 1. **The sandbox.** Starsector's script loader (`com.fs.starfarer.loading.scripts.B`, 0.98a-RC8) refuses
    most of `java.io` (only `IOException`, `InputStream`, `OutputStream` are used), `java.lang.reflect`, the
    `java.nio.file` file classes, `javax.script` and `java.util.prefs`. `java.lang.invoke` is not refused;
-   Wingman uses `MethodHandles` for exactly one private field (`MessageTap`). Hence the hand-written byte
+   Wingman uses `MethodHandles` for three private members of the game's (`MessageTap`'s message feed, `Backdrop`'s
+   planet light colour, `TitleMenu`'s title menu), each fail-soft. Hence the hand-written byte
    packing (`Out`/`In`), files only through `Global.getSettings()` and `saves/common`, no lambdas, and risky classes kept alone (`Zip` for `java.util.zip`, `Udp` for `DatagramSocket`,
    `Transport` to probe sockets) so that a refusal switches off one feature rather than the mod.
 2. **The game thread never waits.** Network I/O runs on background threads with queues in between; expensive
@@ -40,6 +41,7 @@ Three constraints shape almost every detail:
 | --- | --- |
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
 | Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `Backdrop` (planets, both sides), `HostOrders`, `ShipStats` |
+| Lobby and reports | `LobbyScreen`, `TitleMenu`, `AfterAction` (joiner); `BattleStats`, `HostCampaign` (host); `MissedLookups`; messages `CampaignCopy`, `Plain`, `BattleReport`, `Aftermath` |
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
@@ -171,14 +173,14 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 52 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 59 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
 | Id | Name | Direction | Carries |
 | --- | --- | --- | --- |
 | 1 | HELLO | joiner → host | protocol, name, mod list, game build, password |
-| 2 | INPUT | joiner → host | controls (`InputState`) |
+| 2 | INPUT | joiner → host | controls (`InputState`), with up to 8 held keys that mods' scripts for the joiner's ship ask about (8.9) |
 | 3 | SYNC_REQ | joiner → host | send me everything |
 | 4 | CLAIM | joiner → host | claim number, ship id |
 | 5 | BYE | joiner → host | leaving |
@@ -223,8 +225,14 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 52 | MOD | both | another mod's message: channel (≤ 64), length, bytes (≤ 60 KB); see `ModChannel`, `docs/MOD_API.md` |
 | 53 | INPUT_MODE | host → joiner | byte 1: send controls as bundles (steady controls, 4.7), 0: plain |
 | 54 | INPUTS | joiner → host | a bundle: count (1-3), then per set: joiner clock (ms), length, controls; newest first |
-| 55 | ROSTER | host → joiner | the pre-battle lobby (`Roster`): host name, state (0 campaign map, 1 battle), size limit, players (name, slot), fleet members (≤ 120: id, ship name, hull name, size, designation, CR, officer and level, flags flagship / mothballed / can't fly with a note, picked by) |
+| 55 | ROSTER | host → joiner | the pre-battle lobby (`Roster`): host name, state (0 campaign map, 1 battle), size limit, players (name, slot), fleet members (≤ 120: id, ship name, hull name, size, designation, CR, officer and level, flags flagship / mothballed / can't fly with a note, picked by; for the ship card: hull sprite, weapons and wings, hull mods, officer personality) |
 | 56 | PICK | joiner → host | fleet member id the player wants to fly in the next battle ("" none; ≤ 64 characters, the last one counts) |
+| 57 | CAMPAIGN | host → joiner | the larger campaign copy (`CampaignCopy`, 8.3), before `BATTLE_INFO`, once per sync: mods' saved data, eight memory scopes, standings, the enemy, goals, place, date, and the keys left out; plain data only (`Plain`), ≤ 1.5 MB |
+| 58 | REPORT | host → joiner | the after-action report (`BattleReport`, 6.7), just before `BATTLE_END` |
+| 60 | FLEET | host → joiner | one campaign fleet in the battle (`FleetInfo`, 8.3b): number, side, player's fleet or not, faction, name, memory (plain, ≤ 64 KB), commander (`Person`: id, name, portrait, faction, rank, post, personality, AI core, level, skills, tags, memory ≤ 16 KB), and the fleet's ships as fleet-wide scripts see them (≤ 200: member id, hull, hull mods, permanent and S-mods, wings, readiness, mothballed); sent before the first `SPAWN` of a ship of it, and with every resync |
+| 61 | LUNA | host → joiner | the host's LunaLib settings for the battle (plain: mod → field → value; headings and keys left out; `LunaCopy`, 8.10); before `CAMPAIGN` |
+| 62 | LUNA_KEYS | joiner → host | the joiner's own keys for LunaLib settings ("mod/field" → key code, ≤ 400; `LunaKeys`); on each welcome |
+| 59 | AFTERMATH | host → joiner | what the battle changed in the host's fleet (`Aftermath`, 6.7), once back on the map with no dialog open |
 
 ### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
 
@@ -533,10 +541,27 @@ expected count.
 | Class | Sends | How |
 | --- | --- | --- |
 | `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | 4×/s, at most 40 ships per message. Reads a ship only if hit, touched (ammo), flown, never sent, or on a 1-in-8 rotation; everything again every 10 s. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
-| `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 43 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
+| `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 57 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
 | `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the planets behind the battle (read from the engine, with each one's look; `Backdrop`), the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
 | `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
-| `ShipStats` | (used by both) | 43 stats: 23 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil…) and 20 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen, peak CR, phase…). Damage-only stats are left out. |
+| `ShipStats` | (used by both) | 57 stats: 31 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil, beam flux cost, shield upkeep, soft-flux conversion, range cap and past it, reload rates…) and 26 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen/flux cost, peak CR, phase speed/cooldown/upkeep/activation, weapon flux costs…). Damage-only stats are left out; so is the fighter refit time, which the joiner sets itself (`BayQuiet`). |
+
+### 6.7 The after-action report and the aftermath (`BattleStats`, `CampaignLobby.aftermath`)
+
+- **Counting** (`BattleStats`, a `DamageListener` on the engine): damage to enemy ships is credited to the player
+  behind the source ship (fighters and drones to their carrier's or mothership's pilot, modules to their ship;
+  `WingmanAPI.pilotOf`, or the host for the host's ship): hull + armor dealt, shield damage dealt, and hull + armor
+  taken by the ship a player flies. A kill goes to the killing blow's player, or else to the player who last hurt
+  the ship within 20 s; fighters count separately. `tick()` (4×/s) notices deaths the damage reports missed and
+  remembers each player's ship. Friendly fire counts for nothing.
+- **The report** (`build`, sent as `REPORT` just before `BATTLE_END`): outcome from the players' side
+  (`getWinningSideId`), battle time, per side deployed / destroyed / disabled / retreated (the fleet managers'
+  copies), fighters downed, the biggest ships lost (≤ 12); per player (the host, everyone connected, anyone who flew
+  and left): slot, ship, made it / ship lost / retreated / watched / left early, kills, fighter kills, damage. The
+  host's log gets a one-line summary.
+- **The aftermath:** `CampaignLobby.battleStarted` notes the fleet (members, credits, cargo stacks by display name)
+  at the first battle of an encounter; once the host is back on the map with no dialog open, the differences
+  (credits, ships gone and added, the 12 biggest cargo changes) go out as `AFTERMATH`, once.
 
 ---
 
@@ -849,7 +874,62 @@ data; mods' battle scripts that read them would crash.
   a separate `independent` one), so `getFleetData()` is never null. Fighters are left out.
 - **Removal** (`remove`): on `leaveBattle`, and from the title screen when a stand-in older than 15 s is found (the
   join mission, and the mission list's preview, set it up just before the battle). Everything set is undone.
-- **Not possible:** a player character where the game has none, faction relations, markets, complex flag values.
+- **The larger copy** (`CAMPAIGN`, `HostCampaign` → `CampaignCopy`, made once per battle when the first joiner needs
+  it): everything below that is plain data (`Plain`: yes/no, numbers, text, and lists, sets and maps of those, ≤ 6
+  deep, ≤ 20,000 values each; nothing else is written or read, and what comes back is always the JDK's own types):
+  the sector's persistent data (mods' saved state); the memory of the sector, the player, the player fleet, the
+  player faction, the enemy fleet, its commander, its faction, and the battle's location; the player faction's
+  standing with every faction; the enemy's faction, fleet name and commander (name, portrait, rank, post, level);
+  both goals; the location's name, id and tags; the date. The keys left out (not plain data, or over the 1.5 MB
+  budget) are counted and listed (≤ 300). The joiner applies it in `install` (`applyCopy`): saved data and shared
+  memories (sector, player faction, enemy faction, hyperspace) only get keys they lack, each noted and unset on
+  removal; the stand-ins' own memories get everything; standings are set and the old ones put back; the stand-in
+  star system takes the host's location name and tags; the enemy stand-in fleet has the host's enemy faction (if
+  this game has it), name and commander. `giveContext` gives the joiner's battle context (`engine.getContext()`)
+  the two stand-in fleets, keeping the mission's own goals and ranges.
+- **Missed lookups** (`MissedLookups`, with the agent): the agent swaps mods' `MemoryAPI` reads (`get`, `getString`,
+  `getFloat`, `getBoolean`, `getLong`, `getInt`, `contains`, `is`) and `SectorAPI.getPersistentData()` (wrapped in a
+  `RecordingMap`) for hooks that pass straight through and, while recording (a joiner's battle, from the stand-in's
+  set-up to leaving), note keys asked for and not there. On leaving, the log lists them with counts, split into
+  "the host has these, but they aren't plain data" (in the copy's left-out list) and "not in the copy".
+- **Not possible:** a player character where the game has none, markets, mods' own objects (anything not plain
+  data), the date itself (the game's clock can't be set).
+
+### 8.3b Who ships and fleets are (mimics, bosses, special officers)
+
+Some mods' battle content is made from who a ship is, not what it carries: UAF's mimics (the Lingering Echoes
+quest and the mimic bounties) come from a fleet with the `$UAFmimicFleet` flag whose commander has the `uaf_mimic`
+skill, which tags every ship `uaf_mimic_ship` and gives it the hidden `uaf_anomalous_*` hullmods; Secrets of the
+Frontier's scripts test captains' ids (Sirius, Sierra, Barrow...), tags and memory. So a ship's description
+(`ShipSpawn`) also carries the variant's tags, the host's fleet member id, the captain's identity (`Person`: id,
+faction, rank, post, personality, tags, plain memory) and the number of its campaign fleet; each fleet is
+described once (`FLEET`, `FleetInfo`). On the joiner, `CampaignStandIn.onFleet` makes a stand-in for each fleet
+(the host's player fleet is the stand-in player fleet): its faction if this game has it, name, memory and a
+commander with the host commander's identity and skills. `spawnShip` puts the copy's member in its fleet's
+stand-in (`addFleetMember`, then `setFleetCommanderForStats` with that commander), so `getFleetData().getFleet()`,
+its flags, `isPlayerFleet()` and the fleet-wide skills are the host's; ships of fleets not described (missions)
+keep the side's stand-in and the commander made from `fleetSkillIds`. Hidden and permanent hullmods were already
+copied as such (`permaMods`). Off with the stand-in campaign setting.
+
+The fleet's other ships come too (`FleetInfo.reserves`): scripts that look over a ship's fleet count them (armaa's
+strike craft want a carrier along; fleet-wide skills scale with the fleet). `CampaignStandIn.addReserves` puts a
+simple copy of each in the stand-in (empty variant of the hull with its hull mods, S-mods and wings; the member id,
+name, readiness, mothballed); a ship built later takes its copy's place (`dropMember` by member id).
+
+### 8.3c Ship Mastery System (`ShipMasteryBridge`, setting `shipMastery`)
+
+Ship Mastery keeps the player's masteries in its own objects in saved data (`shipmastery_Mastery`, a
+`SaveDataTable` of `SaveData`: points, level, active levels) and only loads them, and works out each hull's
+mastery effects from a seed, when a campaign loads; its hull mod (`sms_mastery_handler`, already on the variants
+copied) finds a ship's fleet and commander through its `VariantLookup`. The host puts a plain copy of the table in
+the campaign copy (`wingman_shipmastery`, ≤ 2000 hulls, ≤ 400 KB, taken before the rest of the saved data). The
+joiner, once the stand-in is in place, rebuilds the table as the mod's own objects, has the mod load it and
+`initMasteries` (random mode and seed are in the copied saved data), makes its `VariantLookup`, and introduces each
+copy of a ship (with its modules) with `addVariantInfo` once it is in its fleet: the player's ships then get the
+host's masteries and other fleets' ships their commander's (worked out from the commander's id, level and memory,
+which are copied). Afterwards the table leaves the stand-in and the mod's `lastSaveId` is cleared, so that this PC's
+own campaign works its own masteries out again on its next load. All by name, step by step: a step that doesn't
+fit the installed version switches the bridge off for the session with one log line.
 
 ### 8.4 The compatibility report (`Compat`, F2)
 
@@ -894,7 +974,9 @@ fighters. The host sends each fighter's carrier and hangar (`ShipSpawn.carrierId
 `getLaunchBaysCopy()` of `wing.getSource()`). When a host wing is first built on a joiner (`joinHostWing`),
 `BayLink.attach` tells the wing its carrier and bay (`setSourceShip`, `setSourceBay`) and points the bay at the
 wing's deployed-member record: the private field `Òôôo00` (type `CombatFleetManager$O0`) of the game's bay class
-`combat.entities.ship.A.C`, set through `MethodHandles.privateLookupIn`. `bay.getWing()` then returns the host's
+`combat.entities.ship.A.C`, set through `MethodHandles.privateLookupIn`. If no field has that name (seen in a
+player's game: a localised or patched jar scrambles names differently), `ClassFields` reads the class file through
+its loader (`getResourceAsStream`, no reflection) and takes the one field of that type. `bay.getWing()` then returns the host's
 wing; the bay's own replacements stay held back by the refit time. Setting `fighterHangars` (joiner).
 
 ### 8.6b Bays that build nothing (`BayQuiet`)
@@ -989,7 +1071,10 @@ loader defined is found before `loadClass` is ever asked. So the agent works per
   which are those of the classes calling it. A loader where any step fails keeps its classes as they are, and the
   report says why;
 - Wingman calls only `Hooks` methods that name no game class (`setBridge`, `runAsPilot(Object, Runnable)`,
-  `report`), so whichever copy its own references reach is fine.
+  `report`, `setRecording`, `takeMisses`), so whichever copy its own references reach is fine.
+- `Hooks` has no nested or anonymous classes (a copy in another loader is another runtime package and couldn't
+  reach them; the build refuses them); helpers it needs (`RecordingMap`, sorting in `Shared`) are public classes
+  that name no game class.
 Checked on Java 17, 21 and 25 with three kinds of custom loader (one that hands everything to Java's, one that
 loads the game's classes itself and asks `findLoadedClass` first, and one like Fast Rendering's that sends every
 other name straight to its parent), with and without full bytecode verification: the full agent test passes through each. `AgentGate` counts the agent as present only when the `wingman.agent` property is set,
@@ -1033,7 +1118,7 @@ instructions of the rule's opcode that use those entries. `invokespecial` (a `su
 | mod | `CombatEngineAPI.isUIAutopilotOn()` | acting: whether that person flies by hand (`Bridge.manual`; on a joiner: yes). Scripts pair it with "is this the player's ship?" to pick keys or their own AI logic, as MagicLib's subsystems do |
 | mod | `CombatEngineAPI.addPlugin(p)` | acting, and `p` keeps that ship in a field: `p` is noted as the joiner's |
 | mod | `Mouse.getX()/getY()` | acting: where that person points, converted to this screen |
-| mod | `Keyboard.isKeyDown(k)` | acting: the joiner's key (`Bridge.keyDown`; for now always "not pressed", never the host's keys) |
+| mod | `Keyboard.isKeyDown(k)` | acting: the joiner's key (`Bridge.keyDown`: held if the joiner's controls say so, or the joiner's key for the same LunaLib setting is; never the host's keys). Not acting: the real key, and `k` is noted in `Shared.polledKeys` (on a joiner, the keys its own ship's scripts ask about) |
 | mod | `ViewportAPI.set/setViewMult/setExternalControl/setCenter` | acting: dropped (this PC's camera is its own player's) |
 | mod | `SoundPlayerAPI.playUISound/playUILoop` | acting: played at volume 0 / not played (interface sounds are for this PC's player) |
 | mod | `MagicSubsystem.advanceInternal(f)` (invokevirtual) | run with the subsystem's ship acting |
@@ -1103,6 +1188,23 @@ and `AgentVerify` loads the changed mod classes under the agent with `-Xverify:a
 rest need classes not here). The game's own classes can't be verified that way (their obfuscated names are only
 accepted with verification off, as the game runs); for them `javap` shows that only the swapped instructions differ.
 
+### 8.10 Mods' LunaLib settings and hotkeys (`LunaCopy`, `LunaKeys`, setting `hostModSettings`)
+
+LunaLib keeps each mod's settings on each PC, and mods read them in battle (Special Hullmod Upgrades checks them
+in nearly every combat hook, and its "custom stats" are numbers from there; armaa's repair rules). The host sends
+its values (`LUNA`: every field LunaLib describes except headings, text and keys: `Keycode` fields, and `String`
+fields named like a key whose value is a key name). The joiner takes them as the join mission is set up (on the
+JSON object LunaLib holds per mod, through `LunaSettingsLoader.getSettings()`), tells LunaLib's listeners the mod's
+settings changed, and puts its own back when the battle is left (`restore`; on the title screen too, if a battle
+was left another way). Nothing is written to disk.
+
+Hotkeys stay each player's own. Abilities on a key (Special Hullmod Upgrades' hull mod subsystems on Left Alt,
+armaa's repair kit) are run on the host for a joiner's ship, where the agent answers their key reads (8.9). The
+joiner sends, with its controls, the held keys that mods' scripts on its PC have asked about or that are bound in
+LunaLib (`InputState.keys`, ≤ 8). The joiner also tells the host its LunaLib keys (`LUNA_KEYS`): when a script on
+the host asks for the host's key of a setting, the joiner's key for the same setting counts (`heldByBinding`).
+Needs the agent on the host.
+
 ## 9. Title screen and joining
 
 - **The panel** (`WingmanTitlePlugin`): the title screen's drifting ships are a real battle, so a combat plugin can
@@ -1110,7 +1212,18 @@ accepted with verification off, as the game runs); for them `javap` shows that o
   mouse; `processInputPreCoreControls` swallows it). F1 how-to (shown once, versioned by `HELP_VERSION`), F2 report,
   F3 settings, F5 reset blocked systems and objectives. State that must survive a battle is `static`, because the
   plugin is made afresh each time the title screen loads.
-- **The lobby page** (F4; opens by itself on the first `ROSTER`): the host's fleet and picks, see 6.5.
+- **The lobby** (`LobbyScreen`; F4; opens by itself on connecting, and on the report after a battle): a screen of
+  its own. `TitleMenu` moves the game's menu and logo aside (they are drawn over anything of ours) by calling the
+  private `titleWidget`'s `hide()`/`show()` through `MethodHandles` (0.98a-RC8: class `Oo` + 254 `O`s); if that
+  fails the old corner box is used. Page FLEET: the host's fleet (size tag, name, CR, who picked it), a card for the
+  marked ship (hull sprite, designation, size, CR, officer and personality, weapons and wings, hull mods, whether
+  it can be picked), your ship, the players and their picks, the last battle in a line. Page LAST BATTLE (Tab): the
+  after-action report and the aftermath (6.7). Keys as before plus Tab.
+- **Leaving a battle** (`WingmanClientPlugin.straightOut`): instead of `endCombat` (which opens the join mission's
+  results screen, about this PC's copy only), the battle's `doEndOfCombatProcessing()` and then the combat state's
+  `goToState(TitleScreenState.STATE_ID)`, as the results screen's Continue would, without storing `missionResults`
+  (so the title screen opens on its main menu, and the lobby on the report). Only for a battle started from the
+  title screen; any failure falls back to `endCombat`.
 - **Joining:** Enter connects (`ClientLink`); `BATTLE_INFO` starts the auto-join countdown (Esc skips this battle);
   `join()` calls `TitleLauncher.start("wingman_join")`. If that fails, the Missions screen's **Wingman: Join Game**
   works the same way, and the mission shows its own join form when not connected.
@@ -1168,6 +1281,8 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `syncStats` | true | both | yes | Stats follow the host |
 | `syncScriptMemory` | true | both | yes | Script memory follows the host |
 | `campaignStandIn` | true | joiner | no | Stand-in campaign and fleets (8.3) |
+| `hostModSettings` | true | joiner | no | Mods' LunaLib settings follow the host's for the battle (8.10) |
+| `shipMastery` | true | joiner | no | Ship Mastery System's masteries follow the host's (8.3c) |
 | `hostMessages` | true | both | yes | Battle messages follow the host (8.5) |
 | `fighterHangars` | true | joiner | no | Host fighters in the copy's hangars (8.6) |
 | `joinerSubsystems` | true | both | yes | MagicLib subsystems follow the joiner (8.7) |
@@ -1240,6 +1355,8 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
   - `NetTest`: packing, player cap and numbering, version and mod refusals, every message's round trip, compact
     updates over 300 ticks, a lossy network (25% loss, reordering, a half-second blackout), compression, UDP,
     controls ordering, lobby, battlefield and campaign data.
+  - `DataTest`: the plain data codec (round trips, refusals of objects, non-text keys, cycles, depth and size, 3,000
+    damaged inputs), and round trips of the campaign copy, after-action report, aftermath and roster.
   - `SyncBench` (not a pass/fail test): bandwidth (TCP compressed, UDP with headers, raw by kind) and joiner
     smoothness (distance from the host's positions one delay ago, and jitter) on a simulated battle through the
     real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,

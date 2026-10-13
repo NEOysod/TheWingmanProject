@@ -567,6 +567,21 @@ public final class Patcher {
         r.add(new Rule("UI sound", SP, "playUISound", "(Ljava/lang/String;FF)Lcom/fs/starfarer/api/SoundAPI;", "uiSound",
                 "(L" + SP + ";Ljava/lang/String;FF)Lcom/fs/starfarer/api/SoundAPI;", INVOKEINTERFACE));
         r.add(new Rule("UI sound", SP, "playUILoop", "(Ljava/lang/String;FF)V", "uiLoop", "(L" + SP + ";Ljava/lang/String;FF)V", INVOKEINTERFACE));
+        // Campaign lookups, so that what a joiner's stand-in campaign can't answer can be listed (only recorded in
+        // a joiner's battle; everywhere else these pass straight through).
+        String M = "com/fs/starfarer/api/campaign/rules/MemoryAPI", MD = "L" + M + ";", STR = "Ljava/lang/String;";
+        r.add(new Rule("campaign lookups", M, "get", "(" + STR + ")Ljava/lang/Object;", "memGet", "(" + MD + STR + ")Ljava/lang/Object;", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "getString", "(" + STR + ")" + STR, "memString", "(" + MD + STR + ")" + STR, INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "getFloat", "(" + STR + ")F", "memFloat", "(" + MD + STR + ")F", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "getBoolean", "(" + STR + ")Z", "memBoolean", "(" + MD + STR + ")Z", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "getLong", "(" + STR + ")J", "memLong", "(" + MD + STR + ")J", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "getInt", "(" + STR + ")I", "memInt", "(" + MD + STR + ")I", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "contains", "(" + STR + ")Z", "memContains", "(" + MD + STR + ")Z", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "is", "(" + STR + "Ljava/lang/Object;)Z", "memIs", "(" + MD + STR + "Ljava/lang/Object;)Z", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "is", "(" + STR + "F)Z", "memIsF", "(" + MD + STR + "F)Z", INVOKEINTERFACE));
+        r.add(new Rule("campaign lookups", M, "is", "(" + STR + "Z)Z", "memIsZ", "(" + MD + STR + "Z)Z", INVOKEINTERFACE));
+        String SEC = "com/fs/starfarer/api/campaign/SectorAPI";
+        r.add(new Rule("campaign lookups", SEC, "getPersistentData", "()Ljava/util/Map;", "persistentData", "(L" + SEC + ";)Ljava/util/Map;", INVOKEINTERFACE));
         r.add(new Rule("MagicSubsystem.advanceInternal", "org/magiclib/subsystems/MagicSubsystem", "advanceInternal", "(F)V", "subsystemAdvance", "(Ljava/lang/Object;F)V", INVOKEVIRTUAL));
         return r;
     }

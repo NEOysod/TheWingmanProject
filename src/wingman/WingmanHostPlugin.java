@@ -149,6 +149,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private String alertTitle;
     private final List<String> alertLines = new ArrayList<String>();
 
+    /** The after-action report's counts, and each player's number (kept for those who leave before the end). */
+    private final BattleStats stats = new BattleStats();
+    private final Map<String, Integer> slots = new java.util.HashMap<String, Integer>();
+
+    /** The larger campaign copy for joiners (HostCampaign), made once per battle when the first one needs it. */
+    private byte[] campaignCopy;
+    private boolean campaignCopyTried;
+    private byte[] lunaCopy;
+    private boolean lunaCopyTried;
+
     @Override
     public void init(CombatEngineAPI engine) {
         this.engine = engine;
@@ -163,6 +173,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             gameClock += amount; // battle time: stands still while paused, runs fast or slow with the battle
             step();
+            keepRunningInCommandMap();
         } catch (Throwable t) {
             disabled = true;
             AgentGate.stop();
@@ -177,6 +188,31 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 }
             } catch (Throwable ignored) { /* nothing more to be done */ }
         }
+    }
+
+    private boolean wasPaused, wasInCommandMap;
+    private int mapPausesUndone;
+
+    /**
+     * The game pauses the battle when the command map (Tab) opens, and on the host that pauses it for everyone.
+     * With the host setting "keep running in the command map" (on by default), that one pause is undone: the
+     * battle goes on while the host gives orders. Space still pauses as usual (only the pause made by opening
+     * the map, in the very frame it opens, is undone; never one before the battle has started).
+     */
+    private void keepRunningInCommandMap() {
+        boolean inMap, paused;
+        try {
+            inMap = engine.getCombatUI() != null && engine.getCombatUI().isShowingCommandUI();
+            paused = engine.isPaused();
+        } catch (Throwable t) { return; }
+        if (cfg != null && cfg.keepRunningInCommandMap && readyPhase == 2 && inMap && !wasInCommandMap && paused && !wasPaused
+                && !session.getPlayers().isEmpty()) {
+            engine.setPaused(false);
+            paused = false;
+            if (mapPausesUndone++ == 0) Ui.say(engine, "Co-op: the battle keeps running in the command map, for your friends' sake. Space pauses it.");
+        }
+        wasInCommandMap = inMap;
+        wasPaused = paused;
     }
 
     private boolean start() throws Exception {
@@ -210,6 +246,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         Global.getLogger(WingmanHostPlugin.class).info("Wingman network: " + wingman.net.Transport.describe());
         AgentGate.start(this);
+        stats.start(engine, cfg.playerName);
         CampaignLobby.battleStarted(session, cfg);
         return true;
     }
@@ -286,6 +323,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         for (String line : session.pump()) Ui.say(engine, "Co-op: " + line);
         wingman.api.WingmanAPI.deliver();
         markPilots();
+        for (HostSession.Player p : session.getPlayers()) slots.put(p.name, p.slot);
+        stats.tick();
         // Picks from joiners still on their title screen (the pre-battle lobby): kept for when they come in.
         if (CampaignLobby.handlePicks(session, cfg, false)) CampaignLobby.battleStarted(session, cfg);
         if (System.currentTimeMillis() - spyCheckedAt > 3000) tapMessages();
@@ -315,6 +354,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         // (Not in the simulator: there "over" only means the current opponents are gone, and more can be added.)
         if (!endSent && readyPhase == 2 && gameClock > 3f && !engine.isSimulation() && engine.isCombatOver()) {
             endSent = true;
+            try { // the after-action report goes out first: joiners show it once they are back in the lobby
+                wingman.net.BattleReport report = stats.build(session, slots);
+                byte[] m = report.encode();
+                for (HostSession.Player p : session.getPlayers()) p.conn.send(Msg.REPORT, m);
+                Global.getLogger(WingmanHostPlugin.class).info(BattleStats.describe(report));
+            } catch (Throwable t) {
+                Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the after-action report could not be made", t);
+            }
             session.endBattle();
             Global.getLogger(WingmanHostPlugin.class).info("Wingman: battle over, joiners told to leave it"
                     + (seededCuts + unseededCuts > 0 ? " (wreck cuts sent with their dice seed: " + seededCuts + " of " + (seededCuts + unseededCuts) + ")" : ""));
@@ -360,9 +407,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             p.conn.send(Msg.RESET, Msg.EMPTY);
             damage.resendAll();
             if (extras != null) extras.resendAll();
+            if (!campaignCopyTried) { campaignCopyTried = true; campaignCopy = HostCampaign.build(engine); } // once per battle
+            if (!lunaCopyTried) { lunaCopyTried = true; lunaCopy = LunaCopy.encodeHost(); } // once per battle
+            if (lunaCopy != null) p.conn.send(Msg.LUNA, lunaCopy); // before the ships: hullmods read settings as they are built
+            if (campaignCopy != null) p.conn.send(Msg.CAMPAIGN, campaignCopy); // before BATTLE_INFO: the joiner's stand-in is set up from both
             p.conn.send(Msg.BATTLE_INFO, environment.battleInfo(engine));
             byte[] nebula = environment.nebula(engine);
             if (nebula != null) p.conn.send(Msg.NEBULA, nebula);
+            for (byte[] fleet : fleetMsgs) p.conn.send(Msg.FLEET, fleet); // before the ships that belong to them
             for (byte[] spawn : spawnMsgs.values()) p.conn.send(Msg.SPAWN, spawn);
             // Ships destroyed before this player arrived: built, then quietly turned into wrecks, then broken
             // up the way they have broken up here.
@@ -598,7 +650,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private void readyCheck() {
         if (readyPhase == 0) {
             // Wait until the host has finished their own deployment screen and the battle is actually running.
-            if (engine.isPaused() || engine.getPlayerShip() == null || engine.getPlayerShip().isShuttlePod()) return;
+            // Not for a ship of the host's own: a host who left the flagship out (or deployed nothing yet) flies
+            // the command shuttle, and the ready check used to wait for a real ship until the host deployed one.
+            if (engine.isPaused()) return;
+            boolean deploying;
+            try { deploying = engine.getCombatUI() != null && engine.getCombatUI().isShowingDeploymentDialog(); } catch (Throwable t) { deploying = false; }
+            if (deploying) return;
+            ShipAPI mine = engine.getPlayerShip();
+            boolean flying = mine != null && !mine.isShuttlePod();
+            if (!flying && engine.getTotalElapsedTime(false) < 0.5f) return; // (the first moments, before the screen shows)
             readyPhase = 1;
             session.lobbyDirty = true;
         }
@@ -659,6 +719,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (disabled || !started || events == null) return;
         try {
             if (!settings.open && cfg.playerTags) PlayerTags.toggleKey(events, engine);
+            if (!settings.open) scrollPlayerList(events);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
                     if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
@@ -714,15 +775,69 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    // ---- the player list, top right (host setting playerList) ----
+
+    private final Panel listPanel = new Panel();
+    private int listScroll;
+    /** Rows shown at once; more players scroll with the mouse wheel over the list. */
+    private static final int LIST_ROWS = 4;
+
+    private void playerList() {
+        if (cfg == null || !cfg.playerList || session.getPlayers().isEmpty() || PlayerTags.hidden) { listPanel.lastW = 0f; return; }
+        List<String> rows = new ArrayList<String>();
+        List<Color> rowColors = new ArrayList<Color>();
+        ShipAPI mine = engine.getPlayerShip();
+        rows.add("P1  " + cfg.playerName + " (you)" + shipText(mine));
+        rowColors.add(PlayerTags.color(1));
+        List<HostSession.Player> ps = new ArrayList<HostSession.Player>(session.getPlayers());
+        java.util.Collections.sort(ps, new java.util.Comparator<HostSession.Player>() {
+            public int compare(HostSession.Player a, HostSession.Player b) { return a.slot - b.slot; }
+        });
+        for (HostSession.Player p : ps) {
+            boolean quiet = p.conn.idleMillis() > 1500;
+            String state = p.ship != null ? shipText((ShipAPI) p.ship) + (onAutopilot.contains(p.id) ? "  (autopilot)" : "")
+                    : p.watching ? "  watching" : "  no ship";
+            rows.add("P" + p.slot + "  " + p.name + state + (quiet ? "  (link quiet)" : ""));
+            rowColors.add(quiet ? Panel.WARN : PlayerTags.color(p.slot));
+        }
+        int n = rows.size();
+        listScroll = Math.max(0, Math.min(listScroll, n - LIST_ROWS));
+        List<String> shown = new ArrayList<String>();
+        List<Color> shownColors = new ArrayList<Color>();
+        for (int i = listScroll; i < n && i < listScroll + LIST_ROWS; i++) { shown.add(rows.get(i)); shownColors.add(rowColors.get(i)); }
+        String footer = n > LIST_ROWS ? (listScroll + 1) + "-" + Math.min(n, listScroll + LIST_ROWS) + " of " + n + "   Mouse wheel here: scroll" : "F3: hide";
+        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        listPanel.renderBelow(sw - 12f, sh - 12f, 330f, "PLAYERS (" + n + ")", shown, shownColors, footer);
+    }
+
+    private static String shipText(ShipAPI s) {
+        if (s == null || s.isShuttlePod()) return "  command shuttle";
+        String name = s.getName();
+        return "  " + (name == null || name.isEmpty() ? s.getHullSpec().getHullName() : name);
+    }
+
+    /** Mouse wheel over the player list scrolls it (and isn't passed on to the camera's zoom). */
+    private void scrollPlayerList(List<InputEventAPI> events) {
+        if (listPanel.lastW <= 0f || events == null) return;
+        float scale = Global.getSettings().getScreenScaleMult();
+        for (InputEventAPI e : events) {
+            if (e.isConsumed() || !e.isMouseScrollEvent()) continue;
+            if (!listPanel.contains(e.getX() / scale, e.getY() / scale)) continue;
+            listScroll += e.getEventValue() > 0 ? -1 : 1;
+            e.consume();
+        }
+    }
+
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
         if (disabled || !started) return;
         if (cfg.playerTags && !session.getPlayers().isEmpty()) { // who is flying what: P1 is us
-            tags.draw(viewport, engine.getPlayerShip(), 1, cfg.playerOutlines);
-            for (HostSession.Player p : session.getPlayers()) if (p.ship != null) tags.draw(viewport, (ShipAPI) p.ship, p.slot, cfg.playerOutlines);
+            tags.draw(viewport, engine.getPlayerShip(), 1, cfg.playerOutlines, cfg.playerName);
+            for (HostSession.Player p : session.getPlayers()) if (p.ship != null) tags.draw(viewport, (ShipAPI) p.ship, p.slot, cfg.playerOutlines, p.name);
         }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
+        if (!settings.open && alertTitle == null && readyPhase == 2) playerList();
         if (settings.open) {
             try {
                 settings.lines(lines, colors);
@@ -787,6 +902,34 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private long lastIdleNanos;
     private final byte[] angleScratch = new byte[255];
     private Snapshot.ShipState spare = new Snapshot.ShipState();
+
+    /** The campaign fleets in this battle, by the number joiners know them by, and their descriptions. */
+    private final Map<com.fs.starfarer.api.campaign.CampaignFleetAPI, Integer> fleetKeys = new java.util.IdentityHashMap<com.fs.starfarer.api.campaign.CampaignFleetAPI, Integer>();
+    private final List<byte[]> fleetMsgs = new ArrayList<byte[]>();
+
+    /** This fleet's number; a fleet seen for the first time is described to everyone (before its first ship). */
+    private int fleetKey(com.fs.starfarer.api.campaign.CampaignFleetAPI fleet, int owner) {
+        Integer known = fleetKeys.get(fleet);
+        if (known != null) return known;
+        int key = fleetKeys.size();
+        fleetKeys.put(fleet, key);
+        wingman.net.FleetInfo f = new wingman.net.FleetInfo();
+        f.key = key;
+        f.owner = owner == 1 ? 1 : 0;
+        try { f.playerFleet = fleet.isPlayerFleet() || fleet == Global.getSector().getPlayerFleet(); } catch (Throwable t) { /* not the player's */ }
+        try { f.faction = fleet.getFaction() == null ? "" : fleet.getFaction().getId(); } catch (Throwable t) { /* none */ }
+        try { f.name = fleet.getName() == null ? "" : fleet.getName(); } catch (Throwable t) { /* none */ }
+        f.memory = Identity.memory(fleet.getMemoryWithoutUpdate(), wingman.net.FleetInfo.MAX_MEMORY_BYTES);
+        try {
+            PersonAPI boss = fleet.getCommander();
+            if (boss != null && !boss.isDefault()) f.commander = Identity.person(boss, true);
+        } catch (Throwable t) { /* no commander */ }
+        f.reserves = Identity.roster(fleet);
+        byte[] m = f.encode();
+        fleetMsgs.add(m);
+        session.broadcast(Msg.FLEET, m);
+        return key;
+    }
 
     /** Give a ship its number and tell joiners how to build it. */
     private int announce(ShipAPI s, List<Integer> moduleIds) {
@@ -1123,6 +1266,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             } catch (Throwable t) { /* a wing without a carrier is still shown */ }
         }
         ShipVariantAPI v = s.getVariant();
+        try { if (v.getTags() != null) sp.variantTags.addAll(v.getTags()); } catch (Throwable t) { /* no tags */ }
+        try { if (!s.isFighter() && s.getFleetMember() != null && s.getFleetMember().getId() != null) sp.memberId = s.getFleetMember().getId(); } catch (Throwable t) { /* none */ }
         sp.vents = v.getNumFluxVents();
         sp.caps = v.getNumFluxCapacitors();
         sp.hullMods.addAll(v.getHullMods());
@@ -1157,6 +1302,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 sp.captainPortrait = captain.getPortraitSprite() == null ? "" : captain.getPortraitSprite();
                 sp.captainAiCore = captain.getAICoreId() == null ? "" : captain.getAICoreId();
                 sp.captainLevel = captain.getStats().getLevel();
+                sp.captain = Identity.person(captain, false); // id, faction, rank, post, personality, tags, memory
                 for (MutableCharacterStatsAPI.SkillLevelAPI sk : captain.getStats().getSkillsCopy()) {
                     if (sk.getLevel() <= 0f || sk.getSkill() == null) continue;
                     sp.skillIds.add(sk.getSkill().getId());
@@ -1171,6 +1317,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI of = s;
             if (s.isFighter() && s.getWing() != null && s.getWing().getSourceShip() != null) of = s.getWing().getSourceShip();
             if (of.getFleetMember() != null) commander = of.getFleetMember().getFleetCommander();
+            // The campaign fleet itself, sent once (FleetInfo): its faction, flags and commander.
+            try {
+                com.fs.starfarer.api.fleet.FleetMemberAPI fm = of.getFleetMember();
+                com.fs.starfarer.api.campaign.CampaignFleetAPI fleet = fm == null || fm.getFleetData() == null ? null : fm.getFleetData().getFleet();
+                if (fleet != null) sp.fleetKey = fleetKey(fleet, s.getOwner());
+            } catch (Throwable t) { /* the side's stand-in fleet then */ }
             if (commander == null) commander = engine.getFleetManager(s.getOwner()).getFleetCommander();
             if (commander != null && !commander.isDefault()) {
                 for (MutableCharacterStatsAPI.SkillLevelAPI sk : commander.getStats().getSkillsCopy()) {
@@ -2230,7 +2382,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             boolean wasAuto = onAutopilot.contains(p.id);
             if (auto && !wasAuto) {
                 onAutopilot.add(p.id);
-                s.resetDefaultAI();
+                ownAI(s);
                 Ui.say(engine, "Co-op: " + p.name + " switched autopilot on.");
             } else if (!auto && wasAuto) {
                 onAutopilot.remove(p.id);
@@ -2257,12 +2409,39 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         return null;
     }
 
+    /**
+     * Hands a ship back to the AI it would have in single player: the one the game picks when the player leaves a
+     * ship, which asks every mod's plugin first (a mod may give its ships an AI of their own) and otherwise is the
+     * game's usual one. resetDefaultAI() alone always gave the game's usual AI, so a mod's own AI was lost on any
+     * ship a joiner had flown, or put on autopilot.
+     */
+    private void ownAI(ShipAPI s) {
+        try {
+            com.fs.starfarer.api.fleet.FleetMemberAPI member = null;
+            try {
+                com.fs.starfarer.api.combat.DeployedFleetMemberAPI d = engine.getFleetManager(s.getOriginalOwner()).getDeployedFleetMember(s);
+                if (d != null) member = d.getMember();
+            } catch (Throwable t) { /* asked without it */ }
+            if (member == null) member = s.getFleetMember();
+            com.fs.starfarer.api.combat.ShipAIPlugin ai = Global.getSettings().pickShipAIPlugin(member, s);
+            if (ai != null) { s.setShipAI(ai); return; }
+        } catch (Throwable t) {
+            if (!ownAIWarned) {
+                ownAIWarned = true;
+                Global.getLogger(WingmanHostPlugin.class).warn("Wingman: could not ask the mods for a ship's own AI; the game's usual AI is used", t);
+            }
+        }
+        s.resetDefaultAI();
+    }
+
+    private boolean ownAIWarned;
+
     private void releaseShip(HostSession.Player p) {
         releaseCarrier(p, null);
         ShipAPI s = (ShipAPI) p.ship;
         if (s != null && s.isAlive() && !s.isHulk()) {
             // getShipAI() hands back a wrapper, not the original AI, so it can't simply be put back.
-            s.resetDefaultAI();
+            ownAI(s);
         }
         p.ship = null;
         p.savedAI = null;
@@ -2287,7 +2466,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (c == null || id == null || !c.isAlive() || c.isHulk() || c.getOwner() != 0 || pilotOf(c) != null) return false;
         ShipAPI f = (ShipAPI) p.ship;
         p.heldCarrier = null;
-        try { if (f != null && f.isAlive() && !f.isHulk() && engine.isEntityInPlay(f)) f.resetDefaultAI(); } catch (Throwable t) { /* gone */ }
+        try { if (f != null && f.isAlive() && !f.isHulk() && engine.isEntityInPlay(f)) ownAI(f); } catch (Throwable t) { /* gone */ }
         p.ship = c;
         p.shipNetId = id;
         p.input.flags = 0;
@@ -2308,6 +2487,6 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI c = (ShipAPI) p.heldCarrier;
         p.heldCarrier = null;
         if (c == null || c == keep) return;
-        try { if (c.isAlive() && !c.isHulk() && pilotOf(c) == null) c.resetDefaultAI(); } catch (Throwable t) { /* gone with the battle */ }
+        try { if (c.isAlive() && !c.isHulk() && pilotOf(c) == null) ownAI(c); } catch (Throwable t) { /* gone with the battle */ }
     }
 }
