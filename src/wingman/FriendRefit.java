@@ -59,7 +59,7 @@ final class FriendRefit {
     private static final Map<Integer, String> open = new HashMap<Integer, String>();
     /** What each of them was last sent, to send again only on a change. */
     private static final Map<Integer, byte[]> lastSent = new HashMap<Integer, byte[]>();
-    private static long lastChecked;
+    private static long lastChecked, lastDiag;
     private static boolean broken;
 
     /** The game's submarkets ask "may the player trade here?" of the core screen; this answers as the dialog's trade mode. */
@@ -100,9 +100,15 @@ final class FriendRefit {
     }
 
     /** Why this player can't refit that member now, or null. */
-    private static String refusal(HostSession.Player p, String memberId, WingmanConfig cfg) {
+    private static String refusal(HostSession.Player p, String memberId, WingmanConfig cfg) { return refusal(p, memberId, cfg, null); }
+
+    /**
+     * acceptedAt: for a refit the host accepted under a core screen, the market it was docked at then. It no longer
+     * needs to be docked: the host said yes while it was, and that market is still at hand.
+     */
+    private static String refusal(HostSession.Player p, String memberId, WingmanConfig cfg, MarketAPI acceptedAt) {
         if (!cfg.friendRefit) return "the host has switched friend refits off";
-        if (dockedMarket() == null) return "the host isn't docked at a market";
+        if (dockedMarket() == null && acceptedAt == null) return "the host isn't docked at a market";
         if (!memberId.equals(WingmanAPI.reservedShip(p.name))) return "you can only refit the ship you picked";
         FleetMemberAPI m = member(memberId);
         if (m == null) return "that ship is no longer in the fleet";
@@ -370,7 +376,18 @@ final class FriendRefit {
         int op, opMax;
         /** The host accepted it with a core screen open: it is done the moment that screen closes. */
         boolean acceptOnClose;
+        /** Then: the market docked at, and the dialog that was up (its closing closes its core screen too). */
+        MarketAPI acceptedAt;
+        InteractionDialogAPI dialogAtAccept;
     }
+
+    /** Where a request is done: the market docked at, else the one a refit accepted under a core screen was accepted at. */
+    private static MarketAPI marketFor(Pending pd) {
+        MarketAPI m = dockedMarket();
+        return m != null ? m : pd != null && pd.acceptOnClose ? pd.acceptedAt : null;
+    }
+
+    private static MarketAPI acceptedAt(Pending pd) { return pd.acceptOnClose ? pd.acceptedAt : null; }
 
     /**
      * The host accepts with the fleet, cargo or refit screen open. That screen keeps its own copy of the ship, which
@@ -378,6 +395,8 @@ final class FriendRefit {
      */
     static void acceptOnClose(Pending pd) {
         pd.acceptOnClose = true;
+        pd.acceptedAt = dockedMarket();
+        pd.dialogAtAccept = Global.getSector().getCampaignUI().getCurrentInteractionDialog();
         send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + ". It is done as soon as they close their refit screen."));
     }
 
@@ -389,15 +408,31 @@ final class FriendRefit {
         if (broken || pending.isEmpty()) return;
         try {
             com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
-            if (ui == null || ui.getCurrentCoreTab() != null) return;
+            if (ui == null) return;
+            InteractionDialogAPI dialog = ui.getCurrentInteractionDialog();
+            long now = System.currentTimeMillis();
+            if (Dbg.on && now - lastDiag > 1000) {
+                for (Pending pd : pending.values()) {
+                    if (!pd.acceptOnClose) continue;
+                    lastDiag = now;
+                    Dbg.info(FriendRefit.class, "Wingman: refit waiting on the screen closing: core tab " + ui.getCurrentCoreTab() + ", showing dialog "
+                            + ui.isShowingDialog() + ", showing menu " + ui.isShowingMenu() + ", dialog " + (dialog == null ? "none" : dialog == pd.dialogAtAccept ? "same" : "another"));
+                    break;
+                }
+            }
             FleetMemberAPI last = null;
+            boolean reopenable = false;
             for (Pending pd : new ArrayList<Pending>(pending.values())) {
                 if (!pd.acceptOnClose) continue;
+                // The screen has closed: no core tab, or the dialog it was opened over is gone (taking its screen with it).
+                boolean closed = ui.getCurrentCoreTab() == null || (pd.dialogAtAccept != null && dialog != pd.dialogAtAccept);
+                if (!closed) continue;
+                reopenable = dialog != null && dialog == pd.dialogAtAccept;
                 String why = accept(pd);
                 if (why != null) CampaignLobby.say("Co-op: the refit for " + pd.player.name + " couldn't be done: " + why);
                 else last = member(pd.request.memberId);
             }
-            if (last != null && WingmanConfig.load().friendRefitReopen) reopen(last);
+            if (last != null && reopenable && WingmanConfig.load().friendRefitReopen) reopen(last);
         } catch (Throwable t) {
             Global.getLogger(FriendRefit.class).warn("Wingman: a friend's refit accepted under the refit screen failed", t);
         }
@@ -454,7 +489,7 @@ final class FriendRefit {
         for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
             Pending pd = it.next();
             if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
-            String why = refusal(pd.player, pd.request.memberId, cfg);
+            String why = refusal(pd.player, pd.request.memberId, cfg, acceptedAt(pd));
             if (why != null) {
                 it.remove();
                 send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
@@ -466,7 +501,7 @@ final class FriendRefit {
 
     /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
     static void check(Pending pd, FleetMemberAPI m) {
-        MarketAPI market = dockedMarket();
+        MarketAPI market = marketFor(pd);
         RefitData d = build(m, market);
         pd.plan = new RefitPlan(d, pd.request, new Names(d));
         List<String> problems = new ArrayList<String>(pd.plan.problems); // ordnance points: the game's count below
@@ -551,7 +586,7 @@ final class FriendRefit {
      */
     static String accept(Pending pd) {
         WingmanConfig cfg = WingmanConfig.load();
-        String why = refusal(pd.player, pd.request.memberId, cfg);
+        String why = refusal(pd.player, pd.request.memberId, cfg, acceptedAt(pd));
         if (why != null) {
             pending.remove(pd.player.id);
             send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
@@ -564,7 +599,7 @@ final class FriendRefit {
             send(pd.player, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
             return "It no longer passes the checks: " + pd.problems.get(0);
         }
-        MarketAPI market = dockedMarket();
+        MarketAPI market = marketFor(pd);
         RefitPlan plan = pd.plan;
         RefitData d = plan.d;
         RefitRequest r = pd.request;

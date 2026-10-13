@@ -60,16 +60,18 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 if (e.isConsumed()) continue;
                 // A click on the panel or its buttons must not also land on the dialog's options underneath.
                 if (e.isMouseEvent() && !e.isMouseMoveEvent() && overUs(e.getX() / scale, e.getY() / scale)) { e.consume(); continue; }
+                if (!e.isKeyboardEvent()) continue;
+                // Everything about the key is read first: the game refuses any read of an event once it is consumed.
+                boolean keyDown = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown();
+                int key = e.getEventValue();
                 if (!open) {
-                    if (e.isKeyDownEvent() && e.isCtrlDown() && e.isShiftDown() && e.getEventValue() == 19) { open = true; message = ""; e.consume(); } // Ctrl+Shift+R
+                    if (keyDown && ctrl && shift && key == 19) { open = true; message = ""; e.consume(); } // Ctrl+Shift+R
                     continue;
                 }
-                if (!e.isKeyboardEvent()) continue;
                 e.consume(); // while the panel is up, keys are its own
-                if (!e.isKeyDownEvent()) continue;
-                int key = e.getEventValue();
+                if (!keyDown) continue;
                 at = Math.max(0, Math.min(list.size() - 1, at));
-                if (key == 1 || (key == 19 && e.isCtrlDown())) open = false;                 // Esc, Ctrl+Shift+R
+                if (key == 1 || (key == 19 && ctrl)) open = false;                           // Esc, Ctrl+Shift+R
                 else if (key == 203) at = (at + list.size() - 1) % list.size();                // Left
                 else if (key == 205) at = (at + 1) % list.size();                              // Right
                 else if (key == 32) { deny(list.get(at)); break; }                             // D: deny (the list changed)
