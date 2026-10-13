@@ -586,6 +586,11 @@ public class NetTest {
         while (System.currentTimeMillis() < end && p2.pick == null) { host.pump(); Thread.sleep(5); }
         check("a pick reaches the host", "m-2".equals(p2.pick));
         p2.pick = null;
+        clients.get(1).send(Msg.REFIT_ASK, Msg.utf("m-2"));
+        end = System.currentTimeMillis() + 2000;
+        while (System.currentTimeMillis() < end && p2.refitAsk == null) { host.pump(); Thread.sleep(5); }
+        check("a refit ask reaches the host", "m-2".equals(p2.refitAsk));
+        p2.refitAsk = null;
 
         // battlefield description round trip
         BattleInfo bi = new BattleInfo(); bi.width = 18000f; bi.height = 14000f; bi.background = "graphics/backgrounds/background4.jpg";

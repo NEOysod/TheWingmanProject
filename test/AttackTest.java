@@ -436,6 +436,10 @@ public class AttackTest {
         Roster ro = new Roster(); ro.hostName = "H"; Roster.Player rp = new Roster.Player(); rp.name = "Ann"; ro.players.add(rp);
         for (int i = 0; i < 5; i++) { Roster.Member m = new Roster.Member(); m.id = "id" + i; m.shipName = "S" + i; m.hullName = "Wolf"; m.officer = "O"; m.cr = 50; ro.members.add(m); }
         samples.put("Roster", ro.encode()); decs.put("Roster", new Dec() { public void run(byte[] b) throws Exception { Roster.decode(b); } });
+        wingman.net.RefitData rfd = new wingman.net.RefitData(); rfd.memberId = "m"; rfd.hullId = "wolf"; rfd.fitSlots.add("WS1"); rfd.fitWeapons.add("lightac"); rfd.wings.add("");
+        rfd.cargo.add(new wingman.net.RefitData.Item(0, "lightac", 2)); wingman.net.RefitData.Market rfm = new wingman.net.RefitData.Market(); rfm.name = "M"; rfm.stock.add(new wingman.net.RefitData.Item(1, "wasp_wing", 1)); rfm.cantBuy.add("f:wasp_wing");
+        rfd.markets.add(rfm); rfd.knownHullmods.add("x"); rfd.values.put("w:lightac", 10f);
+        samples.put("RefitData", rfd.encode()); decs.put("RefitData", new Dec() { public void run(byte[] b) throws Exception { wingman.net.RefitData.decode(b); } });
         SnapshotCodec.Encoder en = new SnapshotCodec.Encoder(); snap.ships.get(0).shotTotals = new byte[] {1, 2};
         byte[] key = en.encode(snap, -1); snap.tick = 6; snap.ships.get(1).x += 50; byte[] delta = en.encode(snap, 5);
         samples.put("SnapshotCodec (key)", key); samples.put("SnapshotCodec (change)", delta);

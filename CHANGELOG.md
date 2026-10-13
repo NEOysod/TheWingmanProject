@@ -1,5 +1,19 @@
 # Changelog
 
+## Next (in progress)
+Protocol 60: host and joiners need this build.
+
+**Friend refit, stage 1 of 5** (design: `docs/FRIEND_REFIT_DESIGN.md`)
+
+- While the host is docked at a market, joiners are told so in the lobby, and the card of the ship they picked
+  has a **REFIT (R)** button. Nothing opens by itself.
+- The refit screen shows that ship as it stands on the host: weapons by slot and the empty slots, fighter bays,
+  hull mods, S-mods and D-mods, with ordnance points, vents, capacitors and S-mods against the host's limits
+  (worked out with the host's skills). Beside it: the host's credits and story points, cargo, storage, and each
+  submarket with its tariff and stock, or why it is shut to the host. Viewing only for now.
+- It closes when the host undocks, when the pick changes, or with Esc. Nothing in the host's campaign changes.
+- Host setting `friendRefit` (on by default): "Friends can refit their ships".
+
 ## 0.8-beta
 Protocol 59: host and joiners need this build.
 

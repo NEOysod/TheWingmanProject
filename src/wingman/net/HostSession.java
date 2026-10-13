@@ -46,6 +46,8 @@ public final class HostSession {
         public boolean ready, watching;
         /** A pick from the pre-battle lobby (Msg.PICK) waiting for the game thread: fleet member id, "" for none. */
         public String pick;
+        /** Friend refit: the member whose refit screen this player opened (Msg.REFIT_ASK), waiting for the game thread; "" closed. */
+        public String refitAsk;
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -547,6 +549,10 @@ public final class HostSession {
                     else if (p.type == Msg.PICK) {
                         String id = Msg.reader(p.data).readUTF();
                         if (id.length() <= 64) pl.pick = id; // (the last one counts; the game thread checks it)
+                    }
+                    else if (p.type == Msg.REFIT_ASK) {
+                        String id = Msg.reader(p.data).readUTF();
+                        if (id.length() <= 64) pl.refitAsk = id; // likewise
                     }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();

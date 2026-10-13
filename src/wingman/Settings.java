@@ -49,6 +49,8 @@ final class Settings {
                 "On: the battle is held paused while everyone chooses a ship, then until everyone has pressed ready."));
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
+        ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
+                "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,

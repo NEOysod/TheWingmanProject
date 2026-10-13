@@ -69,6 +69,10 @@
     # fleet and pick the ship they want to fly in the next battle. false: only once a battle starts.
     "campaignLobby": true,
 
+    # true: while you are docked at a market, friends get a Refit button for the ship they picked, and can send
+    # you a refit of it. Nothing changes in your campaign unless you accept it. false: no Refit button.
+    "friendRefit": true,
+
     # ---- JOINING ----
     # Only used until an address has been typed into the CO-OP panel, which then takes over.
     # 127.0.0.1 is this PC itself (two copies of the game on one machine).

@@ -22,12 +22,16 @@ import wingman.net.Roster;
  * Wingman's title screen panels; keys are read by WingmanTitlePlugin.
  */
 final class LobbyScreen {
-    static final int FLEET = 0, REPORT = 1;
+    static final int FLEET = 0, REPORT = 1, REFIT = 2;
     int page = FLEET;
 
-    private static final Color TITLE = new Color(120, 210, 255), LINE = new Color(120, 210, 255, 90), MARK = new Color(120, 210, 255, 45);
-    private static final String BIG = "graphics/fonts/orbitron24aabold.fnt", HEAD = "graphics/fonts/orbitron20aabold.fnt";
-    private String body;
+    static final Color TITLE = new Color(120, 210, 255), LINE = new Color(120, 210, 255, 90), MARK = new Color(120, 210, 255, 45);
+    static final String BIG = "graphics/fonts/orbitron24aabold.fnt", HEAD = "graphics/fonts/orbitron20aabold.fnt";
+    String body;
+    /** The friend-refit screen, drawn as the lobby's third page. */
+    final RefitScreen refit = new RefitScreen(this);
+    /** Where the Refit button was drawn this frame (x, y, w, h), or null: the title plugin reads clicks on it. */
+    float[] refitButton;
     private final Map<String, LabelAPI> cache = new HashMap<String, LabelAPI>();
     private boolean broken;
     private int failures;
@@ -38,12 +42,16 @@ final class LobbyScreen {
     static final class View {
         Roster roster;
         String me = "", hostLine = "", note = "", players = "";
+        /** Friend refit: the market the host is docked at ("" none), and the refit screen's state. */
+        String refitMarket = "";
+        boolean refitOpen;
+        wingman.net.RefitData refitData;
         Color hostColor = Panel.TEXT, noteColor = Panel.DIM;
         int at;
         boolean hostInBattle;
     }
 
-    private LabelAPI label(String text, String font, Color color, float width) {
+    LabelAPI label(String text, String font, Color color, float width) {
         String key = font + "|" + color.getRGB() + "|" + Math.round(width) + "|" + text;
         LabelAPI l = cache.get(key);
         if (l == null) {
@@ -57,7 +65,7 @@ final class LobbyScreen {
     }
 
     /** Draws text with its top edge at 'top'; returns the y just below it. */
-    private float text(String s, String font, Color c, float x, float top, float width) {
+    float text(String s, String font, Color c, float x, float top, float width) {
         if (s == null || s.isEmpty()) return top;
         LabelAPI l = label(s, font, c, width);
         float h = l.getPosition().getHeight();
@@ -66,7 +74,7 @@ final class LobbyScreen {
         return top - h;
     }
 
-    private static void fill(float x, float y, float w, float h, Color c) {
+    static void fill(float x, float y, float w, float h, Color c) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -78,7 +86,7 @@ final class LobbyScreen {
         GL11.glPopAttrib();
     }
 
-    private static void frame(float x, float y, float w, float h) {
+    static void frame(float x, float y, float w, float h) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -95,6 +103,7 @@ final class LobbyScreen {
         if (broken) return;
         try {
             if (body == null) body = Global.getSettings().getString("defaultFont");
+            refitButton = null;
             float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
             float m = Math.max(24f, sw * 0.025f);
             fill(0f, 0f, sw, sh, new Color(4, 7, 12, 236));
@@ -105,22 +114,31 @@ final class LobbyScreen {
             float hx = m + lunaCorner();
             float top = sh - m;
             float y = text("CO-OP LOBBY", BIG, TITLE, hx, top, 400f);
-            String tabs = (page == FLEET ? "[ FLEET ]" : "  FLEET  ") + "    " + (page == REPORT ? "[ LAST BATTLE ]" : "  LAST BATTLE  ");
+            String tabs = page == REFIT ? "[ REFIT ]"
+                    : (page == FLEET ? "[ FLEET ]" : "  FLEET  ") + "    " + (page == REPORT ? "[ LAST BATTLE ]" : "  LAST BATTLE  ");
             LabelAPI tl = label(tabs, HEAD, Panel.TEXT, 600f);
             text(tabs, HEAD, Panel.TEXT, sw - m - Math.min(600f, tl.computeTextWidth(tabs)) - 4f, top, 600f);
             y = text(v.hostLine, body, v.hostColor, hx, y - 6f, sw - m - hx) - 4f;
-            y = text(v.players, body, Panel.DIM, hx, y, sw - m - hx) - 10f;
+            y = text(v.players, body, Panel.DIM, hx, y, sw - m - hx) - 2f;
+            if (!v.refitMarket.isEmpty() && page != REFIT) {
+                Roster.Member mine = v.roster == null ? null : v.roster.pickOf(v.me);
+                y = text("Refit available at " + v.refitMarket + (mine == null ? ": pick a ship, then refit it here." : ": R, or the Refit button on your ship's card."),
+                        body, Panel.GOOD, hx, y, sw - m - hx) - 2f;
+            }
+            y -= 8f;
             if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H - 8f);
             fill(m, y, sw - 2 * m, 1f, LINE);
             float contentTop = y - 12f, footerH = 64f, bottom = m + footerH;
 
             if (page == FLEET) fleet(v, m, contentTop, sw - 2 * m, contentTop - bottom);
+            else if (page == REFIT) refit.render(v, m, contentTop, sw - 2 * m, contentTop - bottom);
             else report(m, contentTop, sw - 2 * m, contentTop - bottom);
 
             fill(m, bottom - 6f, sw - 2 * m, 1f, LINE);
-            String keys = page == FLEET
+            String keys = page == REFIT ? "Esc: back to the fleet"
+                    : page == FLEET
                     ? "Up/Down, PgUp/PgDn: choose     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
-                            + "     Tab: last battle     F1: how to     Esc: close"
+                            + (v.refitMarket.isEmpty() ? "" : "     R: refit") + "     Tab: last battle     F1: how to     Esc: close"
                     : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: close";
             if (!v.note.isEmpty()) text(v.note, body, v.noteColor, m, bottom - 12f, sw - 2 * m);
             text(keys, body, Panel.DIM, m, bottom - 36f, sw - 2 * m);
@@ -135,6 +153,11 @@ final class LobbyScreen {
     }
 
     boolean isBroken() { return broken; }
+
+    static boolean inside(float x, float y, float w, float h) {
+        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    }
 
     /** LunaLib's "Mod Settings" and "Version Checker" buttons: 130 wide from x 5, from 2.5% below the top, 105 tall. */
     private static final float LUNA_BUTTONS_W = 140f, LUNA_BUTTONS_H = 110f;
@@ -219,7 +242,21 @@ final class LobbyScreen {
                 : mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty() ? "Your ship for the next battle, if the host deploys it."
                 : !mem.pickedBy.isEmpty() ? mem.pickedBy + " has picked it." : "Free. F picks it for the next battle.";
         Color c = state.startsWith("Your") ? Panel.GOOD : state.startsWith("Free") ? Panel.TEXT : Panel.WARN;
-        text(state, body, c, x + 12f, Math.max(y, top - h + 40f), w - 24f);
+        float stateTop = Math.max(y, top - h + 40f);
+        boolean mine = mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty();
+        if (mine && !v.refitMarket.isEmpty() && (mem.flags & (Roster.FLAGSHIP | Roster.MOTHBALLED)) == 0) {
+            // Friend refit: only on the ship we picked, only while the host is docked at a market.
+            // Below what the card shows, with the state line under it, both kept inside the card.
+            float bw = Math.min(w - 24f, 220f), bh = 30f, bx = x + 12f;
+            float by = Math.max(y - 4f, top - h + 40f + bh + 8f) - bh;
+            boolean over = inside(bx, by, bw, bh);
+            fill(bx, by, bw, bh, over ? new Color(120, 210, 255, 90) : MARK);
+            outline(bx, by, bw, bh, over ? TITLE : LINE);
+            text("REFIT  (R)", HEAD, TITLE, bx + 10f, by + bh - 5f, bw - 20f);
+            refitButton = new float[] { bx, by, bw, bh };
+            stateTop = by - 8f;
+        }
+        text(state, body, c, x + 12f, stateTop, w - 24f);
     }
 
     // ---- the officer and the loadout, with their pictures ----
@@ -228,7 +265,7 @@ final class LobbyScreen {
     private static final java.util.Set<String> loadTried = new java.util.HashSet<String>();
 
     /** A sprite by its path, loaded if the game hasn't yet (portraits load as they are first shown); null if none. */
-    private static SpriteAPI sprite(String path) {
+    static SpriteAPI sprite(String path) {
         if (path == null || path.isEmpty()) return null;
         try {
             SpriteAPI s = Global.getSettings().getSprite(path);
@@ -245,7 +282,7 @@ final class LobbyScreen {
     }
 
     /** Draw a sprite fitted into a square (bottom-left x, y), keeping its shape. */
-    private static void icon(SpriteAPI s, float x, float y, float size) {
+    static void icon(SpriteAPI s, float x, float y, float size) {
         if (s == null) return;
         float w0 = s.getWidth(), h0 = s.getHeight();
         float k = Math.min(size / w0, size / h0);
@@ -257,7 +294,7 @@ final class LobbyScreen {
         s.setSize(w0, h0);
     }
 
-    private static void outline(float x, float y, float w, float h, Color c) {
+    static void outline(float x, float y, float w, float h, Color c) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);

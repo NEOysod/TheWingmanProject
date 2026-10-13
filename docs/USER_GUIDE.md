@@ -92,6 +92,11 @@ and in a campaign friends can connect as soon as you load your save, while you a
      the next battle; **Delete** drops your pick. Ships marked *flagship*, *mothballed*, *can't fly* or with
      another player's name can't be picked.
    - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
+   - **Refit:** while the host is docked at a market, the lobby says so, and the card of the ship you picked has
+     a **REFIT (R)** button. It opens your ship as it stands, with its ordnance points, vents, capacitors and
+     S-mods against the host's limits, and what the host has to fit it with: credits, story points, cargo,
+     storage and each market there. For now this only shows them; choosing weapons and sending the refit to the
+     host comes in a later version. **Esc** goes back to the fleet. (Host setting "Friends can refit their ships".)
    - **Esc** goes back to the CO-OP panel; **F4** there opens the lobby again.
 4. **Stay on the title screen.** When the host's battle begins, the panel counts down three seconds and
    takes you into it. Press **Enter** to go at once, or **Esc** to sit that battle out.
@@ -194,6 +199,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Battle (host) | Ctrl+Shift+T | Take back the targeted ship |
 | Lobby (joiner, title screen) | Up / Down, F, Delete | Choose a ship in the host's fleet; pick it; drop your pick |
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
+| Lobby (joiner, title screen) | R | Refit the ship you picked (while the host is docked at a market) |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |

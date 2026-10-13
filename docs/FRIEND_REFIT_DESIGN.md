@@ -1,17 +1,18 @@
-# Friend refit: design (not built yet)
+# Friend refit: design
 
 A joiner refits the ship they picked from the host's fleet, in a refit screen of Wingman's own in the lobby. The
 host's game checks the request and asks the host, in the host's own refit screen, to accept or deny it. Only an
 accepted request changes anything in the host's campaign.
 
-Everything below is a proposal for review. Nothing of it is built.
+**Status:** stage 1 (availability, the Refit button and the data, with a view-only refit screen) is built; see
+`docs/TECHNICAL.md` 6.8 for how. Stages 2 to 5 below are still a proposal.
 
 ---
 
 ## 1. When a friend can refit
 
-- **The host is docked at a market with a station or spaceport**, inside its interaction dialog (the same
-  moment the game lets the host open the market and refit tabs). The host's game detects this and tells
+- **The host is docked at a market**, inside its interaction dialog (the same moment the game lets the host open
+  the market and refit tabs): a real market with submarkets, where docking wasn't refused (trade mode not `NONE`). The host's game detects this and tells
   joiners that refitting is available. Nothing opens on its own: joiners get a **Refit** button (see 3) and
   open the refit screen only if they want to. When the host undocks, the button goes away; a refit screen a
   joiner has open closes with a short notice ("The host left the market"), and a pending request is
@@ -108,8 +109,10 @@ A request that fails any check is refused with the reason, and the joiner's scre
 
 ## 7. Messages and versions
 
-New messages (protocol bump): REFIT_AVAILABLE (host -> joiner: available or not, market name), REFIT_DATA (the data in 2, sent only to a
-joiner with the refit screen open, on asking),
+New messages (protocol bump): availability travels in the lobby's ROSTER (the market's name, "" when refitting
+isn't possible) rather than in a message of its own; REFIT_ASK (joiner -> host: the member whose refit screen the
+joiner opened, "" when closed; built), REFIT_DATA (the data in 2, sent only to a joiner with the refit screen
+open, on asking and on each change; built),
 REFIT_REQUEST (joiner -> host), REFIT_RESULT (host -> joiner: accepted / denied / refused, with reason). Each
 decoded with the usual size limits and checked by the fuzz test.
 

@@ -70,13 +70,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     // ---- the pre-battle lobby (see CampaignLobby): the host's fleet, and the ship we pick from it ----
     private wingman.net.Roster roster;
-    private boolean lobbyOpen, lobbyShown;
+    private boolean lobbyOpen, lobbyShown, wasClickDown;
     private int lobbyAt;
     private String lobbyNote = "";
     private java.awt.Color lobbyNoteColor = Panel.DIM;
     private static final int LOBBY_ROWS = 9;
     /** The lobby as a screen of its own (the game's menu moved aside); the corner box if that can't be done. */
     private final LobbyScreen lobby = new LobbyScreen();
+    /** Friend refit: the refit screen is open on this member ("" closed), and what the host last sent for it. */
+    private String refitMember = "";
+    private wingman.net.RefitData refitData;
 
     private static final String[] HELP_TITLES = {
         "THE WINGMAN PROJECT: WHAT THIS IS", "HOSTING A BATTLE", "JOINING A BATTLE", "IN THE BATTLE", "BEFORE YOU PLAY",
@@ -211,7 +214,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     hostLine = "";
                 }
                 if (state == ClientLink.State.CONNECTED) { form.status = "Connected to " + connectedTo + "."; form.statusColor = Panel.GOOD; }
-                if (state != ClientLink.State.CONNECTED) { welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null; }
+                if (state != ClientLink.State.CONNECTED) {
+                    welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null;
+                    refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+                }
                 lastState = state;
             }
             if (state != ClientLink.State.CONNECTED) return;
@@ -220,6 +226,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 lobbyOpen = true;
                 lobbyShown = true;
                 open = true;
+                closeRefit(null);
                 lobby.page = LobbyScreen.REPORT;
             }
             // Nothing else reads the connection while we sit on the title screen, and a host in a battle keeps
@@ -276,15 +283,25 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
                     for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
                     withHost = names.toString();
+                    if (!refitMember.isEmpty()) { // friend refit: the screen stays only while the host is docked and the ship is ours
+                        if (roster.refitMarket.isEmpty()) closeRefit("The host left the market, so the refit screen closed.");
+                        else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed.");
+                    }
                     if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
                         lobbyShown = true;
                         lobbyOpen = true;
                         open = true;
                         if (mine != null) lobbyAt = roster.members.indexOf(mine);
                     }
-                } else if (p.type == Msg.NOTICE) { // the host's answer to a pick it can't grant
+                } else if (p.type == Msg.NOTICE) { // the host's answer to a pick (or a refit) it can't grant
                     lobbyNote = Msg.readUtf(p.data);
                     lobbyNoteColor = Panel.WARN;
+                    if (lobbyNote.startsWith("Can't refit")) closeRefit(lobbyNote);
+                } else if (p.type == Msg.REFIT_DATA) { // friend refit: what the refit screen shows
+                    try {
+                        wingman.net.RefitData d = wingman.net.RefitData.decode(p.data);
+                        if (d.memberId.equals(refitMember)) refitData = d;
+                    } catch (java.io.IOException e) { /* a garbled one is skipped: the next one replaces it */ }
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
                     StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
@@ -437,6 +454,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private void lobbyKey(int key) {
         int n = roster == null ? 0 : roster.members.size();
         int page = TitleMenu.isHidden() ? lobby.rows : LOBBY_ROWS;
+        if (lobby.page == LobbyScreen.REFIT) {                                         // the refit screen: Esc back to the fleet
+            if (key == 1) closeRefit(null);
+            else if (key == 59) helpPage = 0;
+            return;
+        }
+        if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
         if (key == 59) { helpPage = 0; return; }                                       // F1
         if (key == 15) { lobby.page = lobby.page == LobbyScreen.FLEET ? LobbyScreen.REPORT : LobbyScreen.FLEET; return; } // Tab
@@ -461,6 +484,34 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     }
 
     private void note(String text, java.awt.Color color) { lobbyNote = text; lobbyNoteColor = color; }
+
+    /** Friend refit: open the refit screen on the ship we picked, and ask the host for what it shows. */
+    private void openRefit() {
+        String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
+        wingman.net.Roster.Member mine = roster == null ? null : roster.pickOf(me);
+        if (roster == null || roster.refitMarket.isEmpty()) { note("Refitting is possible while the host is docked at a market.", Panel.WARN); return; }
+        if (mine == null) { note("Pick a ship first: you can refit the ship you picked.", Panel.WARN); return; }
+        if ((mine.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED)) != 0) { note("That ship can't be refitted.", Panel.WARN); return; }
+        if (lobby.isBroken() || !TitleMenu.hide()) { note("The refit screen needs the full-screen lobby, which can't be shown here.", Panel.BAD); return; }
+        Conn c = ClientLink.get().getConn();
+        if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+        c.send(Msg.REFIT_ASK, Msg.utf(mine.id));
+        refitMember = mine.id;
+        refitData = null;
+        lobby.page = LobbyScreen.REFIT;
+        note("", Panel.DIM);
+    }
+
+    /** Close the refit screen (telling the host), with a note why if it wasn't the player's doing. */
+    private void closeRefit(String why) {
+        if (refitMember.isEmpty()) return;
+        refitMember = "";
+        refitData = null;
+        if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+        Conn c = ClientLink.get().getConn();
+        if (c != null && ClientLink.get().getState() == ClientLink.State.CONNECTED) c.send(Msg.REFIT_ASK, Msg.utf(""));
+        if (why != null) note(why, Panel.WARN);
+    }
 
     private void sendPick(String memberId) {
         Conn c = ClientLink.get().getConn();
@@ -497,6 +548,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         v.players = withHost.isEmpty() ? "" : "In this game: " + withHost;
         v.note = lobbyNote;
         v.noteColor = lobbyNoteColor;
+        v.refitMarket = roster == null ? "" : roster.refitMarket;
+        v.refitOpen = !refitMember.isEmpty();
+        v.refitData = refitData;
         return v;
     }
 
@@ -603,7 +657,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             // The lobby as a screen of its own, with the game's menu moved aside (other pages draw over it).
             boolean full = open && lobbyOpen && state == ClientLink.State.CONNECTED && !lobby.isBroken() && TitleMenu.hide();
             if (!full) TitleMenu.show();
-            if (full) lobby.render(lobbyView());
+            if (full) {
+                float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
+                if (down && !wasClickDown && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
+                lobby.render(lobbyView());
+            }
+            wasClickDown = down;
 
             List<String> lines = new ArrayList<String>();
             List<Color> colors = new ArrayList<Color>();

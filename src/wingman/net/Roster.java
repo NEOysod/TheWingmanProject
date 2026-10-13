@@ -46,6 +46,8 @@ public final class Roster {
     /** 0: on the campaign map (or in a menu), 1: in a battle. */
     public int hostState;
     public String maxShipSize = "CAPITAL_SHIP";
+    /** Friend refit: the market the host is docked at, where joiners may refit their picked ship; "" when they can't. */
+    public String refitMarket = "";
     public List<Player> players = new ArrayList<Player>();
     public List<Member> members = new ArrayList<Member>();
 
@@ -93,6 +95,7 @@ public final class Roster {
                 for (int k = 0; k < m.fits.size() && k < MAX_FITS; k++) w.out.writeUTF(cap(m.fits.get(k), 200));
                 w.out.writeUTF(cap(m.dmods, 400));
             }
+            w.out.writeUTF(cap(refitMarket, 80));
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -147,6 +150,7 @@ public final class Roster {
             m.dmods = cleanLong(in.readUTF());
             r.members.add(m);
         }
+        r.refitMarket = clean(in.readUTF());
         return r;
     }
 

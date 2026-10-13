@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 59;
+    public static final int PROTOCOL_VERSION = 60;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -89,6 +89,10 @@ public final class Msg {
     public static final byte AFTERMATH = 59;    // host -> joiners: what the battle changed in the host's fleet, once back on the map (Aftermath)
     public static final byte LUNA = 61;         // host -> joiner: the host's LunaLib settings for the battle, keys left out (see LunaCopy)
     public static final byte LUNA_KEYS = 62;    // joiner -> host: the joiner's own keys for LunaLib settings ("mod/field" -> key code)
+    /** joiner -> host: the fleet member (by id) whose refit screen the joiner opened; "" when they closed it (friend refit). */
+    public static final byte REFIT_ASK = 63;
+    /** host -> joiner: what the refit screen shows (RefitData); sent on REFIT_ASK and again when any of it changes. */
+    public static final byte REFIT_DATA = 64;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 
