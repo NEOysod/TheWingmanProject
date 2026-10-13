@@ -46,7 +46,7 @@ Three constraints shape almost every detail:
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
-| Campaign | `WingmanModPlugin`, `CampaignLobby` (the pre-battle lobby), `Hosting` (opens the session with the saved settings, for a battle, the lobby or another mod) |
+| Campaign | `WingmanModPlugin`, `CampaignLobby` (the pre-battle lobby), `CampaignPlayerList` (the host's player list on the map, setting `playerList`), `Hosting` (opens the session with the saved settings, for a battle, the lobby or another mod) |
 | For other mods | `wingman.api.WingmanAPI` (see `docs/MOD_API.md`), `PilotMarks` (who flies what, written on ships) |
 | Optional agent (`agent/src`, its own jar; 8.9) | `wingman.agent.Agent`, `Patcher`, `Hooks`, `Bridge`; in Wingman: `AgentGate`, `AgentLink` |
 | Network (`wingman.net`, no game classes) | `Roster` (pre-battle lobby), `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats`, `ModChannel` (other mods' messages), `InputBuffer` (steady controls), `Budget` (bandwidth limit), `Smoother` (smooth corrections, jitter buffer) |
@@ -1297,6 +1297,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `readyCheck` | true | host | no | Hold the battle while everyone chooses a ship, then until everyone is ready |
 | `campaignLobby` | true | host | no | Open the session on the campaign map: friends connect and pick ships before a battle (6.5) |
 | `friendRefit` | true | host | yes | Friends may refit the ship they picked while the host is docked at a market (6.8) |
+| `playerList` | true | host | yes | A small list of connected players and their picks, top right of the campaign map (not over a dialog or a core screen) |
 | `modCheck` | content | host | no | `content` (utility mods may differ), `all`, `off` |
 | `autoJoin` | true | joiner | no | Join the host's battle by itself |
 | `rememberShip` | true | joiner | yes | Board last battle's ship |

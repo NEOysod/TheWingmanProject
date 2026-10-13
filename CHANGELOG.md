@@ -14,6 +14,13 @@ Protocol 60: host and joiners need this build.
 - It closes when the host undocks, when the pick changes, or with Esc. Nothing in the host's campaign changes.
 - Host setting `friendRefit` (on by default): "Friends can refit their ships".
 
+**Changes**
+
+- The host's **player list** moved from battles to the **campaign map**, and is smaller: a compact box at the top
+  right while friends are connected, one line per player in their colour with the ship they picked ("no pick"
+  otherwise) and "(link quiet)" when their connection goes silent. Hidden while a dialog or a fleet, cargo or
+  refit screen is open. Battles no longer show it (the player tags still say who flies what). Setting `playerList`.
+
 ## 0.8-beta
 Protocol 59: host and joiners need this build.
 

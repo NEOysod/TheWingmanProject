@@ -719,7 +719,6 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (disabled || !started || events == null) return;
         try {
             if (!settings.open && cfg.playerTags) PlayerTags.toggleKey(events, engine);
-            if (!settings.open) scrollPlayerList(events);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
                     if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
@@ -775,59 +774,6 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
-    // ---- the player list, top right (host setting playerList) ----
-
-    private final Panel listPanel = new Panel();
-    private int listScroll;
-    /** Rows shown at once; more players scroll with the mouse wheel over the list. */
-    private static final int LIST_ROWS = 4;
-
-    private void playerList() {
-        if (cfg == null || !cfg.playerList || session.getPlayers().isEmpty() || PlayerTags.hidden) { listPanel.lastW = 0f; return; }
-        List<String> rows = new ArrayList<String>();
-        List<Color> rowColors = new ArrayList<Color>();
-        ShipAPI mine = engine.getPlayerShip();
-        rows.add("P1  " + cfg.playerName + " (you)" + shipText(mine));
-        rowColors.add(PlayerTags.color(1));
-        List<HostSession.Player> ps = new ArrayList<HostSession.Player>(session.getPlayers());
-        java.util.Collections.sort(ps, new java.util.Comparator<HostSession.Player>() {
-            public int compare(HostSession.Player a, HostSession.Player b) { return a.slot - b.slot; }
-        });
-        for (HostSession.Player p : ps) {
-            boolean quiet = p.conn.idleMillis() > 1500;
-            String state = p.ship != null ? shipText((ShipAPI) p.ship) + (onAutopilot.contains(p.id) ? "  (autopilot)" : "")
-                    : p.watching ? "  watching" : "  no ship";
-            rows.add("P" + p.slot + "  " + p.name + state + (quiet ? "  (link quiet)" : ""));
-            rowColors.add(quiet ? Panel.WARN : PlayerTags.color(p.slot));
-        }
-        int n = rows.size();
-        listScroll = Math.max(0, Math.min(listScroll, n - LIST_ROWS));
-        List<String> shown = new ArrayList<String>();
-        List<Color> shownColors = new ArrayList<Color>();
-        for (int i = listScroll; i < n && i < listScroll + LIST_ROWS; i++) { shown.add(rows.get(i)); shownColors.add(rowColors.get(i)); }
-        String footer = n > LIST_ROWS ? (listScroll + 1) + "-" + Math.min(n, listScroll + LIST_ROWS) + " of " + n + "   Mouse wheel here: scroll" : "F3: hide";
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-        listPanel.renderBelow(sw - 12f, sh - 12f, 330f, "PLAYERS (" + n + ")", shown, shownColors, footer);
-    }
-
-    private static String shipText(ShipAPI s) {
-        if (s == null || s.isShuttlePod()) return "  command shuttle";
-        String name = s.getName();
-        return "  " + (name == null || name.isEmpty() ? s.getHullSpec().getHullName() : name);
-    }
-
-    /** Mouse wheel over the player list scrolls it (and isn't passed on to the camera's zoom). */
-    private void scrollPlayerList(List<InputEventAPI> events) {
-        if (listPanel.lastW <= 0f || events == null) return;
-        float scale = Global.getSettings().getScreenScaleMult();
-        for (InputEventAPI e : events) {
-            if (e.isConsumed() || !e.isMouseScrollEvent()) continue;
-            if (!listPanel.contains(e.getX() / scale, e.getY() / scale)) continue;
-            listScroll += e.getEventValue() > 0 ? -1 : 1;
-            e.consume();
-        }
-    }
-
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
         if (disabled || !started) return;
@@ -837,7 +783,6 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
-        if (!settings.open && alertTitle == null && readyPhase == 2) playerList();
         if (settings.open) {
             try {
                 settings.lines(lines, colors);

@@ -108,8 +108,8 @@ final class Settings {
                 "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
         ITEMS.add(new Item(2, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
-        ITEMS.add(new Item(2, "playerList", "Player list in battle", HOST, false, YES_NO,
-                "A small list of the players at the top right: who flies what, on autopilot or watching, and whose link has gone quiet. Scrolls with the mouse wheel over it beyond four rows; F3 hides it with the tags."));
+        ITEMS.add(new Item(2, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
+                "A small list at the top right of the campaign map while friends are connected: each player in their colour, the ship they picked, and whose link has gone quiet."));
         ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
                 "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
         ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,

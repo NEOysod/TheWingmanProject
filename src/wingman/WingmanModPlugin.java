@@ -27,6 +27,7 @@ public class WingmanModPlugin extends BaseModPlugin {
             Global.getSector().addTransientScript(new Watch());
             Global.getSector().addTransientScript(new CampaignLobby());
             CampaignSettings.install(); // Ctrl+Shift+O on the campaign map
+            CampaignPlayerList.install(); // who is connected, top right of the campaign map
         } catch (Throwable t) {
             Global.getLogger(WingmanModPlugin.class).warn("Wingman: could not watch the campaign for battles ending; "
                     + "joiners may have to leave a finished battle themselves", t);
