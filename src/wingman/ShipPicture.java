@@ -116,6 +116,7 @@ final class ShipPicture {
         }
         float k = Math.min(2f, Math.min(box / Math.max(1f, maxX - minX), box / Math.max(1f, maxY - minY)));
         float ox = x - (minX + maxX) / 2f * k, oy = y - (minY + maxY) / 2f * k;
+        lastHull = hullId; lastOx = ox; lastOy = oy; lastK = k;
         for (Part p : parts) {
             SpriteAPI s = p.sprite;
             s.setSize(p.w * k, p.h * k);
@@ -126,6 +127,36 @@ final class ShipPicture {
             s.setAngle(0f);
         }
         try { weapons(fits, frames, hullOf, ox, oy, k); } catch (Throwable t) { /* the hulls alone */ }
+    }
+
+    // ---- where the main hull's slots are on screen (for clicking them), as last drawn ----
+
+    private static String lastHull;
+    private static float lastOx, lastOy, lastK;
+
+    /**
+     * The screen point of each of these main-hull slots in the picture last drawn of that hull: slot id -> { x, y,
+     * 1 if a hardpoint }. Empty if that hull wasn't the last drawn. Slots placed as the weapons are (see weapons()).
+     */
+    static Map<String, float[]> slotPoints(String hullId, List<String> slotIds) {
+        Map<String, float[]> out = new HashMap<String, float[]>();
+        if (hullId == null || !hullId.equals(lastHull)) return out;
+        Map<String, float[]> files = slotsFromFiles(hullId);
+        ShipHullSpecAPI hull = null;
+        try { hull = Global.getSettings().getHullSpec(hullId); } catch (Throwable t) { /* files only */ }
+        for (String id : slotIds) {
+            float lx, ly;
+            boolean hardpoint;
+            float[] f = files.get(id);
+            if (f != null) { lx = f[0]; ly = f[1]; hardpoint = f[3] == 1f; }
+            else {
+                com.fs.starfarer.api.loading.WeaponSlotAPI slot = hull == null ? null : hull.getWeaponSlotAPI(id);
+                if (slot == null) continue;
+                lx = slot.getLocation().x; ly = slot.getLocation().y; hardpoint = slot.isHardpoint();
+            }
+            out.put(id, new float[] { lastOx - ly * lastK, lastOy + lx * lastK, hardpoint ? 1f : 0f });
+        }
+        return out;
     }
 
     // ---- weapons in their slots ----

@@ -610,16 +610,23 @@ changes in the host's campaign until the host accepts a refit.
   can move to another slot through cargo, or be sold and bought back), a shut submarket, one that won't sell or buy
   that item, no storage, hull mods not known, already on, permanent, not fitted for building in, `no_build_in`,
   vents and capacitors over the limits, S-mods over the limit, credits and story points short.
-- **The joiner's screen** (`RefitScreen`, lobby page `REFIT`): left, the ship drawn with the new loadout, the totals
-  against the limits, the plan's problems (red) and the host's last answer; middle, rows for each weapon slot that
-  can take one (from this game's hull spec; built-in, decorative, system, hidden and module slots left out), each
-  bay (built-in wings fixed), vents, capacitors, each hull mod (S-mods and permanent ones fixed), "Add a hull mod",
-  a note, SEND; right, what can go in the marked row: from cargo, storage and each submarket, weapons only if
-  `WeaponSlotAPI.weaponFits`, with OP, count and price (greyed when it can't be bought). Keys: Up/Down, Enter or a
-  click to change, Left/Right vents and capacitors (Shift ×5), Delete takes a hull mod off, B builds it in, S says
-  where the item taken out goes (cargo, storage, or sold to a submarket that would take it), Z undoes the row
-  (Shift+Z all), Ctrl+Enter sends. A change that leaves a slot as it was is dropped. Edits survive new data for the
-  same ship (the totals follow); an accepted refit starts afresh on the new loadout.
+- **The joiner's screen** (`RefitScreen`, lobby page `REFIT`), made for the mouse. Left: the ship drawn with the new
+  loadout, a ring on each slot that can take a weapon (`ShipPicture.slotPoints`: the slot's screen point in the
+  picture last drawn; coloured by slot type, sized by slot size, green when changed, white when marked; hovering
+  names it; a click marks it), the totals against the limits, the plan's problems (red). Middle: tiles (with
+  section heads) for each weapon slot that can take one (biggest first; built-in, decorative, system, hidden and
+  module slots left out), each bay (built-in wings fixed), vents, capacitors, each hull mod (S-mods and permanent
+  ones fixed), "Add a hull mod", the note; each with its picture (weapon turret sprite, else hardpoint; the wing's
+  hull; the hull mod's icon). Right: for a slot or bay, a button for where the item taken out goes (cargo, storage,
+  or sold to a submarket that takes it), UNDO, source tabs (All, cargo, storage, each market) and cards of what
+  fits (`WeaponSlotAPI.weaponFits`) with picture, OP, source, count and price, two to a row, "leave it empty"
+  first, greyed when it can't be bought; for a hull mod, TAKE OFF / PUT BACK, BUILD IN (1 SP), UNDO; vents and
+  capacitors, -5 - + +5; the note, a box to click and type in. Bottom: SEND TO HOST (green when it can go), START
+  OVER, BACK, and the host's last answer. Clicks are read by the title plugin's drawing (press edge) and matched
+  against what was drawn where; the mouse wheel over the tiles or the cards scrolls them. Keys still work (Up/Down
+  tiles, Left/Right cards or vents, Enter fits the card, S, B, Z, Shift+Z, Delete, Ctrl+Enter, Esc). A change
+  that leaves a slot as it was is dropped. Edits survive new data for the same ship (the totals follow); an
+  accepted refit starts afresh on the new loadout.
 - **A request on the host** (`FriendRefit.receive`, on the game thread; `HostSession` keeps the latest bytes per
   player): refused at once (`REFIT_RESULT` REFUSED with the reasons) unless the player may refit that ship now, it
   changes something, and it passes every check; else kept as the player's one pending request (a new one replaces
@@ -636,14 +643,20 @@ changes in the host's campaign until the host accepts a refit.
   a small FRIEND REFITS (n) button at the top right (over the dialog and core screens); a click or Ctrl+Shift+R
   opens the panel (keys are its own while it is up): who, which ship, the note, each change with where items come
   from and go and their prices, the ordnance points, credits and story points, a warning if the joiner was shown
-  other totals, and the checks (refreshed each second). Under it, buttons YES, ACCEPT / NO, DENY (and < > between
+  other totals, and the checks (refreshed each second); under it a strip of pictures, for each slot or bay what
+  comes out (faded) and what goes in, and each hull mod added. Under that, buttons YES, ACCEPT / NO, DENY (and < > between
   requests, CLOSE), clicked by polling the mouse while drawing (so they work over any screen); mouse events over the
-  panel or a button are consumed so they don't reach the dialog's options. Keys: A, D, Left/Right, Esc. With a core screen (fleet, cargo, refit) open, A marks it accepted (`acceptOnClose`; the joiner hears so)
-  and it is done the moment the screen closes (`FriendRefit.applyWaiting`, each frame from the panel's rendering and
-  the lobby's script; checked once more then): the screen keeps its own copy of the ship and would undo a change
+  panel or a button are consumed so they don't reach the dialog's options. Keys: A, D, Left/Right, Esc, each read
+  before its event is consumed (the game refuses any read after). With a core screen (fleet, cargo, refit) open, A
+  marks it accepted (`acceptOnClose`, remembering the market and the dialog; the joiner hears so) and it is done
+  once no core screen is reported or that dialog has gone (`FriendRefit.applyWaiting`, each frame from the panel's
+  rendering and the lobby's script; checked once more then, but no longer needing the host docked: it said yes
+  while docked, and that market is still at hand): the screen keeps its own copy of the ship and would undo a change
   made under it. With `friendRefitReopen`, the refit screen then opens again on the last ship refitted, from the
   market's dialog as the game's `OpenCoreTab` rule does it (`VisualPanelAPI.showCore(REFIT, target, member, trade
-  mode, listener)`, options cleared, `PopulateOptions` fired on closing); only for rule-based dialogs.
+  mode, listener)`, options cleared, `PopulateOptions` fired on closing); only for rule-based dialogs, and only if
+  the dialog it was accepted in is still up. With the detailed log on, the core tab, `isShowingDialog`,
+  `isShowingMenu` and the dialog are logged each second while one waits.
 - **Accepting** (`FriendRefit.accept`): checked once more; items taken out go first (to cargo, storage, or sold:
   added to the submarket's cargo, credits added), then items in (from cargo, storage, or bought: taken from the
   submarket's cargo, credits taken); the ship gets a clone of its variant with the source `REFIT` (never the

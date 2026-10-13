@@ -4,10 +4,16 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.lwjgl.opengl.GL11;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipHullSpecAPI;
+import com.fs.starfarer.api.graphics.SpriteAPI;
 import com.fs.starfarer.api.loading.HullModSpecAPI;
 import com.fs.starfarer.api.loading.WeaponSlotAPI;
 import com.fs.starfarer.api.loading.WeaponSpecAPI;
@@ -20,10 +26,11 @@ import wingman.net.Roster;
 
 /**
  * Friend refit, joiner side: the refit screen, drawn as the lobby's third page (LobbyScreen.REFIT) with the
- * lobby's own drawing helpers. The middle column lists what can be changed (each weapon slot, each fighter bay,
- * vents, capacitors, hull mods, then a note and SEND); the right column offers what can go in the marked row,
- * from the host's cargo, storage and each submarket here, only what fits; the left shows the ship with the new
- * loadout, the totals (ordnance points, credits, story points, S-mods) and anything that stops it being sent.
+ * lobby's own drawing helpers, made for the mouse. Left: the ship with the new loadout and a ring on each slot
+ * (click one to choose it), the totals and anything that stops the refit. Middle: a tile for each weapon slot,
+ * fighter bay, vents, capacitors and hull mod, with its picture. Right: for the marked tile, cards of what can go
+ * in it (from the host's cargo, storage or a market, filtered by tabs), or buttons for what can be done with it.
+ * Bottom: SEND TO HOST, START OVER, BACK. The mouse wheel scrolls the tiles and the cards. Keys still work.
  *
  * What it shows comes from the host (RefitData); the totals and problems are worked out as the host will
  * (RefitPlan), and the host checks everything again before asking its player. See docs/FRIEND_REFIT_DESIGN.md.
@@ -39,12 +46,13 @@ final class RefitScreen {
     // ---- the edit in progress ----
     private RefitRequest req;
     private RefitData data;
-    private int rowAt, optAt;
-    private boolean inOptions, typingNote;
+    private int rowAt = -1, optAt, rowScroll, cardScroll;
+    private boolean typingNote;
+    /** The source the cards are filtered to ("" all of them). */
+    private String tab = "";
     /** The last word from the host on a request, and the color to show it in. */
     private String status = "";
     private Color statusColor = Panel.DIM;
-    private final List<float[]> rowRects = new ArrayList<float[]>(), optRects = new ArrayList<float[]>();
 
     /** New data from the host: a different ship starts afresh; the same keeps what was chosen. */
     void setData(RefitData d) {
@@ -58,13 +66,14 @@ final class RefitScreen {
         req.memberId = d.memberId;
         req.vents = d.vents;
         req.caps = d.caps;
-        rowAt = 0;
+        rowAt = -1;
         optAt = 0;
-        inOptions = false;
+        rowScroll = 0;
+        cardScroll = 0;
         typingNote = false;
+        tab = "";
     }
 
-    /** The screen opened afresh (or closed): nothing chosen, nothing heard. */
     void clear() {
         req = null;
         data = null;
@@ -94,9 +103,9 @@ final class RefitScreen {
 
     private RefitPlan plan() { return new RefitPlan(data, req, new FriendRefit.Names(data)); }
 
-    // ---- rows: what can be changed ----
+    // ---- rows (tiles): what can be changed ----
 
-    private static final int SLOT = 0, BAY = 1, VENTS = 2, CAPS = 3, MOD = 4, ADD_MOD = 5, NOTE = 6, SEND_ROW = 7;
+    private static final int SLOT = 0, BAY = 1, VENTS = 2, CAPS = 3, MOD = 4, ADD_MOD = 5, NOTE = 6, HEAD = 7;
 
     private static final class Row {
         final int kind;
@@ -112,27 +121,48 @@ final class RefitScreen {
         return s.isWeaponSlot() && !s.isBuiltIn() && !s.isDecorative() && !s.isSystemSlot() && !s.isHidden() && !s.isStationModule();
     }
 
-    private List<Row> rows() {
-        List<Row> rows = new ArrayList<Row>();
-        ShipHullSpecAPI hull = hull();
+    private List<String> slots() {
         List<String> slots = new ArrayList<String>();
+        ShipHullSpecAPI hull = hull();
         if (hull != null) {
             for (WeaponSlotAPI s : hull.getAllWeaponSlotsCopy()) {
                 try { if (changeable(s)) slots.add(s.getId()); } catch (Throwable t) { /* left out */ }
             }
         } else slots.addAll(data.fitSlots);
-        Collections.sort(slots);
-        for (String s : slots) rows.add(new Row(SLOT, s));
-        for (int i = 0; i < data.wings.size(); i++) rows.add(new Row(BAY, String.valueOf(i)));
+        // biggest first, then by place, as the game's own list
+        final ShipHullSpecAPI h = hull;
+        Collections.sort(slots, new Comparator<String>() {
+            public int compare(String a, String b) {
+                int c = size(h, b) - size(h, a);
+                return c != 0 ? c : a.compareTo(b);
+            }
+        });
+        return slots;
+    }
+
+    private static int size(ShipHullSpecAPI hull, String slot) {
+        try { return hull.getWeaponSlotAPI(slot).getSlotSize().ordinal(); } catch (Throwable t) { return 0; }
+    }
+
+    private List<Row> rows() {
+        List<Row> rows = new ArrayList<Row>();
+        rows.add(new Row(HEAD, "WEAPONS"));
+        for (String s : slots()) rows.add(new Row(SLOT, s));
+        if (!data.wings.isEmpty()) {
+            rows.add(new Row(HEAD, "FIGHTER BAYS"));
+            for (int i = 0; i < data.wings.size(); i++) rows.add(new Row(BAY, String.valueOf(i)));
+        }
+        rows.add(new Row(HEAD, "FLUX"));
         rows.add(new Row(VENTS, ""));
         rows.add(new Row(CAPS, ""));
+        rows.add(new Row(HEAD, "HULL MODS"));
         for (String id : data.sMods) rows.add(new Row(MOD, id));
         for (String id : data.permaMods) rows.add(new Row(MOD, id));
         for (String id : data.hullmods) rows.add(new Row(MOD, id));
         for (String id : req.addMods) rows.add(new Row(MOD, id));
         rows.add(new Row(ADD_MOD, ""));
+        rows.add(new Row(HEAD, "NOTE"));
         rows.add(new Row(NOTE, ""));
-        rows.add(new Row(SEND_ROW, ""));
         return rows;
     }
 
@@ -140,7 +170,23 @@ final class RefitScreen {
         try { ShipHullSpecAPI h = hull(); return h == null ? 0 : h.getBuiltInWings().size(); } catch (Throwable t) { return 0; }
     }
 
-    // ---- options: what can go in the marked row ----
+    /** The marked row, the first slot if none is yet. */
+    private Row marked(List<Row> rows) {
+        if (rowAt < 0 || rowAt >= rows.size() || rows.get(rowAt).kind == HEAD) {
+            rowAt = -1;
+            for (int i = 0; i < rows.size(); i++) if (rows.get(i).kind != HEAD) { rowAt = i; break; }
+        }
+        return rowAt < 0 ? null : rows.get(rowAt);
+    }
+
+    private void mark(List<Row> rows, int i) {
+        if (i < 0 || i >= rows.size() || rows.get(i).kind == HEAD) return;
+        if (i != rowAt) { optAt = 0; cardScroll = 0; tab = ""; }
+        rowAt = i;
+        typingNote = rows.get(i).kind == NOTE;
+    }
+
+    // ---- options (cards): what can go in the marked row ----
 
     private static final class Option {
         final String key, from;
@@ -150,8 +196,9 @@ final class RefitScreen {
         Option(String key, String from, int count, float price, boolean usable) { this.key = key; this.from = from; this.count = count; this.price = price; this.usable = usable; }
     }
 
-    private List<Option> options(Row row, FriendRefit.Names names) {
+    private List<Option> options(Row row, FriendRefit.Names names, boolean filtered) {
         List<Option> out = new ArrayList<Option>();
+        if (row == null) return out;
         if (row.kind == SLOT || row.kind == BAY) {
             if (row.kind == BAY && Integer.parseInt(row.id) < builtInWings()) return out;
             out.add(new Option(null, "", 0, 0f, true)); // leave it empty
@@ -164,11 +211,12 @@ final class RefitScreen {
             final FriendRefit.Names n = names;
             Collections.sort(found, new Comparator<Option>() {
                 public int compare(Option a, Option b) {
+                    if (a.usable != b.usable) return a.usable ? -1 : 1;
                     int c = n.item(a.key).compareToIgnoreCase(n.item(b.key));
                     return c != 0 ? c : Float.compare(a.price, b.price);
                 }
             });
-            out.addAll(found);
+            for (Option o : found) if (!filtered || tab.isEmpty() || tab.equals(o.from)) out.add(o);
         } else if (row.kind == ADD_MOD) {
             final FriendRefit.Names n = names;
             List<String> ids = new ArrayList<String>();
@@ -201,6 +249,13 @@ final class RefitScreen {
         }
     }
 
+    /** The sources that have something for this row, for the tabs. */
+    private List<String> sources(Row row, FriendRefit.Names names) {
+        Set<String> s = new LinkedHashSet<String>();
+        for (Option o : options(row, names, false)) if (o.key != null && !o.from.isEmpty()) s.add(o.from);
+        return new ArrayList<String>(s);
+    }
+
     // ---- changing things ----
 
     private RefitRequest.Change changeFor(Row row) {
@@ -221,15 +276,13 @@ final class RefitScreen {
     private void pick(Row row, Option o) {
         if (row.kind == ADD_MOD) {
             if (o.key != null && !req.addMods.contains(o.key)) req.addMods.add(o.key);
-            inOptions = false;
             return;
         }
-        if (!o.usable) return;
+        if (!o.usable) { status = "That one can't be bought there."; statusColor = Panel.WARN; return; }
         RefitRequest.Change c = changeFor(row);
         c.item = o.key == null ? "" : o.key.substring(2);
         c.from = o.key == null ? "" : o.from;
         tidy();
-        inOptions = false;
     }
 
     /** Changes that change nothing are dropped. */
@@ -239,6 +292,7 @@ final class RefitScreen {
     }
 
     private void undo(Row row) {
+        if (row == null) return;
         if (row.kind == SLOT || row.kind == BAY) {
             RefitRequest.Change c = req.change(row.id, row.kind == BAY);
             if (c != null) req.changes.remove(c);
@@ -248,9 +302,19 @@ final class RefitScreen {
         else if (row.kind == NOTE) req.note = "";
     }
 
+    private boolean changed(Row row) {
+        if (row == null) return false;
+        if (row.kind == SLOT || row.kind == BAY) return req.change(row.id, row.kind == BAY) != null;
+        if (row.kind == VENTS) return req.vents != data.vents;
+        if (row.kind == CAPS) return req.caps != data.caps;
+        if (row.kind == MOD) return req.removeMods.contains(row.id) || req.addMods.contains(row.id) || req.buildIn.contains(row.id);
+        if (row.kind == NOTE) return !req.note.isEmpty();
+        return false;
+    }
+
     /** Where the item taken out of a slot or bay goes next: cargo, storage, then each submarket that would buy it. */
     private void cycleDestination(Row row) {
-        if (row.kind != SLOT && row.kind != BAY) return;
+        if (row == null || (row.kind != SLOT && row.kind != BAY)) return;
         RefitRequest.Change c = req.change(row.id, row.kind == BAY);
         String old = c == null ? null : plan().before(c);
         if (c == null || old == null) return;
@@ -263,20 +327,21 @@ final class RefitScreen {
     }
 
     private void toggleBuildIn(Row row) {
-        if (row.kind != MOD || data.sMods.contains(row.id) || data.permaMods.contains(row.id)) return;
+        if (row == null || row.kind != MOD || data.sMods.contains(row.id) || data.permaMods.contains(row.id)) return;
         if (req.buildIn.remove(row.id)) return;
         if (req.removeMods.contains(row.id)) return;
         req.buildIn.add(row.id);
     }
 
     private void toggleRemove(Row row) {
-        if (row.kind != MOD) return;
+        if (row == null || row.kind != MOD) return;
         if (req.addMods.remove(row.id)) { req.buildIn.remove(row.id); return; }
         if (!data.hullmods.contains(row.id)) return; // S-mods, D-mods and built-ins stay
         if (!req.removeMods.remove(row.id)) { req.removeMods.add(row.id); req.buildIn.remove(row.id); }
     }
 
     private void adjust(Row row, int by) {
+        if (row == null) return;
         if (row.kind == VENTS) req.vents = Math.max(0, Math.min(data.maxVents > 0 ? data.maxVents : 999, req.vents + by));
         if (row.kind == CAPS) req.caps = Math.max(0, Math.min(data.maxCaps > 0 ? data.maxCaps : 999, req.caps + by));
     }
@@ -288,7 +353,8 @@ final class RefitScreen {
         return SEND;
     }
 
-    /** A key on the refit screen (LWJGL key code, its character, Ctrl and Shift held). */
+    // ---- keys (still there, though nothing needs them) ----
+
     int key(int key, char ch, boolean ctrl, boolean shift) {
         if (data == null || req == null) return key == 1 ? CLOSE : NOTHING;
         if (typingNote) {
@@ -298,112 +364,222 @@ final class RefitScreen {
             return NOTHING;
         }
         List<Row> rows = rows();
-        rowAt = Math.max(0, Math.min(rows.size() - 1, rowAt));
-        Row row = rows.get(rowAt);
+        Row row = marked(rows);
         if (ctrl && Panel.isEnter(key)) return trySend();
+        if (key == 1) return CLOSE;
         if (key == 44) { if (shift) reset(data); else undo(row); return NOTHING; }      // Z: undo this row, Shift+Z: everything
         if (key == 31) { cycleDestination(row); return NOTHING; }                         // S: where the old one goes
         if (key == 48) { toggleBuildIn(row); return NOTHING; }                            // B: build in
         if (key == 211) { toggleRemove(row); return NOTHING; }                            // Delete: hull mod off (or back on)
-        if (inOptions) {
-            List<Option> opts = options(row, new FriendRefit.Names(data));
-            if (key == 1 || key == 203) { inOptions = false; return NOTHING; }          // Esc, Left: back to the rows
-            if (opts.isEmpty()) { inOptions = false; return NOTHING; }
-            if (key == 200) optAt = (optAt + opts.size() - 1) % opts.size();
-            else if (key == 208) optAt = (optAt + 1) % opts.size();
-            else if (key == 201) optAt = Math.max(0, optAt - 10);
-            else if (key == 209) optAt = Math.min(opts.size() - 1, optAt + 10);
-            else if (Panel.isEnter(key)) pick(row, opts.get(Math.max(0, Math.min(opts.size() - 1, optAt))));
+        if (key == 200 || key == 208) {                                                   // Up/Down: the tiles
+            int i = rowAt;
+            do { i = (i + (key == 200 ? rows.size() - 1 : 1)) % rows.size(); } while (rows.get(i).kind == HEAD && i != rowAt);
+            mark(rows, i);
             return NOTHING;
         }
-        if (key == 1) return CLOSE;
-        if (key == 200) rowAt = (rowAt + rows.size() - 1) % rows.size();
-        else if (key == 208) rowAt = (rowAt + 1) % rows.size();
-        else if (key == 201) rowAt = Math.max(0, rowAt - 10);
-        else if (key == 209) rowAt = Math.min(rows.size() - 1, rowAt + 10);
-        else if (key == 203 || key == 205) adjust(row, (key == 205 ? 1 : -1) * (shift ? 5 : 1));
-        else if (Panel.isEnter(key)) {
-            if (row.kind == SEND_ROW) return trySend();
-            if (row.kind == NOTE) typingNote = true;
-            else if (row.kind == SLOT || row.kind == BAY || row.kind == ADD_MOD) {
-                if (!options(row, new FriendRefit.Names(data)).isEmpty()) { inOptions = true; optAt = 0; }
-            }
+        if (row != null && (row.kind == VENTS || row.kind == CAPS)) {
+            if (key == 203 || key == 205) adjust(row, (key == 205 ? 1 : -1) * (shift ? 5 : 1));
+            return NOTHING;
         }
+        List<Option> opts = options(row, new FriendRefit.Names(data), true);
+        if (opts.isEmpty()) return NOTHING;
+        if (key == 203) optAt = (optAt + opts.size() - 1) % opts.size();                 // Left/Right: the cards
+        else if (key == 205) optAt = (optAt + 1) % opts.size();
+        else if (Panel.isEnter(key)) pick(row, opts.get(Math.max(0, Math.min(opts.size() - 1, optAt))));
         return NOTHING;
     }
 
-    /** A click at (x, y) on the screen. */
-    int click(float x, float y) {
+    // ---- the mouse: what was drawn where, and the clicks on it ----
+
+    private static final int H_ROW = 0, H_CARD = 1, H_TAB = 2, H_RING = 3, H_BUTTON = 4;
+    private static final int B_SEND = 0, B_RESET = 1, B_BACK = 2, B_DEST = 3, B_UNDO = 4, B_MINUS5 = 5, B_MINUS = 6, B_PLUS = 7, B_PLUS5 = 8,
+            B_OFF = 9, B_BUILD = 10, B_NOTE = 11, B_CLEAR = 12;
+
+    private static final class Hit {
+        final float x, y, w, h;
+        final int type, index;
+        final String id;
+        Hit(float x, float y, float w, float h, int type, int index, String id) { this.x = x; this.y = y; this.w = w; this.h = h; this.type = type; this.index = index; this.id = id; }
+        boolean has(float mx, float my) { return mx >= x && mx <= x + w && my >= y && my <= y + h; }
+    }
+
+    private final List<Hit> hits = new ArrayList<Hit>();
+    private float[] tileArea, cardArea;
+
+    int click(float mx, float my) {
         if (data == null || req == null) return NOTHING;
         List<Row> rows = rows();
-        for (float[] r : optRects) {
-            if (x < r[0] || x > r[0] + r[2] || y < r[1] || y > r[1] + r[3]) continue;
-            List<Option> opts = options(rows.get(Math.max(0, Math.min(rows.size() - 1, rowAt))), new FriendRefit.Names(data));
-            int i = (int) r[4];
-            if (i >= 0 && i < opts.size()) { optAt = i; pick(rows.get(rowAt), opts.get(i)); }
-            return NOTHING;
+        for (int i = hits.size() - 1; i >= 0; i--) { // the last drawn is on top
+            Hit h = hits.get(i);
+            if (!h.has(mx, my)) continue;
+            sound();
+            Row row = marked(rows);
+            switch (h.type) {
+                case H_ROW: mark(rows, h.index); return NOTHING;
+                case H_RING:
+                    for (int k = 0; k < rows.size(); k++) if (rows.get(k).kind == SLOT && rows.get(k).id.equals(h.id)) { mark(rows, k); keepVisible(k); }
+                    return NOTHING;
+                case H_TAB: tab = h.id; optAt = 0; cardScroll = 0; return NOTHING;
+                case H_CARD: {
+                    List<Option> opts = options(row, new FriendRefit.Names(data), true);
+                    if (h.index >= 0 && h.index < opts.size()) { optAt = h.index; pick(row, opts.get(h.index)); }
+                    return NOTHING;
+                }
+                default:
+                    switch (h.index) {
+                        case B_SEND: return trySend();
+                        case B_RESET: reset(data); return NOTHING;
+                        case B_BACK: return CLOSE;
+                        case B_DEST: cycleDestination(row); return NOTHING;
+                        case B_UNDO: undo(row); return NOTHING;
+                        case B_MINUS5: adjust(row, -5); return NOTHING;
+                        case B_MINUS: adjust(row, -1); return NOTHING;
+                        case B_PLUS: adjust(row, 1); return NOTHING;
+                        case B_PLUS5: adjust(row, 5); return NOTHING;
+                        case B_OFF: toggleRemove(row); return NOTHING;
+                        case B_BUILD: toggleBuildIn(row); return NOTHING;
+                        case B_NOTE: typingNote = true; return NOTHING;
+                        case B_CLEAR: req.note = ""; return NOTHING;
+                        default: return NOTHING;
+                    }
+            }
         }
-        for (float[] r : rowRects) {
-            if (x < r[0] || x > r[0] + r[2] || y < r[1] || y > r[1] + r[3]) continue;
-            int i = (int) r[4];
-            if (i < 0 || i >= rows.size()) return NOTHING;
-            boolean again = i == rowAt;
-            rowAt = i;
-            Row row = rows.get(i);
-            typingNote = false;
-            if (row.kind == SEND_ROW) return trySend();
-            if (row.kind == NOTE) typingNote = true;
-            inOptions = (row.kind == SLOT || row.kind == BAY || row.kind == ADD_MOD) && (again || inOptions);
-            if (inOptions) optAt = 0;
-            return NOTHING;
-        }
+        typingNote = false; // a click anywhere else ends typing
         return NOTHING;
+    }
+
+    /** The mouse wheel over the tiles or the cards (dir > 0: up). */
+    boolean scroll(float mx, float my, int dir) {
+        int by = dir > 0 ? -1 : 1;
+        if (tileArea != null && mx >= tileArea[0] && mx <= tileArea[0] + tileArea[2] && my >= tileArea[1] && my <= tileArea[1] + tileArea[3]) { rowScroll = Math.max(0, rowScroll + by); return true; }
+        if (cardArea != null && mx >= cardArea[0] && mx <= cardArea[0] + cardArea[2] && my >= cardArea[1] && my <= cardArea[1] + cardArea[3]) { cardScroll = Math.max(0, cardScroll + by); return true; }
+        return false;
+    }
+
+    private int tilesShown = 10;
+
+    private void keepVisible(int row) {
+        if (row < rowScroll) rowScroll = row;
+        if (row >= rowScroll + tilesShown) rowScroll = row - tilesShown + 1;
+    }
+
+    private static void sound() {
+        try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
     }
 
     // ---- drawing ----
 
+    private static final Color CYAN = LobbyScreen.TITLE, TILE = new Color(255, 255, 255, 10), TILE_OVER = new Color(120, 210, 255, 30),
+            TILE_MARKED = new Color(120, 210, 255, 55), ICON_BACK = new Color(255, 255, 255, 16), BAR = new Color(4, 7, 12, 220);
+
     void render(LobbyScreen.View v, float x, float top, float w, float h) {
         String body = ui.body;
-        rowRects.clear();
-        optRects.clear();
+        hits.clear();
+        tileArea = null;
+        cardArea = null;
         LobbyScreen.frame(x, top - h, w, h);
         Roster.Member mem = v.roster == null ? null : v.roster.pickOf(v.me);
         setData(v.refitData);
         String title = "REFIT" + (mem == null ? "" : ":  " + Roster.label(mem)) + (v.refitMarket.isEmpty() ? "" : "   at " + v.refitMarket);
-        float y = ui.text(title, LobbyScreen.HEAD, LobbyScreen.TITLE, x + 16f, top - 12f, w - 32f) - 10f;
+        float y = ui.text(title, LobbyScreen.HEAD, CYAN, x + 16f, top - 12f, w - 32f) - 10f;
         if (data == null || req == null || mem == null || !data.memberId.equals(mem.id)) {
             ui.text("Asking the host for your ship and what this market has...", body, Panel.DIM, x + 16f, y, w - 32f);
+            button(x + w - 16f - 120f, top - h + 12f, 120f, 34f, "BACK", Panel.DIM, true, B_BACK);
             return;
         }
         FriendRefit.Names names = new FriendRefit.Names(data);
         RefitPlan plan = new RefitPlan(data, req, names);
-        float gap = 16f, floor = top - h + 16f;
-        float w1 = (w - 32f - 2 * gap) * 0.30f, w2 = (w - 32f - 2 * gap) * 0.38f, w3 = (w - 32f - 2 * gap) - w1 - w2;
-        float c1 = x + 16f, c2 = c1 + w1 + gap, c3 = c2 + w2 + gap;
         List<Row> rows = rows();
-        rowAt = Math.max(0, Math.min(rows.size() - 1, rowAt));
-        ship(plan, mem, c1, y, w1, floor);
-        rowList(rows, plan, names, c2, y, w2, floor);
-        side(rows.get(rowAt), plan, names, c3, y, w3, floor);
+        Row row = marked(rows);
+        float barH = 48f, floor = top - h + barH + 14f;
+        float gap = 16f, inner = w - 32f - 2 * gap;
+        float w1 = inner * 0.32f, w2 = inner * 0.32f, w3 = inner - w1 - w2;
+        float c1 = x + 16f, c2 = c1 + w1 + gap, c3 = c2 + w2 + gap;
+        ship(plan, mem, row, c1, y, w1, floor);
+        tiles(rows, plan, names, c2, y, w2, floor);
+        side(row, plan, names, c3, y, w3, floor);
+        bottomBar(plan, x + 16f, top - h + 10f, w - 32f, barH - 12f);
     }
 
-    /** The ship with the new loadout, the totals, and what is wrong. */
-    private void ship(RefitPlan plan, Roster.Member mem, float x, float top, float w, float floor) {
+    /** A clickable button; returns its right edge. */
+    private float button(float x, float y, float w, float h, String text, Color c, boolean enabled, int code) {
+        boolean over = enabled && LobbyScreen.inside(x, y, w, h);
+        LobbyScreen.fill(x, y, w, h, over ? new Color(c.getRed(), c.getGreen(), c.getBlue(), 70) : new Color(c.getRed(), c.getGreen(), c.getBlue(), enabled ? 28 : 10));
+        LobbyScreen.outline(x, y, w, h, enabled ? (over ? c : new Color(c.getRed(), c.getGreen(), c.getBlue(), 160)) : new Color(120, 120, 120, 90));
+        String font = h >= 30f ? LobbyScreen.HEAD : ui.body;
+        com.fs.starfarer.api.ui.LabelAPI l = ui.label(text, font, enabled ? c : Panel.DIM, w);
+        float tw = Math.min(w - 8f, l.computeTextWidth(text)), th = l.getPosition().getHeight();
+        ui.text(text, font, enabled ? c : Panel.DIM, x + (w - tw) / 2f, y + (h + th) / 2f, w);
+        if (enabled) hits.add(new Hit(x, y, w, h, H_BUTTON, code, ""));
+        return x + w;
+    }
+
+    /** A picture for an item key ("w:" weapon, "f:" fighter wing) or a hull mod id, or null. */
+    static SpriteAPI picture(String key, boolean mod) {
+        if (key == null) return null;
+        try {
+            if (mod) return LobbyScreen.sprite(Global.getSettings().getHullModSpec(key).getSpriteName());
+            String id = key.substring(2);
+            if (key.startsWith("f:")) return LobbyScreen.sprite(Global.getSettings().getFighterWingSpec(id).getVariant().getHullSpec().getSpriteName());
+            WeaponSpecAPI ws = Global.getSettings().getWeaponSpec(id);
+            SpriteAPI s = LobbyScreen.sprite(ws.getTurretSpriteName());
+            return s != null ? s : LobbyScreen.sprite(ws.getHardpointSpriteName());
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    static void iconBox(SpriteAPI s, float x, float y, float size, boolean faded) {
+        LobbyScreen.fill(x, y, size, size, ICON_BACK);
+        if (s == null) return;
+        s.setAlphaMult(faded ? 0.4f : 1f);
+        LobbyScreen.icon(s, x + 2f, y + 2f, size - 4f);
+        s.setAlphaMult(1f);
+    }
+
+    // ---- left: the ship with rings on its slots, the totals, what is wrong ----
+
+    private void ship(RefitPlan plan, Roster.Member mem, Row row, float x, float top, float w, float floor) {
         String body = ui.body;
-        float box = Math.min(w, Math.max(110f, (top - floor) * 0.40f));
+        float box = Math.min(w, Math.max(140f, (top - floor) * 0.48f));
+        float cx = x + w / 2f, cy = top - box / 2f;
+        LobbyScreen.fill(x, top - box, w, box, new Color(255, 255, 255, 6));
+        List<String> slots = slots();
         try {
             List<String> fits = new ArrayList<String>();
-            List<String> slots = new ArrayList<String>(data.fitSlots);
-            for (RefitRequest.Change c : req.changes) if (!c.wing && !slots.contains(c.place)) slots.add(c.place);
             for (String s : slots) {
                 RefitRequest.Change c = req.change(s, false);
                 String wpn = c != null ? c.item : data.weaponIn(s);
                 if (wpn != null && !wpn.isEmpty()) fits.add("-1|" + s + "|" + wpn);
             }
+            for (String s : data.fitSlots) if (!slots.contains(s)) fits.add("-1|" + s + "|" + data.weaponIn(s)); // built-ins and the like, drawn as they are
             for (String f : mem.fits) if (!f.startsWith("-1|")) fits.add(f);
-            ShipPicture.draw(data.hullId, mem.sprite, mem.modules, fits, x + w / 2f, top - box / 2f, box);
+            ShipPicture.draw(data.hullId, mem.sprite, mem.modules, fits, cx, cy, box);
         } catch (Throwable t) { /* no picture */ }
-        float y = top - box - 10f;
+        // A ring on each slot that can take a weapon: click to choose it.
+        String hover = null;
+        try {
+            Map<String, float[]> at = ShipPicture.slotPoints(data.hullId, slots);
+            ShipHullSpecAPI hull = hull();
+            for (String s : slots) {
+                float[] p = at.get(s);
+                if (p == null) continue;
+                WeaponSlotAPI ws = hull == null ? null : hull.getWeaponSlotAPI(s);
+                float r = ws == null ? 7f : 6f + 3f * ws.getSlotSize().ordinal();
+                boolean marked = row != null && row.kind == SLOT && row.id.equals(s), changedSlot = req.change(s, false) != null;
+                boolean over = LobbyScreen.inside(p[0] - r - 3f, p[1] - r - 3f, 2 * r + 6f, 2 * r + 6f);
+                Color c = marked ? Color.WHITE : changedSlot ? Panel.GOOD : typeColor(ws);
+                ring(p[0], p[1], r, c, marked || over ? 2.5f : 1.5f, marked ? 60 : over ? 40 : 0);
+                hits.add(new Hit(p[0] - r - 3f, p[1] - r - 3f, 2 * r + 6f, 2 * r + 6f, H_RING, 0, s));
+                if (over) {
+                    RefitRequest.Change c2 = req.change(s, false);
+                    String wpn = c2 != null ? c2.item : data.weaponIn(s);
+                    hover = slotKind(ws) + ":  " + (wpn == null || wpn.isEmpty() ? "empty" : new FriendRefit.Names(data).item(RefitData.key(RefitData.WEAPON, wpn)));
+                }
+            }
+        } catch (Throwable t) { /* the tiles alone */ }
+        float y = top - box - 6f;
+        y = ui.text(hover != null ? hover : "Click a ring on the ship, or a tile, to change it.", body, hover != null ? Panel.TEXT : Panel.DIM, x, y, w) - 8f;
         y = limit("Ordnance points", plan.opUsed, data.opMax, x, y, w) - 1f;
         y = limit("Flux vents", req.vents, data.maxVents, x, y, w) - 1f;
         y = limit("Flux capacitors", req.caps, data.maxCaps, x, y, w) - 1f;
@@ -418,7 +594,41 @@ final class RefitScreen {
             if (y - 40f < floor) { y = ui.text("and " + (problems.size() - i) + " more", body, Panel.BAD, x, y, w) - 1f; break; }
             y = ui.text(problems.get(i), body, Panel.BAD, x, y, w) - 1f;
         }
-        if (!status.isEmpty()) ui.text(status.replace('\n', ' '), body, statusColor, x, Math.max(floor + 34f, y - 6f), w);
+    }
+
+    private static Color typeColor(WeaponSlotAPI s) {
+        if (s == null) return CYAN;
+        switch (s.getWeaponType()) {
+            case BALLISTIC: return new Color(255, 215, 80);
+            case ENERGY: return new Color(110, 170, 255);
+            case MISSILE: return new Color(130, 230, 110);
+            case HYBRID: return new Color(255, 160, 60);
+            case COMPOSITE: return new Color(200, 230, 90);
+            case SYNERGY: return new Color(90, 230, 220);
+            case UNIVERSAL: return new Color(230, 230, 230);
+            default: return CYAN;
+        }
+    }
+
+    private static void ring(float cx, float cy, float r, Color c, float width, int fillAlpha) {
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_LINE_BIT);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        if (fillAlpha > 0) {
+            GL11.glColor4f(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, fillAlpha / 255f);
+            GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+            GL11.glVertex2f(cx, cy);
+            for (int i = 0; i <= 20; i++) { double a = Math.PI * 2 * i / 20; GL11.glVertex2f(cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r); }
+            GL11.glEnd();
+        }
+        GL11.glColor4f(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, 0.95f);
+        GL11.glLineWidth(width);
+        GL11.glBegin(GL11.GL_LINE_LOOP);
+        for (int i = 0; i < 20; i++) { double a = Math.PI * 2 * i / 20; GL11.glVertex2f(cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r); }
+        GL11.glEnd();
+        GL11.glLineWidth(1f);
+        GL11.glPopAttrib();
     }
 
     private float limit(String what, int used, int max, float x, float y, float w) {
@@ -426,192 +636,297 @@ final class RefitScreen {
         return ui.text(what + ":   " + used + " / " + (max > 0 ? String.valueOf(max) : "?"), ui.body, c, x, y, w);
     }
 
-    /** The middle column: every row, the marked one highlighted, changes in green. */
-    private void rowList(List<Row> rows, RefitPlan plan, FriendRefit.Names names, float x, float top, float w, float floor) {
+    // ---- middle: the tiles ----
+
+    private void tiles(List<Row> rows, RefitPlan plan, FriendRefit.Names names, float x, float top, float w, float floor) {
         String body = ui.body;
-        float rowH = 21f;
-        int fit = Math.max(4, (int) ((top - floor) / rowH));
-        int from = Math.max(0, Math.min(rowAt - fit / 2, rows.size() - fit)), to = Math.min(rows.size(), from + fit);
-        float y = top;
-        ShipHullSpecAPI hull = hull();
-        for (int i = from; i < to; i++) {
-            Row row = rows.get(i);
-            if (i == rowAt) LobbyScreen.fill(x - 4f, y - rowH + 2f, w + 8f, rowH, inOptions ? new Color(120, 210, 255, 25) : LobbyScreen.MARK);
-            String text;
-            Color c = Panel.TEXT;
-            switch (row.kind) {
-                case SLOT: {
-                    RefitRequest.Change ch = req.change(row.id, false);
-                    String now = ch != null ? ch.item : data.weaponIn(row.id);
-                    text = slotTag(hull, row.id) + "  " + (now == null || now.isEmpty() ? "empty" : names.item(RefitData.key(RefitData.WEAPON, now)));
-                    if (ch != null) { c = Panel.GOOD; text += changeNote(ch, plan, names); }
-                    else if (now == null) c = Panel.DIM;
-                    break;
-                }
-                case BAY: {
-                    int bay = Integer.parseInt(row.id);
-                    RefitRequest.Change ch = req.change(row.id, true);
-                    String now = ch != null ? ch.item : data.wings.get(bay);
-                    text = "Bay " + (bay + 1) + "  " + (now.isEmpty() ? "empty" : names.item(RefitData.key(RefitData.WING, now)).replace(" LPC", ""))
-                            + (bay < builtInWings() ? "  (built in)" : "");
-                    if (ch != null) { c = Panel.GOOD; text += changeNote(ch, plan, names); }
-                    else if (now.isEmpty() || bay < builtInWings()) c = Panel.DIM;
-                    break;
-                }
-                case VENTS: text = "Flux vents   " + req.vents + " / " + data.maxVents + "   (Left/Right)"; if (req.vents != data.vents) c = Panel.GOOD; break;
-                case CAPS: text = "Flux capacitors   " + req.caps + " / " + data.maxCaps + "   (Left/Right)"; if (req.caps != data.caps) c = Panel.GOOD; break;
-                case MOD: {
-                    Integer cost = data.modCosts.get(row.id);
-                    String name = names.mod(row.id);
-                    if (data.sMods.contains(row.id)) { text = "S-mod  " + name; c = Panel.DIM; }
-                    else if (data.permaMods.contains(row.id)) { text = "Permanent  " + name; c = Panel.WARN; }
-                    else if (req.removeMods.contains(row.id)) { text = "Taken off  " + name; c = Panel.WARN; }
-                    else {
-                        boolean added = req.addMods.contains(row.id), built = req.buildIn.contains(row.id);
-                        text = (added ? "Added  " : "Hull mod  ") + name + (built ? "   built in (S-mod, 1 story point)" : cost == null ? "" : "   " + cost + " OP");
-                        if (added || built) c = Panel.GOOD;
-                    }
-                    break;
-                }
-                case ADD_MOD: text = "+  Add a hull mod"; c = LobbyScreen.TITLE; break;
-                case NOTE: text = "Note to the host:  " + (req.note.isEmpty() && !typingNote ? "(Enter to write one)" : req.note + (typingNote && i == rowAt ? "_" : "")); c = Panel.DIM; break;
-                default: {
-                    RefitPlan p = plan;
-                    boolean ready = !p.isEmpty() && p.allProblems().isEmpty();
-                    text = "SEND TO THE HOST   (Ctrl+Enter)";
-                    c = ready ? Panel.GOOD : Panel.DIM;
-                }
-            }
-            ui.text(text, body, c, x, y - 2f, w);
-            rowRects.add(new float[] { x - 4f, y - rowH + 2f, w + 8f, rowH, i });
-            y -= rowH;
+        float tileH = 44f, headH = 26f;
+        tileArea = new float[] { x, floor, w, top - floor };
+        // How many rows fit from rowScroll on (headers are shorter).
+        float avail = top - floor;
+        rowScroll = Math.max(0, Math.min(rowScroll, rows.size() - 1));
+        float used = 0f;
+        int last = rowScroll;
+        while (last < rows.size()) {
+            float rh = rows.get(last).kind == HEAD ? headH : tileH + 4f;
+            if (used + rh > avail) break;
+            used += rh;
+            last++;
         }
-        if (rows.size() > fit) ui.text((rowAt + 1) + " of " + rows.size(), body, Panel.DIM, x, floor + 14f, w);
+        tilesShown = Math.max(1, last - rowScroll);
+        if (last >= rows.size() && rowScroll > 0) { // at the end: no empty space left below
+            while (rowScroll > 0) {
+                float rh = rows.get(rowScroll - 1).kind == HEAD ? headH : tileH + 4f;
+                if (used + rh > avail) break;
+                used += rh;
+                rowScroll--;
+            }
+        }
+        float y = top;
+        for (int i = rowScroll; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            if (r.kind == HEAD) {
+                if (y - headH < floor) break;
+                ui.text(r.id, body, CYAN, x, y - 6f, w);
+                y -= headH;
+                continue;
+            }
+            if (y - tileH < floor) break;
+            float ty = y - tileH;
+            boolean marked = i == rowAt, over = LobbyScreen.inside(x, ty, w, tileH);
+            LobbyScreen.fill(x, ty, w, tileH, marked ? TILE_MARKED : over ? TILE_OVER : TILE);
+            if (marked) LobbyScreen.outline(x, ty, w, tileH, CYAN);
+            tile(r, plan, names, x, ty, w, tileH);
+            hits.add(new Hit(x, ty, w, tileH, H_ROW, i, ""));
+            y -= tileH + 4f;
+        }
+        if (rowScroll > 0) ui.text("more above (wheel)", body, Panel.DIM, x + w - 130f, top + 16f, 130f);
+        if (last < rows.size()) ui.text("more below (wheel)", body, Panel.DIM, x + w - 130f, floor + 2f, 130f);
     }
 
-    /** "  (was X, to cargo)" for a changed slot or bay. */
+    /** One tile: picture, name, and a line about it. */
+    private void tile(Row r, RefitPlan plan, FriendRefit.Names names, float x, float y, float w, float h) {
+        String body = ui.body;
+        String name, detail = "", key = null;
+        boolean mod = false;
+        Color c = Panel.TEXT;
+        switch (r.kind) {
+            case SLOT: {
+                RefitRequest.Change ch = req.change(r.id, false);
+                String now = ch != null ? ch.item : data.weaponIn(r.id);
+                key = now == null || now.isEmpty() ? null : RefitData.key(RefitData.WEAPON, now);
+                name = key == null ? "Empty" : names.item(key);
+                WeaponSlotAPI ws = null;
+                try { ws = hull().getWeaponSlotAPI(r.id); } catch (Throwable t) { /* no kind */ }
+                Integer op = key == null ? null : data.opCosts.get(key);
+                detail = slotKind(ws) + (op == null ? "" : "   " + op + " OP");
+                if (ch != null) { c = Panel.GOOD; detail = changeNote(ch, plan, names); }
+                else if (key == null) c = Panel.DIM;
+                break;
+            }
+            case BAY: {
+                int bay = Integer.parseInt(r.id);
+                RefitRequest.Change ch = req.change(r.id, true);
+                String now = ch != null ? ch.item : data.wings.get(bay);
+                key = now.isEmpty() ? null : RefitData.key(RefitData.WING, now);
+                name = key == null ? "Empty bay" : names.item(key).replace(" LPC", "");
+                Integer op = key == null ? null : data.opCosts.get(key);
+                detail = "Bay " + (bay + 1) + (bay < builtInWings() ? "  (built in)" : "") + (op == null ? "" : "   " + op + " OP");
+                if (ch != null) { c = Panel.GOOD; detail = changeNote(ch, plan, names); }
+                else if (key == null || bay < builtInWings()) c = Panel.DIM;
+                break;
+            }
+            case VENTS: name = "Flux vents   " + req.vents + " / " + data.maxVents; detail = "1 OP each"; if (req.vents != data.vents) { c = Panel.GOOD; detail = "was " + data.vents; } break;
+            case CAPS: name = "Flux capacitors   " + req.caps + " / " + data.maxCaps; detail = "1 OP each"; if (req.caps != data.caps) { c = Panel.GOOD; detail = "was " + data.caps; } break;
+            case MOD: {
+                key = r.id;
+                mod = true;
+                name = names.mod(r.id);
+                Integer cost = data.modCosts.get(r.id);
+                if (data.sMods.contains(r.id)) { detail = "S-mod (built in)"; c = Panel.DIM; }
+                else if (data.permaMods.contains(r.id)) { detail = "Permanent"; c = Panel.WARN; }
+                else if (req.removeMods.contains(r.id)) { detail = "Taken off"; c = Panel.WARN; }
+                else {
+                    boolean added = req.addMods.contains(r.id), built = req.buildIn.contains(r.id);
+                    detail = (added ? "Added" : "Fitted") + (built ? ", built in: S-mod, 1 story point" : cost == null ? "" : "   " + cost + " OP");
+                    if (added || built) c = Panel.GOOD;
+                }
+                break;
+            }
+            case ADD_MOD: name = "+  Add a hull mod"; detail = "From those the host knows"; c = CYAN; break;
+            default: name = req.note.isEmpty() && !typingNote ? "Write a note to the host" : req.note + (typingNote ? "_" : ""); detail = "Click, then type"; c = req.note.isEmpty() ? Panel.DIM : Panel.TEXT;
+        }
+        float icon = h - 8f, tx = x + 4f;
+        if (r.kind == SLOT || r.kind == BAY || r.kind == MOD) {
+            iconBox(picture(key, mod), x + 4f, y + 4f, icon, r.kind == MOD && req.removeMods.contains(r.id));
+            tx = x + icon + 12f;
+        } else tx = x + 10f;
+        ui.text(name, body, c, tx, y + h - 5f, w - (tx - x) - 6f);
+        ui.text(detail, body, Panel.DIM, tx, y + h / 2f - 1f, w - (tx - x) - 6f);
+    }
+
+    /** "was X, to cargo" for a changed slot or bay. */
     private String changeNote(RefitRequest.Change ch, RefitPlan plan, FriendRefit.Names names) {
         String old = plan.before(ch);
-        String src = ch.item.isEmpty() ? "" : ", from " + names.source(ch.from);
-        if (old == null) return "   (new" + src + ")";
+        String src = ch.item.isEmpty() ? "" : "from " + names.source(ch.from);
+        if (old == null) return "new, " + src;
         String to = ch.to.isEmpty() ? RefitRequest.CARGO : ch.to;
-        return "   (" + names.item(old).replace(" LPC", "") + (data.market(to) != null ? " sold at " : " to ") + names.source(to) + src + ")";
+        return "was " + names.item(old).replace(" LPC", "") + (data.market(to) != null ? ", sold at " : ", to ") + names.source(to) + (src.isEmpty() ? "" : "; " + src);
     }
 
-    private static String slotTag(ShipHullSpecAPI hull, String slotId) {
+    private static String slotKind(WeaponSlotAPI s) {
+        if (s == null) return "slot";
         try {
-            WeaponSlotAPI s = hull.getWeaponSlotAPI(slotId);
-            String size = s.getSlotSize().name().substring(0, 1);
-            String type = s.getWeaponType().name().toLowerCase();
-            return "[" + size + " " + (type.length() > 4 ? type.substring(0, 4) : type) + "]";
+            return s.getSlotSize().name().charAt(0) + s.getSlotSize().name().substring(1).toLowerCase() + " " + s.getWeaponType().name().toLowerCase().replace('_', ' ')
+                    + (s.isHardpoint() ? " hardpoint" : " turret");
         } catch (Throwable t) {
-            return "[" + slotId + "]";
+            return "slot";
         }
     }
 
-    /** The right column: what can go in the marked row, or what can be done with it. */
+    // ---- right: cards to choose from, or buttons ----
+
     private void side(Row row, RefitPlan plan, FriendRefit.Names names, float x, float top, float w, float floor) {
         String body = ui.body;
+        if (row == null) return;
         float y;
         switch (row.kind) {
             case SLOT:
             case BAY: {
                 boolean builtIn = row.kind == BAY && Integer.parseInt(row.id) < builtInWings();
-                y = ui.text(row.kind == SLOT ? "FOR THIS SLOT" : "FOR THIS BAY", LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
+                WeaponSlotAPI ws = null;
+                if (row.kind == SLOT) { try { ws = hull().getWeaponSlotAPI(row.id); } catch (Throwable t) { /* none */ } }
+                y = ui.text(row.kind == SLOT ? slotKind(ws).toUpperCase() : "FIGHTER BAY " + (Integer.parseInt(row.id) + 1), LobbyScreen.HEAD, CYAN, x, top, w) - 6f;
                 if (builtIn) { ui.text("This bay's wing is built into the hull.", body, Panel.DIM, x, y, w); return; }
-                if (row.kind == SLOT) y = ui.text(slotDetail(row.id), body, Panel.DIM, x, y, w) - 4f;
-                List<Option> opts = options(row, names);
-                if (opts.size() <= 1) y = ui.text("Nothing the host has fits here.", body, Panel.DIM, x, y, w) - 4f;
-                optionList(opts, names, x, y, w, floor + 70f);
                 RefitRequest.Change ch = req.change(row.id, row.kind == BAY);
                 String old = ch == null ? null : plan.before(ch);
-                String help = (inOptions ? "Up/Down, Enter: choose     Left/Esc: back" : "Enter (or a click): choose what goes in")
-                        + (old != null ? "\nS: where " + names.item(old).replace(" LPC", "") + " goes (cargo, storage, or sold)" : "") + "\nZ: undo";
-                ui.text(help, body, Panel.DIM, x, floor + 64f, w);
+                float bx = x;
+                if (old != null) {
+                    String to = ch.to.isEmpty() ? RefitRequest.CARGO : ch.to;
+                    bx = button(bx, y - 28f, Math.min(w * 0.68f, 300f), 28f, names.item(old).replace(" LPC", "") + " goes to:  " + names.source(to) + "  >", Panel.TEXT, true, B_DEST) + 8f;
+                }
+                if (ch != null) button(bx, y - 28f, 80f, 28f, "UNDO", Panel.WARN, true, B_UNDO);
+                if (old != null || ch != null) y -= 38f;
+                tabsAndCards(row, names, x, y, w, floor);
                 return;
             }
-            case ADD_MOD: {
-                y = ui.text("HULL MODS THE HOST KNOWS", LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
-                List<Option> opts = options(row, names);
-                if (opts.isEmpty()) ui.text("No other hull mods are known to the host.", body, Panel.DIM, x, y, w);
-                else optionList(opts, names, x, y, w, floor + 50f);
-                ui.text(inOptions ? "Up/Down, Enter: add     Left/Esc: back" : "Enter (or a click): choose one to add", body, Panel.DIM, x, floor + 34f, w);
+            case ADD_MOD:
+                y = ui.text("ADD A HULL MOD", LobbyScreen.HEAD, CYAN, x, top, w) - 8f;
+                tabsAndCards(row, names, x, y, w, floor);
                 return;
-            }
             case MOD: {
-                y = ui.text(names.mod(row.id).toUpperCase(), LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
+                y = ui.text(names.mod(row.id).toUpperCase(), LobbyScreen.HEAD, CYAN, x, top, w) - 6f;
+                iconBox(picture(row.id, true), x, y - 64f, 64f, false);
                 String desc = "";
                 try {
                     HullModSpecAPI s = Global.getSettings().getHullModSpec(row.id);
                     Integer cost = data.modCosts.get(row.id);
-                    desc = (cost == null ? "" : cost + " ordnance points on this hull.") + (data.noBuildIn.contains(row.id) ? " Can't be built in." : "");
-                    if (s.getManufacturer() != null && !s.getManufacturer().isEmpty()) desc += " " + s.getManufacturer() + ".";
+                    desc = (cost == null ? "" : cost + " ordnance points on this hull.") + (data.noBuildIn.contains(row.id) ? " Can't be built in." : "")
+                            + (s.getManufacturer() != null && !s.getManufacturer().isEmpty() ? " " + s.getManufacturer() + "." : "");
                 } catch (Throwable t) { /* the name alone */ }
-                y = ui.text(desc, body, Panel.DIM, x, y, w) - 8f;
-                String help;
-                if (data.sMods.contains(row.id)) help = "Built in (an S-mod): it stays.";
-                else if (data.permaMods.contains(row.id)) help = "Permanent (a D-mod or similar): it stays. Restoring is done by the host.";
-                else help = "Delete: take it off (or put it back)" + (data.noBuildIn.contains(row.id) ? "" : "\nB: build it in as an S-mod (1 story point; it then costs no ordnance points)") + "\nZ: undo";
-                ui.text(help, body, Panel.TEXT, x, y, w);
-                ui.text("Whether a hull mod suits this ship (what it needs, what it rules out) is for the host to judge when accepting.", body, Panel.DIM, x, floor + 34f, w);
+                ui.text(desc, body, Panel.DIM, x + 74f, y, w - 74f);
+                y -= 76f;
+                if (data.sMods.contains(row.id)) { ui.text("Built in (an S-mod): it stays.", body, Panel.TEXT, x, y, w); return; }
+                if (data.permaMods.contains(row.id)) { ui.text("Permanent (a D-mod or similar): it stays. Restoring is done by the host.", body, Panel.TEXT, x, y, w); return; }
+                boolean off = req.removeMods.contains(row.id), added = req.addMods.contains(row.id), built = req.buildIn.contains(row.id);
+                float bx = button(x, y - 34f, 150f, 34f, added ? "REMOVE" : off ? "PUT BACK" : "TAKE OFF", off ? Panel.GOOD : Panel.WARN, true, B_OFF) + 8f;
+                if (!data.noBuildIn.contains(row.id) && !off) bx = button(bx, y - 34f, 200f, 34f, built ? "DON'T BUILD IN" : "BUILD IN (1 SP)", built ? Panel.WARN : Panel.GOOD, true, B_BUILD) + 8f;
+                if (changed(row) && !added) button(bx, y - 34f, 90f, 34f, "UNDO", Panel.WARN, true, B_UNDO);
+                y -= 48f;
+                ui.text("Building in makes it an S-mod: permanent, free of ordnance points, 1 story point. Whether a hull mod suits this ship is for the host to judge.",
+                        body, Panel.DIM, x, y, w);
                 return;
             }
             case VENTS:
-            case CAPS:
-                y = ui.text(row.kind == VENTS ? "FLUX VENTS" : "FLUX CAPACITORS", LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
-                ui.text("Left/Right: one less or more (Shift: five). Each costs 1 ordnance point. The most this ship can have, with the host's skills: "
-                        + (row.kind == VENTS ? data.maxVents : data.maxCaps) + ".\nZ: back to " + (row.kind == VENTS ? data.vents : data.caps) + ".", body, Panel.TEXT, x, y, w);
+            case CAPS: {
+                y = ui.text(row.kind == VENTS ? "FLUX VENTS" : "FLUX CAPACITORS", LobbyScreen.HEAD, CYAN, x, top, w) - 10f;
+                int n = row.kind == VENTS ? req.vents : req.caps, max = row.kind == VENTS ? data.maxVents : data.maxCaps;
+                float bx = button(x, y - 40f, 54f, 40f, "-5", Panel.TEXT, n > 0, B_MINUS5) + 6f;
+                bx = button(bx, y - 40f, 54f, 40f, "-", Panel.TEXT, n > 0, B_MINUS) + 10f;
+                ui.text(n + " / " + max, LobbyScreen.BIG, Panel.TEXT, bx, y - 6f, 120f);
+                bx += 110f;
+                bx = button(bx, y - 40f, 54f, 40f, "+", Panel.TEXT, max <= 0 || n < max, B_PLUS) + 6f;
+                bx = button(bx, y - 40f, 54f, 40f, "+5", Panel.TEXT, max <= 0 || n < max, B_PLUS5) + 10f;
+                if (changed(row)) button(bx, y - 40f, 80f, 40f, "UNDO", Panel.WARN, true, B_UNDO);
+                y -= 56f;
+                ui.text("Each costs 1 ordnance point. The most this ship can have, with the host's skills: " + max + ". It had " + (row.kind == VENTS ? data.vents : data.caps) + ".",
+                        body, Panel.DIM, x, y, w);
                 return;
-            case NOTE:
-                y = ui.text("NOTE", LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
-                ui.text(typingNote ? "Type your note; Enter when done." : "Enter: write a short note the host sees with your refit. Z: clear it.", body, Panel.TEXT, x, y, w);
-                return;
+            }
             default: {
-                y = ui.text("SEND", LobbyScreen.HEAD, LobbyScreen.TITLE, x, top, w) - 4f;
-                String what = plan.isEmpty() ? "Nothing is changed yet." : !plan.allProblems().isEmpty() ? "Fix what is in red first."
-                        : "Enter (or Ctrl+Enter anywhere): send it. The host checks it again and accepts or denies it; nothing changes until then. Sending again replaces it.";
-                y = ui.text(what, body, plan.isEmpty() || !plan.allProblems().isEmpty() ? Panel.WARN : Panel.TEXT, x, y, w) - 8f;
-                ui.text("Shift+Z: start over.", body, Panel.DIM, x, y, w);
+                y = ui.text("NOTE TO THE HOST", LobbyScreen.HEAD, CYAN, x, top, w) - 8f;
+                boolean over = LobbyScreen.inside(x, y - 60f, w, 60f);
+                LobbyScreen.fill(x, y - 60f, w, 60f, typingNote ? TILE_MARKED : over ? TILE_OVER : TILE);
+                LobbyScreen.outline(x, y - 60f, w, 60f, typingNote ? CYAN : LobbyScreen.LINE);
+                ui.text(req.note.isEmpty() && !typingNote ? "Click here and type a short note." : req.note + (typingNote ? "_" : ""), body,
+                        req.note.isEmpty() && !typingNote ? Panel.DIM : Panel.TEXT, x + 8f, y - 6f, w - 16f);
+                hits.add(new Hit(x, y - 60f, w, 60f, H_BUTTON, B_NOTE, ""));
+                y -= 70f;
+                if (!req.note.isEmpty()) button(x, y - 30f, 90f, 30f, "CLEAR", Panel.WARN, true, B_CLEAR);
             }
         }
     }
 
-    private String slotDetail(String slotId) {
-        try {
-            WeaponSlotAPI s = hull().getWeaponSlotAPI(slotId);
-            return s.getSlotSize().name().toLowerCase() + " " + s.getWeaponType().name().toLowerCase().replace('_', ' ') + " " + (s.isTurret() ? "turret" : "hardpoint");
-        } catch (Throwable t) {
-            return slotId;
-        }
-    }
-
-    private void optionList(List<Option> opts, FriendRefit.Names names, float x, float top, float w, float floor) {
+    /** Tabs (all, cargo, storage, each market) and the cards of what can go in, two to a row, scrolled by the wheel. */
+    private void tabsAndCards(Row row, FriendRefit.Names names, float x, float top, float w, float floor) {
         String body = ui.body;
-        float rowH = 20f;
-        int fit = Math.max(3, (int) ((top - floor) / rowH));
-        optAt = Math.max(0, Math.min(opts.size() - 1, optAt));
-        int from = Math.max(0, Math.min(optAt - fit / 2, opts.size() - fit)), to = Math.min(opts.size(), from + fit);
         float y = top;
-        for (int i = from; i < to; i++) {
+        List<String> srcs = sources(row, names);
+        if (srcs.size() > 1 || !tab.isEmpty()) {
+            float tx = x;
+            List<String> all = new ArrayList<String>();
+            all.add("");
+            all.addAll(srcs);
+            for (String s : all) {
+                String label = s.isEmpty() ? "All" : names.source(s);
+                com.fs.starfarer.api.ui.LabelAPI l = ui.label(label, body, Panel.TEXT, 400f);
+                float tw = Math.min(160f, l.computeTextWidth(label) + 18f);
+                if (tx + tw > x + w) { tx = x; y -= 28f; }
+                boolean on = tab.equals(s), over = LobbyScreen.inside(tx, y - 24f, tw, 24f);
+                LobbyScreen.fill(tx, y - 24f, tw, 24f, on ? TILE_MARKED : over ? TILE_OVER : TILE);
+                LobbyScreen.outline(tx, y - 24f, tw, 24f, on ? CYAN : LobbyScreen.LINE);
+                ui.text(label, body, on ? Color.WHITE : Panel.TEXT, tx + 9f, y - 4f, tw - 12f);
+                hits.add(new Hit(tx, y - 24f, tw, 24f, H_TAB, 0, s));
+                tx += tw + 6f;
+            }
+            y -= 32f;
+        }
+        List<Option> opts = options(row, names, true);
+        if (opts.isEmpty() || (opts.size() == 1 && opts.get(0).key == null && row.kind != ADD_MOD)) {
+            ui.text(row.kind == ADD_MOD ? "No other hull mods are known to the host." : "Nothing the host has fits here.", body, Panel.DIM, x, y - (opts.isEmpty() ? 0f : 60f), w);
+            if (opts.isEmpty()) return;
+        }
+        float gap = 8f, cardW = (w - gap) / 2f, cardH = 58f;
+        int cols = 2, rowsFit = Math.max(1, (int) ((y - floor + gap) / (cardH + gap)));
+        int totalRows = (opts.size() + cols - 1) / cols;
+        cardScroll = Math.max(0, Math.min(cardScroll, Math.max(0, totalRows - rowsFit)));
+        cardArea = new float[] { x, floor, w, y - floor };
+        RefitRequest.Change ch = row.kind == SLOT || row.kind == BAY ? req.change(row.id, row.kind == BAY) : null;
+        String current = ch != null ? (ch.item.isEmpty() ? null : RefitData.key(row.kind == BAY ? RefitData.WING : RefitData.WEAPON, ch.item) + "|" + ch.from) : "";
+        for (int i = cardScroll * cols; i < opts.size() && i < (cardScroll + rowsFit) * cols; i++) {
             Option o = opts.get(i);
-            if (inOptions && i == optAt) LobbyScreen.fill(x - 4f, y - rowH + 2f, w + 8f, rowH, LobbyScreen.MARK);
-            String text;
+            int col = (i - cardScroll * cols) % cols, rowN = (i - cardScroll * cols) / cols;
+            float cx = x + col * (cardW + gap), cy = y - (rowN + 1) * (cardH + gap) + gap;
+            boolean over = LobbyScreen.inside(cx, cy, cardW, cardH);
+            boolean chosen = o.key == null ? ch != null && ch.item.isEmpty() : (o.key + "|" + o.from).equals(current);
+            LobbyScreen.fill(cx, cy, cardW, cardH, chosen ? TILE_MARKED : over && o.usable ? TILE_OVER : TILE);
+            LobbyScreen.outline(cx, cy, cardW, cardH, chosen ? Panel.GOOD : over && o.usable ? CYAN : LobbyScreen.LINE);
+            String name, line;
             Color c = o.usable ? Panel.TEXT : Panel.DIM;
-            if (o.key == null) { text = "Leave it empty"; c = Panel.DIM; }
+            if (o.key == null) { name = row.kind == BAY ? "Leave the bay empty" : "Leave it empty"; line = "The one there now comes out"; c = Panel.DIM; }
             else if (o.from.isEmpty()) {
                 Integer cost = data.modCosts.get(o.key);
-                text = names.mod(o.key) + (cost == null ? "" : "   " + cost + " OP");
+                name = names.mod(o.key);
+                line = cost == null ? "" : cost + " OP";
             } else {
                 Integer op = data.opCosts.get(o.key);
-                text = names.item(o.key).replace(" LPC", "") + (op == null ? "" : "  " + op + " OP") + "   " + names.source(o.from) + " (" + o.count + ")"
-                        + (o.price > 0 ? "  " + grouped(Math.round(o.price)) + " cr" : "") + (o.usable ? "" : "  - can't be bought");
-                if (!o.from.equals(RefitRequest.CARGO) && !o.from.equals(RefitRequest.STORAGE) && o.usable) c = new Color(200, 220, 255);
+                name = names.item(o.key).replace(" LPC", "");
+                line = (op == null ? "" : op + " OP   ") + names.source(o.from) + " (" + o.count + ")" + (o.price > 0 ? "   " + grouped(Math.round(o.price)) + " cr" : "")
+                        + (o.usable ? "" : "   can't be bought");
             }
-            ui.text(text, body, c, x, y - 2f, w);
-            optRects.add(new float[] { x - 4f, y - rowH + 2f, w + 8f, rowH, i });
-            y -= rowH;
+            float icon = cardH - 10f;
+            if (o.key != null) iconBox(picture(o.key, o.from.isEmpty()), cx + 5f, cy + 5f, icon, !o.usable);
+            float tx = cx + (o.key != null ? icon + 12f : 10f);
+            ui.text(name, body, c, tx, cy + cardH - 6f, cardW - (tx - cx) - 6f);
+            ui.text(line, body, Panel.DIM, tx, cy + cardH / 2f - 2f, cardW - (tx - cx) - 6f);
+            hits.add(new Hit(cx, cy, cardW, cardH, H_CARD, i, ""));
         }
-        if (opts.size() > fit) ui.text((optAt + 1) + " of " + opts.size(), body, Panel.DIM, x, y - 2f, w);
+        if (totalRows > rowsFit) ui.text((cardScroll + 1) + "-" + Math.min(totalRows, cardScroll + rowsFit) + " of " + totalRows + " rows (wheel to scroll)",
+                body, Panel.DIM, x, floor + 2f, w);
+    }
+
+    // ---- bottom: send, start over, back, and the host's answer ----
+
+    private void bottomBar(RefitPlan plan, float x, float y, float w, float h) {
+        LobbyScreen.fill(x, y, w, h, BAR);
+        boolean ready = !plan.isEmpty() && plan.allProblems().isEmpty();
+        float bx = button(x, y, 220f, h, "SEND TO HOST", ready ? Panel.GOOD : Panel.DIM, true, B_SEND) + 10f;
+        bx = button(bx, y, 150f, h, "START OVER", Panel.WARN, !plan.isEmpty() || !req.note.isEmpty(), B_RESET) + 10f;
+        bx = button(bx, y, 110f, h, "BACK", Panel.TEXT, true, B_BACK) + 16f;
+        String say = !status.isEmpty() ? status.replace('\n', ' ')
+                : plan.isEmpty() ? "Change something, then send it. The host checks it and accepts or denies it; nothing changes until then."
+                : !plan.allProblems().isEmpty() ? "Fix what is in red first." : "Ready to send.";
+        ui.text(say, ui.body, !status.isEmpty() ? statusColor : ready ? Panel.GOOD : Panel.DIM, bx, y + h - 6f, x + w - bx);
     }
 
     private static String grouped(long n) {

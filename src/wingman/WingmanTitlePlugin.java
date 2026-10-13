@@ -342,6 +342,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (e.isConsumed()) continue;
                 // A click on our button must not also land on whatever the title screen has underneath it.
                 if (e.isMouseEvent() && (e.isMouseDownEvent() || e.isMouseUpEvent()) && over) { e.consume(); continue; }
+                if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.REFIT) { // the wheel scrolls the refit screen's lists
+                    int dir = e.getEventValue();
+                    if (lobby.refit.scroll(Global.getSettings().getMouseX(), Global.getSettings().getMouseY(), dir)) e.consume();
+                    continue;
+                }
                 if (!e.isKeyboardEvent()) continue;
                 if (settings.open) break; // the settings page takes every key, below
                 if (reportPage >= 0) { // so does the compatibility report

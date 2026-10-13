@@ -116,6 +116,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     private boolean overUs(float mx, float my) {
         if (open && panel.contains(mx, my)) return true;
+        if (open && strip != null && mx >= strip[0] && mx <= strip[0] + strip[2] && my >= strip[1] && my <= strip[1] + strip[3]) return true;
         for (float[] b : buttons) if (mx >= b[0] && mx <= b[0] + b[2] && my >= b[1] && my <= b[1] + b[3]) return true;
         return !open && button != null && mx >= button[0] && mx <= button[0] + button[2] && my >= button[1] && my <= button[1] + button[3];
     }
@@ -155,7 +156,8 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             h = Math.max(h, l.getPosition().getHeight() + 16f);
             total += widths[i] + (i > 0 ? gap : 0f);
         }
-        float x = panel.lastX + (panel.lastW - total) / 2f, y = Math.max(4f, panel.lastY - h - 10f);
+        float stripBottom = changeIcons(pd);
+        float x = panel.lastX + (panel.lastW - total) / 2f, y = Math.max(4f, stripBottom - h - 10f);
         for (int i = 0; i < row.size(); i++) {
             String text = (String) row.get(i)[0];
             Color c = (Color) row.get(i)[2];
@@ -167,6 +169,57 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             buttons.add(new float[] { x, y, widths[i], h, (Integer) row.get(i)[1] });
             x += widths[i] + gap;
         }
+    }
+
+    /**
+     * The changes as pictures, under the panel: for each slot or bay, what comes out (faded) and what goes in. Returns
+     * the strip's bottom (the panel's, if there is nothing to show).
+     */
+    private float changeIcons(FriendRefit.Pending pd) {
+        List<String[]> pairs = new ArrayList<String[]>();
+        for (wingman.net.RefitRequest.Change c : pd.request.changes) {
+            if (pd.plan.sameAsBefore(c)) continue;
+            pairs.add(new String[] { pd.plan.before(c), pd.plan.after(c) });
+        }
+        for (String id : pd.request.addMods) pairs.add(new String[] { null, "m:" + id });
+        strip = null;
+        if (pairs.isEmpty()) return panel.lastY;
+        float s = 32f, arrow = 16f, pairW = s * 2 + arrow + 14f, gap = 6f;
+        int perRow = Math.max(1, (int) ((panel.lastW + gap) / (pairW + gap)));
+        int rows = Math.min(3, (pairs.size() + perRow - 1) / perRow);
+        float stripH = rows * (s + 8f) + 8f;
+        float y0 = panel.lastY - 6f - stripH;
+        strip = new float[] { panel.lastX, y0, panel.lastW, stripH };
+        LobbyScreen.fill(panel.lastX, y0, panel.lastW, stripH, new Color(4, 7, 12, 225));
+        LobbyScreen.outline(panel.lastX, y0, panel.lastW, stripH, new Color(120, 210, 255, 120));
+        for (int i = 0; i < pairs.size() && i < rows * perRow; i++) {
+            float x = panel.lastX + 8f + (i % perRow) * (pairW + gap), y = y0 + stripH - 8f - (i / perRow + 1) * (s + 8f) + 8f;
+            String[] p = pairs.get(i);
+            RefitScreen.iconBox(pic(p[0]), x, y, s, true);
+            arrowRight(x + s + 3f, y + s / 2f, arrow - 6f);
+            RefitScreen.iconBox(pic(p[1]), x + s + arrow, y, s, false);
+        }
+        return y0;
+    }
+
+    private float[] strip;
+
+    private static com.fs.starfarer.api.graphics.SpriteAPI pic(String key) {
+        if (key == null) return null;
+        if (key.startsWith("m:")) return RefitScreen.picture(key.substring(2), true);
+        return RefitScreen.picture(key, false);
+    }
+
+    private static void arrowRight(float x, float y, float len) {
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glColor4f(0.47f, 0.82f, 1f, 0.9f);
+        GL11.glBegin(GL11.GL_TRIANGLES);
+        GL11.glVertex2f(x, y - 5f); GL11.glVertex2f(x, y + 5f); GL11.glVertex2f(x + len, y);
+        GL11.glEnd();
+        GL11.glPopAttrib();
     }
 
     private LabelAPI buttonLabel(String text, Color c) {

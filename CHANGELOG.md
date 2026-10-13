@@ -21,6 +21,10 @@ Protocol 60: host and joiners need this build.
 - The host can accept in the refit screen: the refit is done the moment that screen closes (it keeps its own
   copy of the ship, which would undo a change made under it), and the refit screen then opens again on that ship.
   Host setting `friendRefitReopen` (on by default).
+- The refit screen is made for the mouse, with pictures: click a ring on the ship or a tile, then a card (weapon
+  or fighter picture, OP, where it comes from, price) to fit it; buttons for where the old one goes, hull mods,
+  vents and capacitors, undo; SEND TO HOST at the bottom; the mouse wheel scrolls. The host's panel shows each
+  change as pictures too, and has YES / NO buttons.
 - Requests are refused with the reason if a check fails, and withdrawn when the host undocks, the pick changes or
   a battle starts. Whether a hull mod suits the ship isn't checked (the game can only tell in the refit screen):
   the host decides.
