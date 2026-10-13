@@ -11,9 +11,11 @@ Everything below is a proposal for review. Nothing of it is built.
 ## 1. When a friend can refit
 
 - **The host is docked at a market with a station or spaceport**, inside its interaction dialog (the same
-  moment the game lets the host open the market and refit tabs). The host's game detects this, opens a
-  "refit window", and tells joiners. When the host undocks, the window closes and so do the joiners' refit
-  screens, with a pending request withdrawn.
+  moment the game lets the host open the market and refit tabs). The host's game detects this and tells
+  joiners that refitting is available. Nothing opens on its own: joiners get a **Refit** button (see 3) and
+  open the refit screen only if they want to. When the host undocks, the button goes away; a refit screen a
+  joiner has open closes with a short notice ("The host left the market"), and a pending request is
+  withdrawn.
 - **The friend has picked the ship** in the lobby (only their own pick can be refitted), it isn't the host's
   flagship, and it isn't mothballed.
 - **Host setting `friendRefit`**: off / on (default on). With it off, the refit button never shows for joiners.
@@ -22,7 +24,7 @@ Everything below is a proposal for review. Nothing of it is built.
 ## 2. What the joiner's game is told (host -> joiner)
 
 All new, all built only from the host's own campaign, through the game's API and a few listeners of Wingman's
-own (no dependency on other mods). Sent when the window opens and again whenever something in it changes (a
+own (no dependency on other mods). Sent when a joiner opens the refit screen and again whenever something in it changes (a
 purchase, the cargo, the credits); about 1 to 20 KB.
 
 | Data | From |
@@ -37,7 +39,9 @@ purchase, the cargo, the credits); about 1 to 20 KB.
 
 ## 3. The joiner's refit screen
 
-Opened from the lobby's ship card ("R: refit", shown only while the window is open). It imitates the game's
+Opened with a **Refit** button on the lobby's ship card (also the R key), which shows only while refitting is
+available and the joiner has picked that ship; otherwise it isn't drawn at all. A small "Refit available at
+<market>" line in the lobby's header points to it. It imitates the game's
 refit screen with what is needed and nothing more:
 
 - **The ship picture with its slots** (Wingman already draws weapons in their slots from the hull files). Each
@@ -69,7 +73,7 @@ story points), so the host can see if anything changed meanwhile.
 
 When the request arrives, and again at the moment the host accepts:
 
-1. The window is still open (docked at the same market), the friend still has that ship picked, the ship is
+1. Refitting is still available (docked at the same market), the friend still has that ship picked, the ship is
    still in the fleet and not the flagship.
 2. Every slot exists and the weapon fits it (size, type, mount), read from the hull spec as the game does.
 3. Every item is still where the request says, in the needed number (cargo, storage, the submarket's cargo),
@@ -104,7 +108,8 @@ A request that fails any check is refused with the reason, and the joiner's scre
 
 ## 7. Messages and versions
 
-New messages (protocol bump): REFIT_WINDOW (host -> joiner: open/closed, market name), REFIT_DATA (the data in 2),
+New messages (protocol bump): REFIT_AVAILABLE (host -> joiner: available or not, market name), REFIT_DATA (the data in 2, sent only to a
+joiner with the refit screen open, on asking),
 REFIT_REQUEST (joiner -> host), REFIT_RESULT (host -> joiner: accepted / denied / refused, with reason). Each
 decoded with the usual size limits and checked by the fuzz test.
 
@@ -124,6 +129,6 @@ decoded with the usual size limits and checked by the fuzz test.
 - **Market rules beyond prices.** Selling illegal goods on an open market, commission-only weapons, and black
   market "sold to" reputation effects follow the submarket plugin's own rules where they are exposed; anything the
   API doesn't expose is simply not offered.
-- **Cost of building it**: the largest single feature since the lobby. Suggested order: (1) data and window,
+- **Cost of building it**: the largest single feature since the lobby. Suggested order: (1) availability, the Refit button and the data,
   (2) joiner screen with weapons/wings/vents/caps from cargo only, (3) host button, checks and apply,
   (4) market buy/sell, (5) hull mods and S-mods.
