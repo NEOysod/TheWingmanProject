@@ -636,8 +636,9 @@ changes in the host's campaign until the host accepts a refit.
   a small FRIEND REFITS (n) button at the top right (over the dialog and core screens); a click or Ctrl+Shift+R
   opens the panel (keys are its own while it is up): who, which ship, the note, each change with where items come
   from and go and their prices, the ordnance points, credits and story points, a warning if the joiner was shown
-  other totals, and the checks (refreshed each second). A accepts, D denies, Left/Right between requests, Esc
-  closes. With a core screen (fleet, cargo, refit) open, A marks it accepted (`acceptOnClose`; the joiner hears so)
+  other totals, and the checks (refreshed each second). Under it, buttons YES, ACCEPT / NO, DENY (and < > between
+  requests, CLOSE), clicked by polling the mouse while drawing (so they work over any screen); mouse events over the
+  panel or a button are consumed so they don't reach the dialog's options. Keys: A, D, Left/Right, Esc. With a core screen (fleet, cargo, refit) open, A marks it accepted (`acceptOnClose`; the joiner hears so)
   and it is done the moment the screen closes (`FriendRefit.applyWaiting`, each frame from the panel's rendering and
   the lobby's script; checked once more then): the screen keeps its own copy of the ship and would undo a change
   made under it. With `friendRefitReopen`, the refit screen then opens again on the last ship refitted, from the

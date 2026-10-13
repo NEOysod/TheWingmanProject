@@ -15,7 +15,7 @@ Protocol 60: host and joiners need this build.
   capacitors, hull mods the host knows on and off, S-mods built in for a story point each. The totals and
   anything that stops it show as they choose. A short note can go with it.
 - The host gets a message and a FRIEND REFITS button (Ctrl+Shift+R): each request with every change, its cost
-  and the checks, all made again on the host's campaign. A accepts, D denies. Accepted refits are done as the
+  and the checks, all made again on the host's campaign. Click YES or NO (or press A / D). Accepted refits are done as the
   game's own refit and market screens would: items move, markets are paid and hear of the trade, story points
   are spent with the usual bonus experience, and the ship gets a refit variant of its own.
 - The host can accept in the refit screen: the refit is done the moment that screen closes (it keeps its own

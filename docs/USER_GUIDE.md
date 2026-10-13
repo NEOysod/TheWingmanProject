@@ -60,7 +60,7 @@ and in a campaign friends can connect as soon as you load your save, while you a
    While you are docked at a market, friends can send you refits of the ship they picked. Your message feed
    says when one comes in, and a **FRIEND REFITS** button appears at the top right: click it (or press
    **Ctrl+Shift+R**) to see each one, with every change, its cost in credits and story points, and the result
-   of the checks. **A** accepts, **D** denies. If you accept with the refit (or fleet, cargo) screen open, the
+   of the checks. Click **YES, ACCEPT** or **NO, DENY** under it (or press **A** / **D**). If you accept with the refit (or fleet, cargo) screen open, the
    refit is done the moment you close it, and the refit screen opens again on that ship so you can see it
    (setting "Reopen the refit screen after a friend's refit"). An accepted refit
    is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
@@ -217,7 +217,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
 | Lobby (joiner, title screen) | R | Refit the ship you picked (while the host is docked at a market) |
 | Refit screen (joiner) | Enter, Left/Right, Delete, B, S, Z, Ctrl+Enter | Change the marked row; vents and capacitors; hull mod off; build in; where the old item goes; undo; send |
-| Campaign map (host) | **Ctrl+Shift+R**, then A / D | Friends' refits: accept / deny |
+| Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D) | Friends' refits: accept / deny |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |
