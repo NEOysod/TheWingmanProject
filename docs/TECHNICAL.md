@@ -42,10 +42,11 @@ Three constraints shape almost every detail:
 | Battle plugins (registered in `data/config/settings.json`) | `WingmanHostPlugin` (host side of every battle), `WingmanTitlePlugin` (title screen panel); `WingmanClientPlugin` is attached by the join mission |
 | Host helpers | `RemotePilotAI`, `HostDamage`, `HostExtras`, `HostEnvironment`, `Backdrop` (planets, both sides), `HostOrders`, `ShipStats` |
 | Lobby and reports | `LobbyScreen`, `TitleMenu`, `AfterAction` (joiner); `BattleStats`, `HostCampaign` (host); `MissedLookups`; messages `CampaignCopy`, `Plain`, `BattleReport`, `Aftermath` |
+| Friend refit (6.8) | `FriendRefit`, `FriendRefitPanel` (host), `RefitScreen` (joiner, a page of `LobbyScreen`); messages `RefitData`, `RefitRequest`, `RefitResult`; `RefitPlan` (totals and checks, both sides) |
 | Joiner helpers | `PuppetAI`, `PuppetMissileAI`, `GuardedMissileAI`, `HullGuard`, `LocalDamage`, `NoDamage`, `ClientEnvironment`, `ClientOrders`, `CampaignStandIn`, `ObjectiveMirror`, `MirrorObjectiveEffect`, `MessageTap`, `MessageSpy`, `BayLink`, `Subsystems`, `SystemWatch`, `Compat`, `Groups` |
 | Title screen and joining | `WingmanTitlePlugin`, `JoinForm`, `SavedJoin`, `JoinSetup`, `TitleLauncher`, `data/missions/wingman_join/MissionDefinition.java` |
 | Settings and output | `WingmanConfig`, `Settings`, `Panel`, `PlayerTags`, `Ui`, `Dbg`, `Prof`, `Mods` |
-| Campaign | `WingmanModPlugin`, `CampaignLobby` (the pre-battle lobby), `Hosting` (opens the session with the saved settings, for a battle, the lobby or another mod) |
+| Campaign | `WingmanModPlugin`, `CampaignLobby` (the pre-battle lobby), `CampaignPlayerList` (the host's player list on the map, setting `playerList`), `Hosting` (opens the session with the saved settings, for a battle, the lobby or another mod) |
 | For other mods | `wingman.api.WingmanAPI` (see `docs/MOD_API.md`), `PilotMarks` (who flies what, written on ships) |
 | Optional agent (`agent/src`, its own jar; 8.9) | `wingman.agent.Agent`, `Patcher`, `Hooks`, `Bridge`; in Wingman: `AgentGate`, `AgentLink` |
 | Network (`wingman.net`, no game classes) | `Roster` (pre-battle lobby), `Conn`, `RawIO`, `StreamIO`, `ChannelIO`, `Transport`, `Zip`, `Udp`, `HostSession`, `ClientLink`, `Msg`, `In`, `Out`, `NetStats`, `ModChannel` (other mods' messages), `InputBuffer` (steady controls), `Budget` (bandwidth limit), `Smoother` (smooth corrections, jitter buffer) |
@@ -173,7 +174,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 59 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 60 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -225,7 +226,7 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 52 | MOD | both | another mod's message: channel (≤ 64), length, bytes (≤ 60 KB); see `ModChannel`, `docs/MOD_API.md` |
 | 53 | INPUT_MODE | host → joiner | byte 1: send controls as bundles (steady controls, 4.7), 0: plain |
 | 54 | INPUTS | joiner → host | a bundle: count (1-3), then per set: joiner clock (ms), length, controls; newest first |
-| 55 | ROSTER | host → joiner | the pre-battle lobby (`Roster`): host name, state (0 campaign map, 1 battle), size limit, players (name, slot), fleet members (≤ 120: id, ship name, hull name, size, designation, CR, officer and level, flags flagship / mothballed / can't fly with a note, picked by; for the ship card: hull sprite, weapons and wings, hull mods, officer personality) |
+| 55 | ROSTER | host → joiner | the pre-battle lobby (`Roster`): host name, state (0 campaign map, 1 battle), size limit, players (name, slot), fleet members (≤ 120: id, ship name, hull name, size, designation, CR, officer and level, flags flagship / mothballed / can't fly with a note, picked by; for the ship card: hull sprite, weapons and wings, hull mods, officer personality); the market where friends may refit ("" none, 6.8) |
 | 56 | PICK | joiner → host | fleet member id the player wants to fly in the next battle ("" none; ≤ 64 characters, the last one counts) |
 | 57 | CAMPAIGN | host → joiner | the larger campaign copy (`CampaignCopy`, 8.3), before `BATTLE_INFO`, once per sync: mods' saved data, eight memory scopes, standings, the enemy, goals, place, date, and the keys left out; plain data only (`Plain`), ≤ 1.5 MB |
 | 58 | REPORT | host → joiner | the after-action report (`BattleReport`, 6.7), just before `BATTLE_END` |
@@ -233,6 +234,10 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 61 | LUNA | host → joiner | the host's LunaLib settings for the battle (plain: mod → field → value; headings and keys left out; `LunaCopy`, 8.10); before `CAMPAIGN` |
 | 62 | LUNA_KEYS | joiner → host | the joiner's own keys for LunaLib settings ("mod/field" → key code, ≤ 400; `LunaKeys`); on each welcome |
 | 59 | AFTERMATH | host → joiner | what the battle changed in the host's fleet (`Aftermath`, 6.7), once back on the map with no dialog open |
+| 63 | REFIT_ASK | joiner → host | the fleet member whose refit screen the joiner opened (≤ 64 characters; "" closed it; the last one counts; 6.8) |
+| 65 | REFIT_REQUEST | joiner → host | the refit wanted (`RefitRequest`, 6.8): member id, note (≤ 160), changes (≤ 200: slot or bay, item, from, to), hull mods added / removed / built in (≤ 100 each), vents, capacitors, the credits and story points shown; ≤ 64 KB; the last one counts |
+| 66 | REFIT_RESULT | host → joiner | what became of it (`RefitResult`): received, accepted, denied, refused, withdrawn; text ≤ 1,000 (lines) |
+| 64 | REFIT_DATA | host → joiner | what the refit screen shows (`RefitData`, 6.8): the ship (weapons by slot ≤ 160, bays ≤ 20, hull mods, S-mods, permanent mods ≤ 600 each; OP, vents, capacitors and S-mods with their limits), credits, story points, cargo, storage, submarkets (≤ 8: name, tariff, usable or why not, stock, what each won't sell or buy), known hull mods (≤ 600), base values (≤ 2,000); ≤ 300 items per list |
 
 ### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
 
@@ -562,6 +567,106 @@ expected count.
 - **The aftermath:** `CampaignLobby.battleStarted` notes the fleet (members, credits, cargo stacks by display name)
   at the first battle of an encounter; once the host is back on the map with no dialog open, the differences
   (credits, ships gone and added, the 12 biggest cargo changes) go out as `AFTERMATH`, once.
+
+### 6.8 Friend refit (`FriendRefit`, `RefitScreen`, host setting `friendRefit`, on by default)
+
+The design is in `docs/FRIEND_REFIT_DESIGN.md` (all five stages built; the differences are listed there). Nothing
+changes in the host's campaign until the host accepts a refit.
+
+- **When:** the host has an interaction dialog open whose target has a real market (not a planet's conditions
+  only), with submarkets, and a trade mode other than `NONE` (`Misc.getTradeMode` on the target's memory: `NONE`
+  means docking was refused). This covers the market's own tabs (trade, refit) opened from that dialog.
+  `FriendRefit.availableAt` gives the market's name; `CampaignLobby.build` puts it in `Roster.refitMarket` (state 0
+  only), which is part of the roster's signature, so joiners hear of a change within a second.
+- **The joiner** (`WingmanTitlePlugin`, `LobbyScreen`): with `refitMarket` set, the header says where, and the
+  card of the ship they picked (not the flagship, not mothballed) has a **REFIT (R)** button. R, or a click on it
+  (the button's place from the frame before), sends `REFIT_ASK` with the member id and opens the lobby's third
+  page, `LobbyScreen.REFIT`, drawn by `RefitScreen`. Esc closes it and sends `REFIT_ASK ""`. It also closes, with a
+  note, when the roster says the host left the market or the pick changed, on a `NOTICE` starting "Can't refit",
+  on disconnecting, and when a battle's report comes in. It needs the full-screen lobby.
+- **The host** (`FriendRefit.advance`, from `CampaignLobby.advance` on the game thread): an ask is refused (as
+  `NOTICE`) unless refits are on, the host is docked, the member is this player's pick, in the fleet, not the
+  flagship, not mothballed, not a station. Accepted asks are kept per player; once a second each is checked again
+  (a failure drops it: the joiner closes on the roster) and `RefitData` is built and sent if its bytes differ from
+  the last sent. A battle starting clears them all. Any error switches friend refits off for the session.
+- **What is sent** (`FriendRefit.build`): OP with the host's skills (`getOrdnancePoints(stats)`,
+  `computeOPCost(stats)`), vents and capacitors and their maxima (`SkillsChangeRemoveVentsCapsEffect`), the
+  maximum S-mods (`Misc.getMaxPermanentMods`); weapons by slot (built-in, decorative, system, hidden and module
+  slots left out); wings by bay (`getNumFlightDecks`); fitted hull mods, S-mods (including S-modded built-ins) and
+  other permanent mods. Credits, story points, the fleet's cargo, storage if the host has access
+  (`Misc.playerHasStorageAccess`). Each submarket except storage, local resources, hidden ones, ones not shown in
+  the cargo screen, and free-transfer ones: its tariff, whether it is open to the host (`isEnabled` with a
+  `CoreUIAPI` of Wingman's own answering the dialog's trade mode) and if not why (`getTooltipAppendix`), its stock
+  of weapons and fighter LPCs as it stands (not refreshed: the game refreshes it when the host opens it), what it
+  won't sell (`isIllegalOnSubmarket(stack, PLAYER_BUY)`) and won't buy of everything named
+  (`PLAYER_SELL`). The hull mods the host knows; the base value of each item named. Prices are worked out on the
+  joiner as base value × (1 ± tariff) for showing only; stage 4 will charge them on the host as the game does.
+  Also each item's ordnance cost on this ship (`getOrdnancePointCost(stats, member stats)`, `getOpCost(member
+  stats)`), each known or fitted hull mod's cost for the hull size, and those tagged `no_build_in`.
+- **The plan** (`RefitPlan`, no game classes, used by both sides): from the data and a request, the ordnance points
+  (what the ship uses now, less what comes out, plus what goes in, hull mods, vents and capacitors at 1 each, S-mods
+  free), credits bought and sold (base value × (1 ± tariff), rounded), story points (1 per S-mod), S-mods, and every
+  problem: items not where the request says in the numbers needed (items taken out count where they go, so a weapon
+  can move to another slot through cargo, or be sold and bought back), a shut submarket, one that won't sell or buy
+  that item, no storage, hull mods not known, already on, permanent, not fitted for building in, `no_build_in`,
+  vents and capacitors over the limits, S-mods over the limit, credits and story points short.
+- **The joiner's screen** (`RefitScreen`, lobby page `REFIT`), made for the mouse. Left: the ship drawn with the new
+  loadout, a ring on each slot that can take a weapon (`ShipPicture.slotPoints`: the slot's screen point in the
+  picture last drawn; coloured by slot type, sized by slot size, green when changed, white when marked; hovering
+  names it; a click marks it), the totals against the limits, the plan's problems (red). Middle: tiles (with
+  section heads) for each weapon slot that can take one (biggest first; built-in, decorative, system, hidden and
+  module slots left out), each bay (built-in wings fixed), vents, capacitors, each hull mod (S-mods and permanent
+  ones fixed), "Add a hull mod", the note; each with its picture (weapon turret sprite, else hardpoint; the wing's
+  hull; the hull mod's icon). Right: for a slot or bay, a button for where the item taken out goes (cargo, storage,
+  or sold to a submarket that takes it), UNDO, source tabs (All, cargo, storage, each market) and cards of what
+  fits (`WeaponSlotAPI.weaponFits`) with picture, OP, source, count and price, two to a row, "leave it empty"
+  first, greyed when it can't be bought; for a hull mod, TAKE OFF / PUT BACK, BUILD IN (1 SP), UNDO; vents and
+  capacitors, -5 - + +5; the note, a box to click and type in. Bottom: SEND TO HOST (green when it can go), START
+  OVER, BACK, and the host's last answer. Clicks are read by the title plugin's drawing (press edge) and matched
+  against what was drawn where; the mouse wheel over the tiles or the cards scrolls them. Keys still work (Up/Down
+  tiles, Left/Right cards or vents, Enter fits the card, S, B, Z, Shift+Z, Delete, Ctrl+Enter, Esc). A change
+  that leaves a slot as it was is dropped. Edits survive new data for the same ship (the totals follow); an
+  accepted refit starts afresh on the new loadout.
+- **A request on the host** (`FriendRefit.receive`, on the game thread; `HostSession` keeps the latest bytes per
+  player): refused at once (`REFIT_RESULT` REFUSED with the reasons) unless the player may refit that ship now, it
+  changes something, and it passes every check; else kept as the player's one pending request (a new one replaces
+  it), RECEIVED is sent and the host's message feed says so. Pending requests are checked again each second, and
+  withdrawn (WITHDRAWN) when the host undocks, the pick changes, the player leaves, or a battle starts.
+- **The checks** (`FriendRefit.check`): the plan's, on data built afresh from the campaign; then the game's own:
+  each slot exists on the variant and takes weapons (not built-in, decorative, system, hidden, a module's), the
+  weapon exists and `weaponFits` it; bays past the built-in wings; wings, weapons and hull mods known to this game,
+  hull mods not hidden and not built into the hull; and the ordnance points as the game counts them: the request
+  applied to a clone of the variant, `computeOPCost(stats)` against `getOrdnancePoints(stats)` (this replaces the
+  plan's estimate). Hull mods' own `isApplicableToShip` needs a `ShipAPI`, which exists only in combat or the refit
+  screen, so it isn't checked: the host is told to judge that.
+- **The host's panel** (`FriendRefitPanel`, a transient campaign input and rendering listener): while requests wait,
+  a small FRIEND REFITS (n) button at the top right (over the dialog and core screens); a click or Ctrl+Shift+R
+  opens the panel (keys are its own while it is up): who, which ship, the note, each change with where items come
+  from and go and their prices, the ordnance points, credits and story points, a warning if the joiner was shown
+  other totals, and the checks (refreshed each second); under it a strip of pictures, for each slot or bay what
+  comes out (faded) and what goes in, and each hull mod added. Under that, buttons YES, ACCEPT / NO, DENY (and < > between
+  requests, CLOSE), clicked by polling the mouse while drawing (so they work over any screen); mouse events over the
+  panel or a button are consumed so they don't reach the dialog's options. Keys: A, D, Left/Right, Esc, each read
+  before its event is consumed (the game refuses any read after). With a core screen (fleet, cargo, refit) open, A
+  marks it accepted (`acceptOnClose`, remembering the market and the dialog; the joiner hears so) and it is done
+  once no core screen is reported or that dialog has gone (`FriendRefit.applyWaiting`, each frame from the panel's
+  rendering and the lobby's script; checked once more then, but no longer needing the host docked: it said yes
+  while docked, and that market is still at hand): the screen keeps its own copy of the ship and would undo a change
+  made under it. With `friendRefitReopen`, the refit screen then opens again on the last ship refitted, from the
+  market's dialog as the game's `OpenCoreTab` rule does it (`VisualPanelAPI.showCore(REFIT, target, member, trade
+  mode, listener)`, options cleared, `PopulateOptions` fired on closing); only for rule-based dialogs, and only if
+  the dialog it was accepted in is still up. With the detailed log on, the core tab, `isShowingDialog`,
+  `isShowingMenu` and the dialog are logged each second while one waits.
+- **Accepting** (`FriendRefit.accept`): checked once more; items taken out go first (to cargo, storage, or sold:
+  added to the submarket's cargo, credits added), then items in (from cargo, storage, or bought: taken from the
+  submarket's cargo, credits taken); the ship gets a clone of its variant with the source `REFIT` (never the
+  shared stock variant) and the new loadout, unassigned weapons put in groups, `setVariant(v, false, true)` and
+  `updateStats()`; one story point per S-mod through `spendStoryPoints` with `Misc.getBuildInBonusXP` and a log line;
+  each submarket traded with gets a `PlayerMarketTransaction` (bought, sold, credit value) reported to its plugin,
+  to the sector and to `ListenerUtil`, so prices, stock and standing react as to any trade. The joiner gets
+  ACCEPTED and the new data at once; the ship card follows.
+- **Not covered:** modules' own loadouts (multi-part ships are refitted on the main hull only); bays added by a hull
+  mod being fitted in the same request (they can be filled once it is accepted); mods' own refit features.
 
 ---
 
@@ -1255,6 +1360,9 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `maxShipSize` | CAPITAL_SHIP | host | yes | Largest hull a joiner may fly |
 | `readyCheck` | true | host | no | Hold the battle while everyone chooses a ship, then until everyone is ready |
 | `campaignLobby` | true | host | no | Open the session on the campaign map: friends connect and pick ships before a battle (6.5) |
+| `friendRefit` | true | host | yes | Friends may refit the ship they picked while the host is docked at a market (6.8) |
+| `friendRefitReopen` | true | host | yes | After a friend's refit accepted under the refit screen is done, that screen opens again on the ship (6.8) |
+| `playerList` | true | host | yes | A small list of connected players and their picks, top right of the campaign map (not over a dialog or a core screen) |
 | `modCheck` | content | host | no | `content` (utility mods may differ), `all`, `off` |
 | `autoJoin` | true | joiner | no | Join the host's battle by itself |
 | `rememberShip` | true | joiner | yes | Board last battle's ship |

@@ -41,6 +41,10 @@ public final class WingmanConfig {
     public boolean predictOwnShip = true;
     /** Host: open the co-op session on the campaign map, so friends can connect and pick ships before a battle. */
     public boolean campaignLobby = true;
+    /** Host: friends may refit the ship they picked while the host is docked at a market (the host accepts each refit). */
+    public boolean friendRefit = true;
+    /** Host: after a friend's refit accepted under the refit screen is done, that screen opens again on the ship. */
+    public boolean friendRefitReopen = true;
     /** Joiner: while connected on the title screen, go into the host's battles as they begin, without being asked. */
     public boolean autoJoin = true;
     /** Joiner: at the start of a battle, sit down in the ship flown last time if it is there and free. */
@@ -152,6 +156,8 @@ public final class WingmanConfig {
             c.predictOwnShip = j.optBoolean("predictOwnShip", c.predictOwnShip);
             c.autoJoin = j.optBoolean("autoJoin", c.autoJoin);
             c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
+            c.friendRefit = j.optBoolean("friendRefit", c.friendRefit);
+            c.friendRefitReopen = j.optBoolean("friendRefitReopen", c.friendRefitReopen);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
             c.playerOutlines = j.optBoolean("playerOutlines", c.playerOutlines);
@@ -210,6 +216,8 @@ public final class WingmanConfig {
         if ("predictOwnShip".equals(key)) return String.valueOf(predictOwnShip);
         if ("autoJoin".equals(key)) return String.valueOf(autoJoin);
         if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
+        if ("friendRefit".equals(key)) return String.valueOf(friendRefit);
+        if ("friendRefitReopen".equals(key)) return String.valueOf(friendRefitReopen);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
         if ("playerOutlines".equals(key)) return String.valueOf(playerOutlines);
@@ -264,6 +272,8 @@ public final class WingmanConfig {
             else if ("predictOwnShip".equals(key)) predictOwnShip = yes(value);
             else if ("autoJoin".equals(key)) autoJoin = yes(value);
             else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
+            else if ("friendRefit".equals(key)) friendRefit = yes(value);
+            else if ("friendRefitReopen".equals(key)) friendRefitReopen = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);
             else if ("playerOutlines".equals(key)) playerOutlines = yes(value);

@@ -70,13 +70,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     // ---- the pre-battle lobby (see CampaignLobby): the host's fleet, and the ship we pick from it ----
     private wingman.net.Roster roster;
-    private boolean lobbyOpen, lobbyShown;
+    private boolean lobbyOpen, lobbyShown, wasClickDown;
     private int lobbyAt;
     private String lobbyNote = "";
     private java.awt.Color lobbyNoteColor = Panel.DIM;
     private static final int LOBBY_ROWS = 9;
     /** The lobby as a screen of its own (the game's menu moved aside); the corner box if that can't be done. */
     private final LobbyScreen lobby = new LobbyScreen();
+    /** Friend refit: the refit screen is open on this member ("" closed), and what the host last sent for it. */
+    private String refitMember = "";
+    private wingman.net.RefitData refitData;
 
     private static final String[] HELP_TITLES = {
         "THE WINGMAN PROJECT: WHAT THIS IS", "HOSTING A BATTLE", "JOINING A BATTLE", "IN THE BATTLE", "BEFORE YOU PLAY",
@@ -211,7 +214,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     hostLine = "";
                 }
                 if (state == ClientLink.State.CONNECTED) { form.status = "Connected to " + connectedTo + "."; form.statusColor = Panel.GOOD; }
-                if (state != ClientLink.State.CONNECTED) { welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null; }
+                if (state != ClientLink.State.CONNECTED) {
+                    welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null;
+                    refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+                }
                 lastState = state;
             }
             if (state != ClientLink.State.CONNECTED) return;
@@ -220,6 +226,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 lobbyOpen = true;
                 lobbyShown = true;
                 open = true;
+                closeRefit(null);
                 lobby.page = LobbyScreen.REPORT;
             }
             // Nothing else reads the connection while we sit on the title screen, and a host in a battle keeps
@@ -276,15 +283,33 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
                     for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
                     withHost = names.toString();
+                    if (!refitMember.isEmpty()) { // friend refit: the screen stays only while the host is docked and the ship is ours
+                        if (roster.refitMarket.isEmpty()) closeRefit("The host left the market, so the refit screen closed.");
+                        else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed.");
+                    }
                     if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
                         lobbyShown = true;
                         lobbyOpen = true;
                         open = true;
                         if (mine != null) lobbyAt = roster.members.indexOf(mine);
                     }
-                } else if (p.type == Msg.NOTICE) { // the host's answer to a pick it can't grant
+                } else if (p.type == Msg.NOTICE) { // the host's answer to a pick (or a refit) it can't grant
                     lobbyNote = Msg.readUtf(p.data);
                     lobbyNoteColor = Panel.WARN;
+                    if (lobbyNote.startsWith("Can't refit")) closeRefit(lobbyNote);
+                } else if (p.type == Msg.REFIT_DATA) { // friend refit: what the refit screen shows
+                    try {
+                        wingman.net.RefitData d = wingman.net.RefitData.decode(p.data);
+                        if (d.memberId.equals(refitMember)) refitData = d;
+                    } catch (java.io.IOException e) { /* a garbled one is skipped: the next one replaces it */ }
+                } else if (p.type == Msg.REFIT_RESULT) { // friend refit: what the host made of our request
+                    try {
+                        wingman.net.RefitResult r = wingman.net.RefitResult.decode(p.data);
+                        lobby.refit.onResult(r);
+                        if (refitMember.isEmpty() || r.status == wingman.net.RefitResult.ACCEPTED) {
+                            note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED ? Panel.GOOD : Panel.WARN);
+                        }
+                    } catch (java.io.IOException e) { /* skipped */ }
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
                     StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
@@ -317,6 +342,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (e.isConsumed()) continue;
                 // A click on our button must not also land on whatever the title screen has underneath it.
                 if (e.isMouseEvent() && (e.isMouseDownEvent() || e.isMouseUpEvent()) && over) { e.consume(); continue; }
+                if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.REFIT) { // the wheel scrolls the refit screen's lists
+                    int dir = e.getEventValue();
+                    if (lobby.refit.scroll(Global.getSettings().getMouseX(), Global.getSettings().getMouseY(), dir)) e.consume();
+                    continue;
+                }
                 if (!e.isKeyboardEvent()) continue;
                 if (settings.open) break; // the settings page takes every key, below
                 if (reportPage >= 0) { // so does the compatibility report
@@ -344,7 +374,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     continue;
                 }
                 if (lobbyOpen && open && ClientLink.get().getState() == ClientLink.State.CONNECTED) { // the lobby takes every key while it is up
-                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue());
+                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue(), e.getEventChar(), e.isCtrlDown(), e.isShiftDown());
                     e.consume();
                     continue;
                 }
@@ -434,9 +464,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     }
 
     /** Keys on the lobby page: Up/Down choose, F (or Enter on the map) pick, Delete no pick, Enter join, Esc back. */
-    private void lobbyKey(int key) {
+    private void lobbyKey(int key, char ch, boolean ctrl, boolean shift) {
         int n = roster == null ? 0 : roster.members.size();
         int page = TitleMenu.isHidden() ? lobby.rows : LOBBY_ROWS;
+        if (lobby.page == LobbyScreen.REFIT) {                                         // the refit screen takes every key
+            refitAction(lobby.refit.key(key, ch, ctrl, shift));
+            return;
+        }
+        if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
         if (key == 59) { helpPage = 0; return; }                                       // F1
         if (key == 15) { lobby.page = lobby.page == LobbyScreen.FLEET ? LobbyScreen.REPORT : LobbyScreen.FLEET; return; } // Tab
@@ -461,6 +496,44 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     }
 
     private void note(String text, java.awt.Color color) { lobbyNote = text; lobbyNoteColor = color; }
+
+    /** Friend refit: open the refit screen on the ship we picked, and ask the host for what it shows. */
+    private void openRefit() {
+        String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
+        wingman.net.Roster.Member mine = roster == null ? null : roster.pickOf(me);
+        if (roster == null || roster.refitMarket.isEmpty()) { note("Refitting is possible while the host is docked at a market.", Panel.WARN); return; }
+        if (mine == null) { note("Pick a ship first: you can refit the ship you picked.", Panel.WARN); return; }
+        if ((mine.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED)) != 0) { note("That ship can't be refitted.", Panel.WARN); return; }
+        if (lobby.isBroken() || !TitleMenu.hide()) { note("The refit screen needs the full-screen lobby, which can't be shown here.", Panel.BAD); return; }
+        Conn c = ClientLink.get().getConn();
+        if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+        c.send(Msg.REFIT_ASK, Msg.utf(mine.id));
+        refitMember = mine.id;
+        refitData = null;
+        lobby.page = LobbyScreen.REFIT;
+        note("", Panel.DIM);
+    }
+
+    /** What the refit screen asked for: close it, or send the refit to the host. */
+    private void refitAction(int action) {
+        if (action == RefitScreen.CLOSE) closeRefit(null);
+        else if (action == RefitScreen.SEND) {
+            Conn c = ClientLink.get().getConn();
+            if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+            c.send(Msg.REFIT_REQUEST, lobby.refit.request().encode());
+        }
+    }
+
+    /** Close the refit screen (telling the host), with a note why if it wasn't the player's doing. */
+    private void closeRefit(String why) {
+        if (refitMember.isEmpty()) return;
+        refitMember = "";
+        refitData = null;
+        if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+        Conn c = ClientLink.get().getConn();
+        if (c != null && ClientLink.get().getState() == ClientLink.State.CONNECTED) c.send(Msg.REFIT_ASK, Msg.utf(""));
+        if (why != null) note(why, Panel.WARN);
+    }
 
     private void sendPick(String memberId) {
         Conn c = ClientLink.get().getConn();
@@ -497,6 +570,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         v.players = withHost.isEmpty() ? "" : "In this game: " + withHost;
         v.note = lobbyNote;
         v.noteColor = lobbyNoteColor;
+        v.refitMarket = roster == null ? "" : roster.refitMarket;
+        v.refitOpen = !refitMember.isEmpty();
+        v.refitData = refitData;
         return v;
     }
 
@@ -572,6 +648,87 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         form.statusColor = Panel.WARN;
     }
 
+    /** The CO-OP panel: joining, the host once connected, hosting from this PC, and anything to look at. */
+    Panel.Doc coopDoc(ClientLink.State state, boolean canJoin) {
+        String version = Mods.ownVersion();
+        Panel.Doc d = new Panel.Doc("CO-OP").note(version);
+        boolean connected = state == ClientLink.State.CONNECTED;
+        d.section(connected ? "Connection" : "Join a game");
+        form.doc(d, state == ClientLink.State.CONNECTING);
+        if (connected) {
+            d.section("The host");
+            if (!hostLine.isEmpty()) d.line(hostLine, Panel.GOOD);
+            boolean auto = cfg != null && cfg.autoJoin;
+            if (autoJoinAt != 0) {
+                long left = Math.max(1, (autoJoinAt - System.currentTimeMillis() + 999) / 1000);
+                d.callout("Joining the host's battle in " + left + "...   Enter: now.   Esc: not this one.", Panel.GOOD);
+            } else if (canJoin && !launchFailed) {
+                if (hostLine.isEmpty()) d.callout(auto ? "The host is not in a battle yet. You will be taken into the next one when it begins."
+                        : "The host is not in a battle yet. Wait for them to start one, then press Enter to join it.", Panel.WARN);
+                else d.callout("Press Enter to join the battle.", Panel.GOOD);
+            }
+            if (!withHost.isEmpty()) d.line("In this game: " + withHost, Panel.DIM);
+            if (roster != null) {
+                wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg == null ? "" : cfg.playerName));
+                d.line(mine == null ? "F4 opens the lobby: the host's fleet, to pick your ship before the battle." : "Your ship: " + wingman.net.Roster.label(mine) + ".   F4: the lobby.",
+                        mine == null ? Panel.TEXT : Panel.GOOD);
+            }
+        }
+        d.section("Host a game");
+        d.line("Start any battle: friends can join it. They type " + (myAddresses == null || myAddresses.isEmpty() ? "this PC's address." : "one of these:"), Panel.DIM);
+        if (myAddresses != null && !myAddresses.isEmpty()) d.line(myAddresses, Panel.TEXT);
+        if (cfg != null && cfg.hostEnabled && cfg.password.isEmpty()) d.callout("No password set: anyone who can reach this PC can join. F3 to set one.", Panel.WARN);
+        List<String> off = SystemWatch.get().blockedIds();
+        if (!off.isEmpty()) {
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < off.size() && i < 6; i++) names.append(i == 0 ? "" : ", ").append(off.get(i));
+            if (off.size() > 6) names.append(", and ").append(off.size() - 6).append(" more");
+            d.section("Notices");
+            d.callout("Switched off on this PC after a possible crash, so not shown when the host uses them: " + names + ".  F5: switch them back on.", Panel.WARN);
+        }
+        d.keys((canJoin ? "Enter: join the battle" : form.address.length() == 0 ? "Enter: save name" : "Enter: connect")
+                + "     Tab: next field     Ctrl+V: paste     F1: how to use     F2: mods     F3: settings     Esc: close");
+        return d;
+    }
+
+    /** One page of the how-to. */
+    static Panel.Doc helpDoc(int helpPage) {
+        int p = Math.max(0, Math.min(helpPage, HELP.length - 1));
+        boolean last = p == HELP.length - 1;
+        Panel.Doc d = new Panel.Doc("HOW TO USE").note((p + 1) + " / " + HELP.length);
+        d.section(HELP_TITLES[p]);
+        String[] page = HELP[p];
+        for (int i = 0; i < page.length; i++) {
+            if (last || (p == 0 && i == 2)) d.callout(page[i], Panel.WARN);
+            else d.line(page[i], Panel.TEXT);
+        }
+        d.keys((last ? "Enter: done" : "Enter: next") + (p > 0 ? "     Backspace: back" : "") + "     Esc: close");
+        return d;
+    }
+
+    /** One page of the mod compatibility report: its own headings ("Worth a look...") become sections. */
+    static Panel.Doc reportDoc(List<String> report, int page, int pages, int perPage) {
+        Panel.Doc d = new Panel.Doc("MOD COMPATIBILITY").note((page + 1) + " / " + pages);
+        // The report: a line per mod, a blank line, then what was seen in play and what is worth a look.
+        int blank = report.indexOf("");
+        int from = page * perPage;
+        if (page == 0) d.line("Scripted content from your mods. Unless marked \"each PC's own\", its timing comes from the host.", Panel.DIM);
+        if (blank < 0 || from < blank) d.section(page == 0 ? "Your mods" : "Your mods (continued)");
+        boolean looked = false;
+        for (int i = from; i < report.size() && i < (page + 1) * perPage; i++) {
+            String line = report.get(i);
+            if (line.isEmpty()) { d.section("In play"); continue; }
+            if (i == from && blank >= 0 && i > blank) d.section("In play (continued)");
+            if (line.startsWith("Worth a look:")) {
+                if (!looked) { d.line("Worth a look:", Panel.WARN); looked = true; }
+                d.callout(line.substring("Worth a look:".length()).trim(), Panel.WARN);
+            } else if (line.startsWith("Seen in play") || line.startsWith("Nothing seen")) d.line(line, Panel.GOOD);
+            else d.line(line, Panel.TEXT);
+        }
+        d.keys((page + 1 >= pages ? "Enter: done" : "Enter: next") + (page > 0 ? "     Backspace: back" : "") + "     Delete: forget what was seen     Esc: close");
+        return d;
+    }
+
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
         if (broken || !onTitle()) return;
@@ -603,32 +760,27 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             // The lobby as a screen of its own, with the game's menu moved aside (other pages draw over it).
             boolean full = open && lobbyOpen && state == ClientLink.State.CONNECTED && !lobby.isBroken() && TitleMenu.hide();
             if (!full) TitleMenu.show();
-            if (full) lobby.render(lobbyView());
+            if (full) {
+                float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
+                if (down && !wasClickDown && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
+                else if (down && !wasClickDown && lobby.page == LobbyScreen.REFIT) {
+                    refitAction(lobby.refit.click(Global.getSettings().getMouseX(), Global.getSettings().getMouseY()));
+                }
+                lobby.render(lobbyView());
+            }
+            wasClickDown = down;
 
             List<String> lines = new ArrayList<String>();
             List<Color> colors = new ArrayList<Color>();
             if (reportPage >= 0 && report != null) {
                 int pages = Math.max(1, (report.size() + REPORT_LINES - 1) / REPORT_LINES);
                 int page = Math.min(reportPage, pages - 1);
-                if (page == 0) {
-                    lines.add("Scripted content from your mods. Unless marked \"each PC's own\", its timing comes from the host.");
-                    colors.add(Panel.DIM);
-                }
-                for (int i = page * REPORT_LINES; i < report.size() && i < (page + 1) * REPORT_LINES; i++) {
-                    String line = report.get(i);
-                    if (line.isEmpty()) continue;
-                    lines.add(line);
-                    colors.add(line.startsWith("Worth a look") ? Panel.WARN : line.startsWith("Seen in play") || line.startsWith("Nothing seen") ? Panel.GOOD : Panel.TEXT);
-                }
-                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), "MOD COMPATIBILITY   (" + (page + 1) + "/" + pages + ")", lines, colors,
-                        (page + 1 >= pages ? "Enter: done" : "Enter: next") + (page > 0 ? "     Backspace: back" : "")
-                        + "     Delete: forget what was seen     Esc: close");
+                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), reportDoc(report, page, pages, REPORT_LINES));
                 return;
             }
             if (settings.open) {
                 try {
-                    settings.lines(lines, colors);
-                    panel.renderBelow(bx() + W, by() - 6f, boxWidth(), settings.title(), lines, colors, settings.footer());
+                    panel.renderBelow(bx() + W, by() - 6f, Math.max(boxWidth(), 520f), settings.doc());
                 } catch (Throwable t) { // close the page, keep the CO-OP button
                     settings.open = false;
                     Global.getLogger(WingmanTitlePlugin.class).error("Wingman: the settings page could not be shown and was closed", t);
@@ -636,14 +788,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
             if (helpPage >= 0) {
-                String[] page = HELP[Math.min(helpPage, HELP.length - 1)];
-                for (int i = 0; i < page.length; i++) {
-                    lines.add(page[i]);
-                    colors.add(helpPage == HELP.length - 1 || (helpPage == 0 && i == 2) ? Panel.WARN : Panel.TEXT);
-                }
-                boolean last = helpPage == HELP.length - 1;
-                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), HELP_TITLES[Math.min(helpPage, HELP.length - 1)] + "   (" + (helpPage + 1) + "/" + HELP.length + ")", lines, colors,
-                        (last ? "Enter: done" : "Enter: next") + (helpPage > 0 ? "     Backspace: back" : "") + "     Esc: close");
+                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), helpDoc(helpPage));
                 return;
             }
             if (!open) return;
@@ -656,47 +801,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
 
-            form.lines(lines, colors, state == ClientLink.State.CONNECTING);
-            if (!hostLine.isEmpty() && state == ClientLink.State.CONNECTED) { lines.add(hostLine); colors.add(Panel.GOOD); }
             boolean canJoin = state == ClientLink.State.CONNECTED && welcomed && form.address.toString().trim().equals(connectedRaw);
-            boolean auto = cfg != null && cfg.autoJoin;
-            if (autoJoinAt != 0) {
-                long left = Math.max(1, (autoJoinAt - System.currentTimeMillis() + 999) / 1000);
-                lines.add("Joining the host's battle in " + left + "...   Esc: not this one.   Enter: now.");
-                colors.add(Panel.GOOD);
-            } else if (canJoin && !launchFailed) {
-                lines.add(hostLine.isEmpty() ? (auto ? "The host is not in a battle yet. You will be taken into the next one when it begins."
-                                : "The host is not in a battle yet. Wait for them to start one, then press Enter to join it.")
-                        : "Press Enter to join the battle.");
-                colors.add(hostLine.isEmpty() ? Panel.WARN : Panel.TEXT);
-            }
-            if (!withHost.isEmpty() && state == ClientLink.State.CONNECTED) { lines.add("In this game: " + withHost); colors.add(Panel.DIM); }
-            if (roster != null && state == ClientLink.State.CONNECTED) {
-                wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg == null ? "" : cfg.playerName));
-                lines.add("F4: the lobby (the host's fleet)" + (mine == null ? ", to pick your ship before the battle." : ". Your pick: " + wingman.net.Roster.label(mine) + "."));
-                colors.add(Panel.GOOD);
-            }
-            lines.add("To join:  type the host's address, Enter to connect, Enter again to join their battle.");
-            colors.add(Panel.DIM);
-            lines.add("To host:  just start any battle. Friends type "
-                    + (myAddresses == null || myAddresses.isEmpty() ? "this PC's address" : "one of:  " + myAddresses) + ".");
-            colors.add(Panel.DIM);
-            if (cfg != null && cfg.hostEnabled && cfg.password.isEmpty()) {
-                lines.add("Hosting without a password: anyone who can reach this PC can join. F3 to set a password.");
-                colors.add(Panel.WARN);
-            }
-            List<String> off = SystemWatch.get().blockedIds();
-            if (!off.isEmpty()) {
-                StringBuilder names = new StringBuilder();
-                for (int i = 0; i < off.size() && i < 6; i++) names.append(i == 0 ? "" : ", ").append(off.get(i));
-                if (off.size() > 6) names.append(", and ").append(off.size() - 6).append(" more");
-                lines.add("Switched off on this PC after a possible crash, so not shown when the host uses them: " + names
-                        + ".  F5: switch them back on.");
-                colors.add(Panel.WARN);
-            }
-            String version = Mods.ownVersion();
-            panel.renderBelow(bx() + W, by() - 6f, boxWidth(), version.isEmpty() ? "CO-OP" : "CO-OP   " + version, lines, colors, (canJoin ? "Enter: join the battle" : form.address.length() == 0 ? "Enter: save name" : "Enter: connect")
-                    + "     Tab: next field     Ctrl+V: paste     F1: how to use     F2: mod compatibility     F3: settings     Esc: close");
+            panel.renderBelow(bx() + W, by() - 6f, boxWidth(), coopDoc(state, canJoin));
         } catch (Throwable t) {
             fail(t);
         }

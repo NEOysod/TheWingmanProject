@@ -73,6 +73,10 @@ public final class NetStats {
             case Msg.UDP_MODE: return "UDP set-up";
             case Msg.ROSTER: return "lobby fleet";
             case Msg.PICK: return "ship picks";
+            case Msg.REFIT_ASK: return "refit asks";
+            case Msg.REFIT_DATA: return "refit data";
+            case Msg.REFIT_REQUEST: return "refit requests";
+            case Msg.REFIT_RESULT: return "refit results";
             case Msg.INPUT_MODE: return "controls mode";
             case Msg.INPUTS: return "controls (steady)";
             case Msg.REPORT: return "after-action report";

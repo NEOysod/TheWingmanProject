@@ -35,6 +35,8 @@ final class Settings {
     }
 
     static final String[] PAGES = { "HOSTING AND JOINING", "SMOOTHNESS", "KEEPING THE GAMES ALIKE", "TROUBLESHOOTING" };
+    /** The same pages, short enough for tabs. */
+    static final String[] PAGE_TABS = { "Connection", "Smoothness", "Sync", "Troubleshooting" };
     static final List<Item> ITEMS = new ArrayList<Item>();
     static {
         ITEMS.add(new Item(0, "hostEnabled", "Friends can join my battles", HOST, false, YES_NO,
@@ -49,6 +51,10 @@ final class Settings {
                 "On: the battle is held paused while everyone chooses a ship, then until everyone has pressed ready."));
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
+        ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
+                "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
+        ITEMS.add(new Item(0, "friendRefitReopen", "Reopen the refit screen after a friend's refit", HOST, true, YES_NO,
+                "A friend's refit accepted in the refit screen is done when that screen closes. On: it then opens again on that ship, so you see the result."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,
@@ -106,8 +112,8 @@ final class Settings {
                 "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
         ITEMS.add(new Item(2, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
-        ITEMS.add(new Item(2, "playerList", "Player list in battle", HOST, false, YES_NO,
-                "A small list of the players at the top right: who flies what, on autopilot or watching, and whose link has gone quiet. Scrolls with the mouse wheel over it beyond four rows; F3 hides it with the tags."));
+        ITEMS.add(new Item(2, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
+                "A small list at the top right of the campaign map while friends are connected: each player in their colour, the ship they picked, and whose link has gone quiet."));
         ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
                 "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
         ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,
@@ -332,6 +338,50 @@ final class Settings {
                 lines.add("Could not save: these settings last until the game is closed. See starsector.log.");
                 colors.add(Panel.BAD);
             }
+        }
+
+        /** The page as a window: a tab per page, a row per setting, then what the picked one does. */
+        Panel.Doc doc() {
+            List<Item> rows = rows();
+            if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
+            boolean blink = (System.currentTimeMillis() / 400) % 2 == 0;
+            Panel.Doc d = new Panel.Doc("SETTINGS").note((page + 1) + " / " + PAGES.length);
+            List<String> tabs = new ArrayList<String>();
+            for (String p : PAGE_TABS) tabs.add(p);
+            d.tabs(tabs, page);
+            d.section(PAGES[page]);
+            for (int i = 0; i < rows.size(); i++) {
+                Item it = rows.get(i);
+                String v = shown(it);
+                if ("true".equals(v)) v = "on"; else if ("false".equals(v)) v = "off";
+                if ("password".equals(it.key) && v.isEmpty() && i != row) v = "none";
+                if (it.options == null && i == row && blink) v += "_";
+                String who = it.who == HOST ? "host" : it.who == JOINER ? "joiner" : "both";
+                d.option(it.label, v, who, i == row, overrides.containsKey(it.key), it.options == null);
+            }
+            if (!rows.isEmpty()) {
+                Item it = rows.get(row);
+                d.section("About this setting");
+                d.line(it.help, Panel.TEXT);
+                String when;
+                if ("port".equals(it.key)) {
+                    int typed = -1;
+                    try { typed = Integer.parseInt(shown(it)); } catch (Throwable t) { /* not a number yet */ }
+                    when = typed < 1024 || typed > 65535 ? "Not a usable port yet (1024-65535): 24816 is used until it is."
+                            : "Used from the next battle you host or join.";
+                } else if (!inBattle) {
+                    when = it.who == HOST ? "Matters when you host. Used from your next battle."
+                            : it.who == JOINER ? "Matters when you join. Used from your next battle."
+                            : "Used from your next battle.";
+                } else {
+                    when = it.live ? "Takes effect now." : "Takes effect from the next battle.";
+                }
+                d.line(when, it.live && inBattle ? Panel.GOOD : Panel.DIM);
+                if (overrides.containsKey(it.key)) d.line("Edited here. wingman_settings.json says " + display(file.get(it.key)) + "; Delete goes back to that.", Panel.WARN);
+            }
+            if (saveFailed) d.callout("Could not save: these settings last until the game is closed. See starsector.log.", Panel.BAD);
+            d.keys("Up/Down: pick     Left/Right: change     Delete: default     Tab: next page     Esc: done");
+            return d;
         }
 
         private static String display(String v) {

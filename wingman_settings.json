@@ -69,6 +69,14 @@
     # fleet and pick the ship they want to fly in the next battle. false: only once a battle starts.
     "campaignLobby": true,
 
+    # true: while you are docked at a market, friends get a Refit button for the ship they picked, and can send
+    # you a refit of it. Nothing changes in your campaign unless you accept it. false: no Refit button.
+    "friendRefit": true,
+
+    # A friend's refit accepted while the refit screen is open is done the moment that screen closes (the screen
+    # keeps its own copy of the ship). true: the refit screen then opens again on that ship.
+    "friendRefitReopen": true,
+
     # ---- JOINING ----
     # Only used until an address has been typed into the CO-OP panel, which then takes over.
     # 127.0.0.1 is this PC itself (two copies of the game on one machine).
@@ -138,8 +146,8 @@
     # pauses it for everyone. With this on, the battle keeps running while you give orders. Space still pauses.
     "keepRunningInCommandMap": true,
 
-    # Player list (host): who is in the battle and what they fly, at the top right. Beyond four rows it scrolls
-    # with the mouse wheel over it. F3 hides it along with the player tags.
+    # Player list (host): a small box at the top right of the campaign map while friends are connected: each
+    # player in their colour and the ship they picked. Hidden while a dialog or a fleet/cargo screen is open.
     "playerList": true,
 
     # Ship Mastery System (joiner): the host's masteries, and those of the fleets it fights, apply to the copies

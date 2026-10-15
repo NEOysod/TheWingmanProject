@@ -22,12 +22,16 @@ import wingman.net.Roster;
  * Wingman's title screen panels; keys are read by WingmanTitlePlugin.
  */
 final class LobbyScreen {
-    static final int FLEET = 0, REPORT = 1;
+    static final int FLEET = 0, REPORT = 1, REFIT = 2;
     int page = FLEET;
 
-    private static final Color TITLE = new Color(120, 210, 255), LINE = new Color(120, 210, 255, 90), MARK = new Color(120, 210, 255, 45);
-    private static final String BIG = "graphics/fonts/orbitron24aabold.fnt", HEAD = "graphics/fonts/orbitron20aabold.fnt";
-    private String body;
+    static final Color TITLE = new Color(120, 210, 255), LINE = new Color(120, 210, 255, 90), MARK = new Color(120, 210, 255, 45);
+    static final String BIG = "graphics/fonts/orbitron24aabold.fnt", HEAD = "graphics/fonts/orbitron20aabold.fnt";
+    String body;
+    /** The friend-refit screen, drawn as the lobby's third page. */
+    final RefitScreen refit = new RefitScreen(this);
+    /** Where the Refit button was drawn this frame (x, y, w, h), or null: the title plugin reads clicks on it. */
+    float[] refitButton;
     private final Map<String, LabelAPI> cache = new HashMap<String, LabelAPI>();
     private boolean broken;
     private int failures;
@@ -38,12 +42,16 @@ final class LobbyScreen {
     static final class View {
         Roster roster;
         String me = "", hostLine = "", note = "", players = "";
+        /** Friend refit: the market the host is docked at ("" none), and the refit screen's state. */
+        String refitMarket = "";
+        boolean refitOpen;
+        wingman.net.RefitData refitData;
         Color hostColor = Panel.TEXT, noteColor = Panel.DIM;
         int at;
         boolean hostInBattle;
     }
 
-    private LabelAPI label(String text, String font, Color color, float width) {
+    LabelAPI label(String text, String font, Color color, float width) {
         String key = font + "|" + color.getRGB() + "|" + Math.round(width) + "|" + text;
         LabelAPI l = cache.get(key);
         if (l == null) {
@@ -57,7 +65,7 @@ final class LobbyScreen {
     }
 
     /** Draws text with its top edge at 'top'; returns the y just below it. */
-    private float text(String s, String font, Color c, float x, float top, float width) {
+    float text(String s, String font, Color c, float x, float top, float width) {
         if (s == null || s.isEmpty()) return top;
         LabelAPI l = label(s, font, c, width);
         float h = l.getPosition().getHeight();
@@ -66,7 +74,7 @@ final class LobbyScreen {
         return top - h;
     }
 
-    private static void fill(float x, float y, float w, float h, Color c) {
+    static void fill(float x, float y, float w, float h, Color c) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -78,7 +86,7 @@ final class LobbyScreen {
         GL11.glPopAttrib();
     }
 
-    private static void frame(float x, float y, float w, float h) {
+    static void frame(float x, float y, float w, float h) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -95,38 +103,62 @@ final class LobbyScreen {
         if (broken) return;
         try {
             if (body == null) body = Global.getSettings().getString("defaultFont");
+            refitButton = null;
             float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-            float m = Math.max(24f, sw * 0.025f);
-            fill(0f, 0f, sw, sh, new Color(4, 7, 12, 236));
+            float m = Math.max(24f, sw * 0.022f);
+            fill(0f, 0f, sw, sh, new Color(4, 7, 12, 238));
 
-            // Header: what this is, where the host is, the two pages. LunaLib draws its own buttons in the
-            // top-left corner of the title screen (over anything there): the header starts to their right, and
-            // the content below them.
+            // Header: what this is and the pages, then a line on where the host is and who is here. LunaLib draws
+            // its own buttons in the top-left corner of the title screen (over anything there): the header starts
+            // to their right, and the content below them.
             float hx = m + lunaCorner();
             float top = sh - m;
-            float y = text("CO-OP LOBBY", BIG, TITLE, hx, top, 400f);
-            String tabs = (page == FLEET ? "[ FLEET ]" : "  FLEET  ") + "    " + (page == REPORT ? "[ LAST BATTLE ]" : "  LAST BATTLE  ");
-            LabelAPI tl = label(tabs, HEAD, Panel.TEXT, 600f);
-            text(tabs, HEAD, Panel.TEXT, sw - m - Math.min(600f, tl.computeTextWidth(tabs)) - 4f, top, 600f);
-            y = text(v.hostLine, body, v.hostColor, hx, y - 6f, sw - m - hx) - 4f;
-            y = text(v.players, body, Panel.DIM, hx, y, sw - m - hx) - 10f;
+            float titleH = Style.lineHeight(BIG);
+            text("CO-OP LOBBY", BIG, TITLE, hx, top, 400f);
+            List<String> tabs = new java.util.ArrayList<String>();
+            int active;
+            if (page == REFIT) { tabs.add("Fleet"); tabs.add("Last battle"); tabs.add("Refit"); active = 2; }
+            else { tabs.add("Fleet"); tabs.add("Last battle"); active = page == FLEET ? 0 : 1; }
+            float tabsW = 0f;
+            for (String t : tabs) tabsW += Style.width(t.toUpperCase(), Style.SMALL_FONT) + 30f;
+            Style.tabs(tabs, active, sw - m - tabsW, top + 2f, tabsW);
+            float y = top - titleH - 10f;
+            // the host and the players, on one line each, under the title
+            if (!v.hostLine.isEmpty()) y = text(v.hostLine, body, v.hostColor, hx, y, sw - m - hx) - 2f;
+            if (!v.players.isEmpty()) y = text(v.players, body, Panel.DIM, hx, y, sw - m - hx) - 2f;
+            if (!v.refitMarket.isEmpty() && page != REFIT) {
+                Roster.Member mine = v.roster == null ? null : v.roster.pickOf(v.me);
+                y = Style.callout("Refit available at " + v.refitMarket + (mine == null ? ": pick a ship, then refit it here." : ": R, or the Refit button on your ship's card."),
+                        Panel.GOOD, hx, y - 4f, Math.min(sw - m - hx, 760f)) - 2f;
+            }
+            y -= 10f;
             if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H - 8f);
             fill(m, y, sw - 2 * m, 1f, LINE);
-            float contentTop = y - 12f, footerH = 64f, bottom = m + footerH;
+            float contentTop = y - 14f;
+
+            // Footer: a note (if any) and the keys, as key chips.
+            String keys = page == REFIT ? "Click: choose     Mouse wheel: scroll the lists     Esc: back"
+                    : page == FLEET
+                    ? "Up/Down: choose     PgUp/PgDn: page     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
+                            + (v.refitMarket.isEmpty() ? "" : "     R: refit") + "     Tab: last battle     F1: how to     Esc: close"
+                    : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: close";
+            List<String[]> k = Style.keys(keys);
+            float keysH = Style.keysHeight(k, sw - 2 * m);
+            float noteH = v.note.isEmpty() ? 0f : Style.height(v.note, body, sw - 2 * m - 14f) + 12f;
+            float bottom = m + keysH + noteH + 14f;
 
             if (page == FLEET) fleet(v, m, contentTop, sw - 2 * m, contentTop - bottom);
+            else if (page == REFIT) refit.render(v, m, contentTop, sw - 2 * m, contentTop - bottom);
             else report(m, contentTop, sw - 2 * m, contentTop - bottom);
 
-            fill(m, bottom - 6f, sw - 2 * m, 1f, LINE);
-            String keys = page == FLEET
-                    ? "Up/Down, PgUp/PgDn: choose     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
-                            + "     Tab: last battle     F1: how to     Esc: close"
-                    : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: close";
-            if (!v.note.isEmpty()) text(v.note, body, v.noteColor, m, bottom - 12f, sw - 2 * m);
-            text(keys, body, Panel.DIM, m, bottom - 36f, sw - 2 * m);
+            fill(m, bottom - 7f, sw - 2 * m, 1f, LINE);
+            float fy = bottom - 14f;
+            if (!v.note.isEmpty()) fy = Style.callout(v.note, v.noteColor == Panel.DIM ? Style.ACCENT : v.noteColor, m, fy, sw - 2 * m) - 6f;
+            Style.drawKeys(k, m, fy, sw - 2 * m);
             failures = 0;
         } catch (Throwable t) {
             cache.clear();
+            Style.forget();
             if (++failures >= 60) {
                 broken = true;
                 Global.getLogger(LobbyScreen.class).error("Wingman: the lobby screen keeps failing to draw and is switched off (the corner box is used)", t);
@@ -135,6 +167,11 @@ final class LobbyScreen {
     }
 
     boolean isBroken() { return broken; }
+
+    static boolean inside(float x, float y, float w, float h) {
+        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    }
 
     /** LunaLib's "Mod Settings" and "Version Checker" buttons: 130 wide from x 5, from 2.5% below the top, 105 tall. */
     private static final float LUNA_BUTTONS_W = 140f, LUNA_BUTTONS_H = 110f;
@@ -158,68 +195,105 @@ final class LobbyScreen {
 
     private void fleet(View v, float x, float top, float w, float h) {
         Roster r = v.roster;
-        float listW = w * 0.40f, cardW = w * 0.34f, sideW = w - listW - cardW - 32f;
-        float cardX = x + listW + 16f, sideX = cardX + cardW + 16f;
-        frame(x, top - h, listW, h);
-        frame(cardX, top - h, cardW, h);
+        float gap = 14f;
+        float listW = w * 0.36f, cardW = w * 0.37f, sideW = w - listW - cardW - 2 * gap;
+        float cardX = x + listW + gap, sideX = cardX + cardW + gap;
         int n = r == null ? 0 : r.members.size();
-        float y = text("HOST'S FLEET" + (n > 0 ? "  (" + n + ")" : ""), HEAD, TITLE, x + 12f, top - 10f, listW - 24f) - 8f;
+        float y = Style.window(x, top - h, listW, h, "HOST'S FLEET", n > 0 ? n + " ship" + (n == 1 ? "" : "s") : "") - 10f;
+        float px = x + Style.PAD, pw = listW - 2 * Style.PAD;
         if (r == null || n == 0) {
             text(r == null ? "The host's fleet shows here when the host is in a campaign." : "The host's fleet isn't available (the host is not in a campaign).",
-                    body, Panel.DIM, x + 12f, y, listW - 24f);
+                    body, Panel.DIM, px, y, pw);
+            Style.window(cardX, top - h, cardW, h, "SHIP", "");
         } else {
-            float rowH = 24f;
-            rows = Math.max(3, (int) ((y - (top - h) - 10f) / rowH));
+            float rowH = 28f;
+            float floor = top - h + (n > 0 ? 34f : 10f);
+            rows = Math.max(3, (int) ((y - floor) / rowH));
             int at = Math.max(0, Math.min(n - 1, v.at));
             int from = Math.max(0, Math.min(at - rows / 2, n - rows)), to = Math.min(n, from + rows);
+            float bh = Style.lineHeight(body);
             for (int i = from; i < to; i++) {
                 Roster.Member mem = r.members.get(i);
                 boolean mine = mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty();
                 boolean blocked = (mem.flags & (Roster.FLAGSHIP | Roster.MOTHBALLED | Roster.CANT_FLY)) != 0 || (!mem.pickedBy.isEmpty() && !mine);
-                if (i == at) fill(x + 4f, y - rowH + 3f, listW - 8f, rowH, MARK);
+                float ry = y - rowH;
+                if (i == at) { fill(x + 6f, ry, listW - 12f, rowH, MARK); fill(x + 6f, ry, 3f, rowH, TITLE); }
+                else if ((i - from) % 2 == 1) fill(x + 6f, ry, listW - 12f, rowH, new Color(255, 255, 255, 5));
                 Color c = mine ? Panel.GOOD : blocked ? Panel.DIM : Panel.TEXT;
                 String tag = (mem.flags & Roster.FLAGSHIP) != 0 ? "flagship" : (mem.flags & Roster.MOTHBALLED) != 0 ? "mothballed"
-                        : (mem.flags & Roster.CANT_FLY) != 0 ? "can't fly" : mine ? "YOURS" : mem.pickedBy;
-                text(sizeTag(mem.hullSize), body, Panel.DIM, x + 12f, y - 3f, 40f);
-                text(Roster.label(mem), body, c, x + 46f, y - 3f, listW * 0.62f);
-                String right = (mem.cr >= 0 ? mem.cr + "%" : "") + (tag.isEmpty() ? "" : "  " + tag);
-                LabelAPI rl = label(right, body, mine ? Panel.GOOD : Panel.DIM, listW * 0.3f);
-                text(right, body, mine ? Panel.GOOD : Panel.DIM, x + listW - 12f - Math.min(listW * 0.3f, rl.computeTextWidth(right)), y - 3f, listW * 0.3f);
+                        : (mem.flags & Roster.CANT_FLY) != 0 ? "can't fly" : mine ? "yours" : mem.pickedBy;
+                float ch = Style.chipHeight();
+                Style.chip(sizeTag(mem.hullSize), blocked ? Style.FAINT : Panel.DIM, px, ry + (rowH + ch) / 2f);
+                float nameX = px + 38f;
+                String right = mem.cr >= 0 ? mem.cr + "%" : "";
+                float rx = x + listW - Style.PAD;
+                if (!right.isEmpty()) rx = Style.textRight(right, body, mem.cr < 40 ? Panel.WARN : Panel.DIM, rx, ry + (rowH + bh) / 2f) - 10f;
+                if (!tag.isEmpty()) {
+                    String t = tag.toUpperCase();
+                    float tw = Style.width(t, Style.SMALL_FONT) + 10f;
+                    rx -= tw;
+                    Style.chip(tag, mine ? Panel.GOOD : (mem.flags & Roster.FLAGSHIP) != 0 ? Style.ACCENT : Panel.WARN, rx, ry + (rowH + ch) / 2f);
+                    rx -= 8f;
+                }
+                text(Roster.label(mem), body, c, nameX, ry + (rowH + bh) / 2f, Math.max(40f, rx - nameX));
                 y -= rowH;
             }
-            if (n > rows) text((at + 1) + " of " + n, body, Panel.DIM, x + 12f, top - h + 24f, listW - 24f);
+            if (n > rows) {
+                String more = (from + 1) + "-" + to + " of " + n;
+                Style.rule(x + 1f, top - h + 30f, listW - 2f);
+                text(more, body, Panel.DIM, px, top - h + 24f, pw);
+            }
             card(r.members.get(at), v, cardX, top, cardW, h);
         }
         side(v, sideX, top, sideW, h);
     }
 
     private void card(Roster.Member mem, View v, float x, float top, float w, float h) {
-        float y = text(Roster.label(mem), HEAD, TITLE, x + 12f, top - 10f, w - 24f) - 4f;
         String size = "CAPITAL_SHIP".equals(mem.hullSize) ? "capital" : mem.hullSize.toLowerCase();
-        y = text((mem.designation.isEmpty() ? "" : mem.designation + ", ") + size + (mem.cr >= 0 ? ",  CR " + mem.cr + "%" : ""), body, Panel.DIM, x + 12f, y, w - 24f) - 2f;
-        if (!mem.dmods.isEmpty()) y = text("D-mods: " + mem.dmods, body, Panel.WARN, x + 12f, y, w - 24f) - 2f;
-        y -= 4f;
-        // The ship's picture, fitted into a box, nose up as the game draws hulls.
-        float box = Math.min(w - 24f, Math.max(80f, h * 0.30f));
+        float y = Style.window(x, top - h, w, h, Roster.label(mem), (size.isEmpty() ? "" : size) + (mem.cr >= 0 ? "   CR " + mem.cr + "%" : "")) - 10f;
+        float px = x + Style.PAD, pw = w - 2 * Style.PAD;
+        if (!mem.designation.isEmpty()) y = text(mem.designation, body, Panel.DIM, px, y, pw) - 4f;
+        if (!mem.dmods.isEmpty()) y = Style.callout("D-mods: " + mem.dmods, Panel.WARN, px, y, pw) - 6f;
+        // The ship's picture, fitted into a well, nose up as the game draws hulls.
+        float box = Math.min(pw * 0.8f, Math.max(80f, h * 0.22f));
+        fill(px, y - box, pw, box, Style.WELL);
         if (!mem.sprite.isEmpty()) {
             try {
-                ShipPicture.draw(mem.hullId, mem.sprite, mem.modules, mem.fits, x + w / 2f, y - box / 2f, box);
+                ShipPicture.draw(mem.hullId, mem.sprite, mem.modules, mem.fits, x + w / 2f, y - box / 2f, box - 8f);
             } catch (Throwable t) { /* no picture */ }
         }
-        y -= box + 8f;
-        y = officer(mem, x + 12f, y, w - 24f) - 8f;
-        y = gear(mem, x + 12f, y, w - 24f, top - h + 110f) - 4f;
-        if (!mem.hullmods.isEmpty()) {
-            y = text("Hull mods", body, TITLE, x + 12f, y, w - 24f) - 2f;
-            y = text(mem.hullmods, body, Panel.TEXT, x + 12f, y, w - 24f) - 6f;
-        }
+        y -= box + 12f;
+
+        // What happens with it, and the refit button, at the bottom of the card; the sections fill what is between.
         String state = (mem.flags & Roster.FLAGSHIP) != 0 ? "The host's flagship."
                 : (mem.flags & Roster.MOTHBALLED) != 0 ? "Mothballed."
                 : (mem.flags & Roster.CANT_FLY) != 0 ? "Can't be flown" + (mem.note.isEmpty() ? "." : ": " + mem.note + ".")
                 : mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty() ? "Your ship for the next battle, if the host deploys it."
                 : !mem.pickedBy.isEmpty() ? mem.pickedBy + " has picked it." : "Free. F picks it for the next battle.";
-        Color c = state.startsWith("Your") ? Panel.GOOD : state.startsWith("Free") ? Panel.TEXT : Panel.WARN;
-        text(state, body, c, x + 12f, Math.max(y, top - h + 40f), w - 24f);
+        Color c = state.startsWith("Your") ? Panel.GOOD : state.startsWith("Free") ? Style.ACCENT : Panel.WARN;
+        boolean mine = mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty();
+        boolean refitHere = mine && !v.refitMarket.isEmpty() && (mem.flags & (Roster.FLAGSHIP | Roster.MOTHBALLED)) == 0;
+        float stateH = Style.height(state, body, pw - 14f) + 6f;
+        float floor = top - h + 12f + stateH + (refitHere ? 44f : 0f) + 8f;
+
+        y = Style.section("Officer", px, y, pw) - 2f;
+        y = officer(mem, px, y, pw) - 12f;
+        y = Style.section("Weapons and wings", px, y, pw) - 2f;
+        y = gear(mem, px, y, pw, floor + 24f) - 10f;
+        if (!mem.hullmods.isEmpty() && y - 40f > floor) {
+            y = Style.section("Hull mods", px, y, pw) - 2f;
+            text(mem.hullmods, body, Panel.TEXT, px, y, pw);
+        }
+
+        float sy = top - h + 12f + stateH;
+        if (refitHere) {
+            // Friend refit: only on the ship we picked, only while the host is docked at a market.
+            float bw = Math.min(pw, 240f), bh = 34f, bx = px, by = sy + 10f;
+            boolean over = inside(bx, by, bw, bh);
+            Style.button(bx, by, bw, bh, "REFIT  (R)", TITLE, true, over);
+            refitButton = new float[] { bx, by, bw, bh };
+        }
+        Style.callout(state, c, px, sy, pw);
     }
 
     // ---- the officer and the loadout, with their pictures ----
@@ -228,7 +302,7 @@ final class LobbyScreen {
     private static final java.util.Set<String> loadTried = new java.util.HashSet<String>();
 
     /** A sprite by its path, loaded if the game hasn't yet (portraits load as they are first shown); null if none. */
-    private static SpriteAPI sprite(String path) {
+    static SpriteAPI sprite(String path) {
         if (path == null || path.isEmpty()) return null;
         try {
             SpriteAPI s = Global.getSettings().getSprite(path);
@@ -245,7 +319,7 @@ final class LobbyScreen {
     }
 
     /** Draw a sprite fitted into a square (bottom-left x, y), keeping its shape. */
-    private static void icon(SpriteAPI s, float x, float y, float size) {
+    static void icon(SpriteAPI s, float x, float y, float size) {
         if (s == null) return;
         float w0 = s.getWidth(), h0 = s.getHeight();
         float k = Math.min(size / w0, size / h0);
@@ -257,7 +331,7 @@ final class LobbyScreen {
         s.setSize(w0, h0);
     }
 
-    private static void outline(float x, float y, float w, float h, Color c) {
+    static void outline(float x, float y, float w, float h, Color c) {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
@@ -309,11 +383,10 @@ final class LobbyScreen {
     /** Weapons and wings: each kind with its picture and how many, in two columns; what doesn't fit is counted. */
     private float gear(Roster.Member mem, float x, float top, float w, float floor) {
         if (mem.gear.isEmpty()) {
-            if (mem.weapons.isEmpty()) return top;
-            float y = text("Weapons and wings", body, TITLE, x, top, w) - 2f;
-            return text(mem.weapons, body, Panel.TEXT, x, y, w);
+            if (mem.weapons.isEmpty()) return text("None", body, Panel.DIM, x, top, w);
+            return text(mem.weapons, body, Panel.TEXT, x, top, w);
         }
-        float y = text("Weapons and wings", body, TITLE, x, top, w) - 4f;
+        float y = top;
         float s = 28f, rowH = s + 4f, colW = (w - 8f) / 2f;
         int shown = 0;
         for (int i = 0; i < mem.gear.size(); i++) {
@@ -351,25 +424,42 @@ final class LobbyScreen {
     }
 
     private void side(View v, float x, float top, float w, float h) {
-        frame(x, top - h, w, h);
-        float y = text("YOUR SHIP", HEAD, TITLE, x + 12f, top - 10f, w - 24f) - 4f;
+        float gap = 14f, px = x + Style.PAD, pw = w - 2 * Style.PAD;
+        BattleReport r = AfterAction.report;
+        // Your ship
         Roster.Member mine = v.roster == null ? null : v.roster.pickOf(v.me);
-        y = text(mine == null ? "Not picked yet. Pick one here, or choose in the battle." : Roster.label(mine), body, mine == null ? Panel.WARN : Panel.GOOD, x + 12f, y, w - 24f) - 14f;
-        y = text("PLAYERS", HEAD, TITLE, x + 12f, y, w - 24f) - 4f;
+        String yours = mine == null ? "Not picked yet. Pick one here, or choose in the battle." : Roster.label(mine);
+        float yoursH = Style.BAR_H + 22f + Style.height(yours, body, pw - 14f) + 6f;
+        Style.window(x, top - yoursH, w, yoursH, "YOUR SHIP", "");
+        Style.callout(yours, mine == null ? Panel.WARN : Panel.GOOD, px, top - Style.BAR_H - 12f, pw);
+        // Last battle (at the bottom)
+        float lastH = r == null ? 0f : Style.BAR_H + 70f;
+        if (r != null) {
+            float ly = Style.window(x, top - h, w, lastH, "LAST BATTLE", minutes(r.seconds)) - 10f;
+            ly = text(outcome(r).toUpperCase(), TITLE_FONT_BIG, outcomeColor(r), px, ly, pw) - 4f;
+            text("Tab: the full report.", body, Panel.DIM, px, ly, pw);
+        }
+        // Players, between
+        float pTop = top - yoursH - gap, pH = h - yoursH - gap - (r == null ? 0f : lastH + gap);
+        float y = Style.window(x, pTop - pH, w, pH, "PLAYERS", v.roster == null ? "" : String.valueOf(1 + v.roster.players.size())) - 8f;
         if (v.roster != null) {
-            y = text("P1  " + v.roster.hostName + " (host)", body, Panel.TEXT, x + 12f, y, w - 24f) - 2f;
+            y = player(1, v.roster.hostName + "  (host)", null, false, px, y, pw, pTop - pH);
             for (Roster.Player p : v.roster.players) {
-                Roster.Member pick = v.roster.pickOf(p.name);
-                y = text("P" + p.slot + "  " + p.name + (pick == null ? "" : ":  " + Roster.label(pick)), body,
-                        p.name.equalsIgnoreCase(v.me) ? Panel.GOOD : Panel.TEXT, x + 12f, y, w - 24f) - 2f;
+                if (y < pTop - pH + 30f) break;
+                y = player(p.slot, p.name, v.roster.pickOf(p.name), p.name.equalsIgnoreCase(v.me), px, y, pw, pTop - pH);
             }
         }
-        y -= 12f;
-        BattleReport r = AfterAction.report;
-        if (r != null) {
-            y = text("LAST BATTLE", HEAD, TITLE, x + 12f, y, w - 24f) - 4f;
-            y = text(outcome(r) + ", " + minutes(r.seconds) + ". Tab: the full report.", body, outcomeColor(r), x + 12f, y, w - 24f) - 2f;
-        }
+    }
+
+    private static final String TITLE_FONT_BIG = "graphics/fonts/orbitron20aabold.fnt";
+
+    /** One player: their tag in their colour, their name, and the ship they picked under it. */
+    private float player(int slot, String name, Roster.Member pick, boolean me, float x, float top, float w, float floor) {
+        Color pc = PlayerTags.color(slot);
+        float cw = Style.chip("P" + slot, pc, x, top - 3f);
+        float y = text(name + (me ? "  (you)" : ""), body, me ? Panel.GOOD : Panel.TEXT, x + cw + 8f, top - 2f, w - cw - 8f);
+        y = text(slot == 1 ? "commands the fleet" : pick == null ? "no ship picked" : Roster.label(pick), body, pick == null ? Style.FAINT : Panel.DIM, x + cw + 8f, y, w - cw - 8f);
+        return y - 8f;
     }
 
     private static String outcome(BattleReport r) { return r.outcome == 0 ? "Victory" : r.outcome == 1 ? "Defeat" : "No winner"; }
@@ -394,61 +484,77 @@ final class LobbyScreen {
 
     private void report(float x, float top, float w, float h) {
         BattleReport r = AfterAction.report;
-        frame(x, top - h, w, h);
+        float y = Style.window(x, top - h, w, h, "LAST BATTLE", r == null ? "" : "battle time " + minutes(r.seconds) + ", as the host's game counted it") - 14f;
+        float px = x + 20f, pw = w - 40f;
         if (r == null) {
-            text("No battle yet. The report of each battle you play with the host shows here.", body, Panel.DIM, x + 16f, top - 16f, w - 32f);
+            text("No battle yet. The report of each battle you play with the host shows here.", body, Panel.DIM, px, y, pw);
             return;
         }
-        float y = text(outcome(r).toUpperCase(), BIG, outcomeColor(r), x + 16f, top - 12f, w - 32f);
-        y = text("Battle time " + minutes(r.seconds) + ", as the host's game counted it.", body, Panel.DIM, x + 16f, y - 2f, w - 32f) - 12f;
+        y = text(outcome(r).toUpperCase(), BIG, outcomeColor(r), px, y, pw) - 14f;
 
-        // The players, one row each.
-        float[] col = { 0f, 0.07f, 0.22f, 0.50f, 0.62f, 0.70f, 0.78f, 0.88f };
-        String[] head = { "", "Player", "Ship", "", "Kills", "Fighters", "Damage", "Taken" };
-        for (int i = 0; i < head.length; i++) text(head[i], body, TITLE, x + 16f + col[i] * (w - 32f), y, (w - 32f) * 0.2f);
-        y -= 22f;
+        // The players, one row each, as a table.
+        y = Style.section("Pilots", px, y, pw) - 2f;
+        float[] col = { 0f, 0.06f, 0.22f, 0.50f, 0.62f, 0.70f, 0.78f, 0.90f };
+        String[] head = { "", "PLAYER", "SHIP", "", "KILLS", "FIGHTERS", "DAMAGE", "TAKEN" };
+        float rowH = 26f, sh = Style.lineHeight(Style.SMALL_FONT), bh = Style.lineHeight(body);
+        fill(px, y - rowH, pw, rowH, Style.BAR);
+        for (int i = 0; i < head.length; i++) text(head[i], Style.SMALL_FONT, Style.DIM, px + 8f + col[i] * (pw - 16f), y - (rowH - sh) / 2f, (pw - 16f) * 0.2f);
+        y -= rowH;
+        int rowN = 0;
         for (BattleReport.Pilot p : r.pilots) {
-            String[] cells = { p.slot > 0 ? "P" + p.slot : "", p.name, p.ship.isEmpty() ? "-" : p.ship, status(p.status), String.valueOf(p.kills),
+            if (rowN++ % 2 == 1) fill(px, y - rowH, pw, rowH, new Color(255, 255, 255, 6));
+            String[] cells = { "", p.name, p.ship.isEmpty() ? "-" : p.ship, status(p.status), String.valueOf(p.kills),
                     String.valueOf(p.fighterKills), num(p.damageDealt) + (p.shieldDamageDealt > 0 ? " (+" + num(p.shieldDamageDealt) + " shields)" : ""), num(p.damageTaken) };
             Color c = p.status == BattleReport.DESTROYED ? Panel.WARN : Panel.TEXT;
-            for (int i = 0; i < cells.length; i++) {
-                float cw = (i + 1 < col.length ? col[i + 1] - col[i] : 0.12f) * (w - 32f) - 6f;
-                text(cells[i], body, i == 3 ? (p.status == BattleReport.DESTROYED ? Panel.BAD : Panel.DIM) : c, x + 16f + col[i] * (w - 32f), y, Math.max(40f, cw));
+            if (p.slot > 0) Style.chip("P" + p.slot, PlayerTags.color(p.slot), px + 8f, y - (rowH - Style.chipHeight()) / 2f);
+            for (int i = 1; i < cells.length; i++) {
+                float cw = (i + 1 < col.length ? col[i + 1] - col[i] : 0.10f) * (pw - 16f) - 6f;
+                text(cells[i], body, i == 3 ? (p.status == BattleReport.DESTROYED ? Panel.BAD : Panel.DIM) : c, px + 8f + col[i] * (pw - 16f), y - (rowH - bh) / 2f, Math.max(40f, cw));
             }
-            y -= 22f;
+            y -= rowH;
         }
-        y -= 12f;
+        y -= 16f;
         // Losses on both sides.
-        float half = (w - 48f) / 2f;
+        float half = (pw - 24f) / 2f;
         float ly = y;
         for (int side = 0; side < 2; side++) {
             BattleReport.Side s = r.sides[side];
-            float sx = x + 16f + side * (half + 16f);
-            float yy = text(side == 0 ? "OUR SIDE" : "THEIR SIDE", HEAD, TITLE, sx, ly, half) - 4f;
+            float sx = px + side * (half + 24f);
+            float yy = Style.section(side == 0 ? "Our side" : "Their side", sx, ly, half) - 2f;
             yy = text(s.deployed + " deployed, " + (s.destroyed + s.disabled) + " lost, " + s.retreated + " retreated" + (s.fightersLost > 0 ? ", " + s.fightersLost + " fighters down" : ""),
-                    body, Panel.TEXT, sx, yy, half) - 2f;
-            for (String lost : s.lost) yy = text("lost:  " + lost, body, side == 0 ? Panel.WARN : Panel.DIM, sx, yy, half) - 1f;
+                    body, Panel.TEXT, sx, yy, half) - 4f;
+            for (String lost : s.lost) yy = text("Lost:  " + lost, body, side == 0 ? Panel.WARN : Panel.DIM, sx, yy, half) - 1f;
             y = Math.min(y, yy);
         }
-        y -= 14f;
+        y -= 16f;
         Aftermath a = AfterAction.aftermath;
-        y = text("AFTERMATH", HEAD, TITLE, x + 16f, y, w - 32f) - 4f;
+        y = Style.section("Aftermath", px, y, pw) - 2f;
         if (a == null) {
             text("What the battle changed in the host's fleet (salvage, recovered ships, losses) shows here once the host is back on the map.",
-                    body, Panel.DIM, x + 16f, y, w - 32f);
+                    body, Panel.DIM, px, y, pw);
             return;
         }
-        y = text("Credits " + (a.credits >= 0 ? "+" : "") + Math.round(a.credits), body, a.credits >= 0 ? Panel.GOOD : Panel.WARN, x + 16f, y, w - 32f) - 2f;
-        if (!a.shipsGained.isEmpty()) y = text("Ships added: " + join(a.shipsGained), body, Panel.GOOD, x + 16f, y, w - 32f) - 2f;
-        if (!a.shipsLost.isEmpty()) y = text("Ships gone: " + join(a.shipsLost), body, Panel.WARN, x + 16f, y, w - 32f) - 2f;
+        y = text("Credits " + (a.credits >= 0 ? "+" : "-") + grouped(Math.abs(Math.round(a.credits))), body, a.credits >= 0 ? Panel.GOOD : Panel.WARN, px, y, pw) - 2f;
+        if (!a.shipsGained.isEmpty()) y = text("Ships added: " + join(a.shipsGained), body, Panel.GOOD, px, y, pw) - 2f;
+        if (!a.shipsLost.isEmpty()) y = text("Ships gone: " + join(a.shipsLost), body, Panel.WARN, px, y, pw) - 2f;
         if (!a.cargoNames.isEmpty()) {
             StringBuilder sb = new StringBuilder("Cargo: ");
             for (int i = 0; i < a.cargoNames.size(); i++) {
                 float c = a.cargoChanges.get(i);
                 sb.append(i == 0 ? "" : ",  ").append(c >= 0 ? "+" : "").append(Math.round(c)).append(' ').append(a.cargoNames.get(i));
             }
-            text(sb.toString(), body, Panel.TEXT, x + 16f, y, w - 32f);
+            text(sb.toString(), body, Panel.TEXT, px, y, pw);
         }
+    }
+
+    static String grouped(long n) {
+        String s = String.valueOf(Math.abs(n));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            if (i > 0 && (s.length() - i) % 3 == 0) sb.append(',');
+            sb.append(s.charAt(i));
+        }
+        return (n < 0 ? "-" : "") + sb;
     }
 
     private static String join(List<String> l) {

@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.9-beta
+Protocol 60: host and joiners need this build.
+
+**A new look**
+
+- Every Wingman window is built the same way: a title bar, the content in named sections, notices marked down
+  their left edge, and the keys that work as key chips along the bottom. The CO-OP panel (join, the host,
+  hosting from this PC, notices), the settings (a tab per page, a row per setting with who it matters to and an
+  "edited" mark, then what the picked one does), the how-to, the mod report, the ready check and alerts.
+- The lobby: the fleet list with size and pick tags, the ship card in sections (officer, weapons and wings, hull
+  mods, then the ship's state and the Refit button), and the right column split into your ship, the players (in
+  their colours, with their picks) and the last battle. The battle report is a table.
+- Friend refit: the refit screen in three columns (ship, loadout, the marked slot), with the limits as bars that
+  turn red past the most allowed, the cost, and what to fix before sending; the host's panel in sections
+  (request, changes, cost, checks).
+- The player list on the campaign map matches.
+
+**Friend refit** (design: `docs/FRIEND_REFIT_DESIGN.md`)
+
+- While the host is docked at a market, joiners are told so in the lobby, and the card of the ship they picked
+  has a **REFIT (R)** button. Nothing opens by itself.
+- The refit screen shows that ship as it stands on the host, with ordnance points, vents, capacitors and S-mods
+  against the host's limits (worked out with the host's skills), and what the host has: credits, story points,
+  cargo, storage, and each submarket with its tariff and stock, or why it is shut to the host.
+- Joiners choose a new loadout there: weapons (only what fits each slot) and fighter LPCs from the host's cargo,
+  storage or a market (bought at its price), where each removed item goes (cargo, storage, or sold), vents and
+  capacitors, hull mods the host knows on and off, S-mods built in for a story point each. The totals and
+  anything that stops it show as they choose. A short note can go with it.
+- The host gets a message and a FRIEND REFITS button (Ctrl+Shift+R): each request with every change, its cost
+  and the checks, all made again on the host's campaign. Click YES or NO (or press A / D). Accepted refits are done as the
+  game's own refit and market screens would: items move, markets are paid and hear of the trade, story points
+  are spent with the usual bonus experience, and the ship gets a refit variant of its own.
+- The host can accept in the refit screen: the refit is done the moment that screen closes (it keeps its own
+  copy of the ship, which would undo a change made under it), and the refit screen then opens again on that ship.
+  Host setting `friendRefitReopen` (on by default).
+- The refit screen is made for the mouse, with pictures: click a ring on the ship or a tile, then a card (weapon
+  or fighter picture, OP, where it comes from, price) to fit it; buttons for where the old one goes, hull mods,
+  vents and capacitors, undo; SEND TO HOST at the bottom; the mouse wheel scrolls. The host's panel shows each
+  change as pictures too, and has YES / NO buttons.
+- Requests are refused with the reason if a check fails, and withdrawn when the host undocks, the pick changes or
+  a battle starts. Whether a hull mod suits the ship isn't checked (the game can only tell in the refit screen):
+  the host decides.
+- Host setting `friendRefit` (on by default): "Friends can refit their ships".
+
+**Changes**
+
+- The host's **player list** moved from battles to the **campaign map**, and is smaller: a compact box at the top
+  right while friends are connected, one line per player in their colour with the ship they picked ("no pick"
+  otherwise) and "(link quiet)" when their connection goes silent. Hidden while a dialog or a fleet, cargo or
+  refit screen is open. Battles no longer show it (the player tags still say who flies what). Setting `playerList`.
+
 ## 0.8-beta
 Protocol 59: host and joiners need this build.
 

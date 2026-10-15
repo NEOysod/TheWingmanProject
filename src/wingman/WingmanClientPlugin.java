@@ -2289,14 +2289,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         List<Color> colors = new ArrayList<Color>();
         if (joinScreen) {
             boolean busy = link.getState() == ClientLink.State.CONNECTING;
-            form.lines(lines, colors, busy);
-            panel.render("JOIN A CO-OP GAME", lines, colors, JoinForm.FOOTER);
+            Panel.Doc d = new Panel.Doc("JOIN A CO-OP GAME").keys(JoinForm.FOOTER);
+            d.section("The host");
+            form.doc(d, busy);
+            panel.render(d);
             return;
         }
         if (settings.open) {
             try {
-                settings.lines(lines, colors);
-                panel.render(settings.title(), lines, colors, settings.footer());
+                panel.render(settings.doc());
             } catch (Throwable t) {
                 settings.open = false;
                 Global.getLogger(Panel.class).error("Wingman: the settings page could not be shown and was closed", t);

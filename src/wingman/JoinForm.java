@@ -71,6 +71,20 @@ final class JoinForm {
         colors.add(busy ? Panel.GOOD : status.isEmpty() ? Panel.DIM : statusColor);
     }
 
+    /** The same form as fields in a window: address, name, password in boxes, then how it is going. */
+    void doc(Panel.Doc d, boolean busy) {
+        boolean blink = (System.currentTimeMillis() / 400) % 2 == 0;
+        String cursor = blink && !busy ? "_" : "";
+        d.field("Host address", address + (field == 0 ? cursor : ""), field == 0, true);
+        d.field("Your name", name + (field == 1 ? cursor : ""), field == 1, true);
+        StringBuilder dots = new StringBuilder();
+        for (int i = 0; i < password.length(); i++) dots.append('*');
+        d.field("Password", (password.length() == 0 && field != 2 ? "only if the host set one" : dots.toString()) + (field == 2 ? cursor : ""), field == 2, true);
+        if (busy) d.callout("Connecting to " + address + " ...", Panel.GOOD);
+        else if (!status.isEmpty()) d.callout(status, statusColor);
+        else d.line("The address your host reads out (for Radmin it starts with 26). Add :port only if the host changed it.", Panel.DIM);
+    }
+
     /**
      * Typing. Every key press is taken while the form is open, so letters don't also steer a ship or pick a
      * menu entry. Escape is left alone unless takeEscape is set. Returns true when Enter was pressed.

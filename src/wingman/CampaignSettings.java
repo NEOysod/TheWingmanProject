@@ -81,10 +81,7 @@ final class CampaignSettings implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
         if (broken || !menu.open) return;
         try {
-            List<String> lines = new ArrayList<String>();
-            List<Color> colors = new ArrayList<Color>();
-            menu.lines(lines, colors);
-            panel.render(menu.title(), lines, colors, menu.footer());
+            panel.render(menu.doc());
         } catch (Throwable t) {
             menu.open = false;
             Global.getLogger(CampaignSettings.class).warn("Wingman: the settings page could not be drawn on the campaign map and was closed", t);

@@ -1,124 +1,241 @@
 package wingman;
 
 import java.awt.Color;
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.lwjgl.opengl.GL11;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.ui.LabelAPI;
 
-/** Draws a centred box with a title, some lines and a footer over the battle. Used for the ready check and alerts. */
+/**
+ * Wingman's windows: a title bar, then the content in sections (a heading and its rule, lines, labelled fields,
+ * notices), then the keys that work, as key chips along the bottom. Used for the CO-OP panel, the settings, the
+ * help pages, the ready check and alerts. See Style for the look.
+ */
 final class Panel {
-    static final Color TEXT = new Color(220, 225, 230);
-    static final Color GOOD = new Color(110, 220, 120);
-    static final Color WARN = new Color(255, 200, 80);
-    static final Color BAD = new Color(255, 110, 90);
-    static final Color DIM = new Color(150, 160, 170);
-    private static final Color TITLE = new Color(120, 210, 255);
+    static final Color TEXT = Style.TEXT;
+    static final Color GOOD = Style.GOOD;
+    static final Color WARN = Style.WARN;
+    static final Color BAD = Style.BAD;
+    static final Color DIM = Style.DIM;
 
-    private static final String TITLE_FONT = "graphics/fonts/orbitron20aabold.fnt";
-    private static final float WIDTH = 560f, PAD = 18f, GAP = 6f;
+    private static final float WIDTH = 600f, PAD = Style.PAD, GAP = 5f;
 
-    private final Map<String, LabelAPI> cache = new HashMap<String, LabelAPI>();
     private boolean broken;
     /** Drawing failures in a row; one bad frame is skipped and logged, only a run of them switches panels off. */
     private int failures;
     private String lastFailure;
-    private String bodyFont;
 
     /** Enter on the main keyboard or the numpad. */
     static boolean isEnter(int key) { return key == 28 || key == 156; }
-
-    private LabelAPI label(String text, String font, Color color) {
-        String key = font + "|" + color.getRGB() + "|" + Math.round(width) + "|" + text;
-        LabelAPI l = cache.get(key);
-        if (l == null) {
-            if (cache.size() > 200) cache.clear();
-            l = Global.getSettings().createLabel(text, font);
-            l.setColor(color);
-            l.autoSizeToWidth(width - PAD * 2f);
-            cache.put(key, l);
-        }
-        return l;
-    }
 
     /** Where the last box was drawn (screen units: left, bottom, width, height), for the mouse. */
     float lastX, lastY, lastW, lastH;
 
     boolean contains(float mx, float my) { return lastW > 0f && mx >= lastX && mx <= lastX + lastW && my >= lastY && my <= lastY + lastH; }
 
-    /** How wide the box being drawn is, and where: centred on the screen, or hung from a corner point. */
-    private float width = WIDTH, anchorRight, anchorTop;
-    private boolean anchored;
+    // ---- what a window holds ----
+
+    /** One window's content, built each frame by whoever shows it. */
+    static final class Doc {
+        String title = "", note = "";
+        /** Tabs under the title bar (empty: none), and which is lit. */
+        final List<String> tabs = new ArrayList<String>();
+        int tab = -1;
+        final List<Block> blocks = new ArrayList<Block>();
+        String keys = "";
+
+        Doc(String title) { this.title = title == null ? "" : title; }
+
+        Doc note(String n) { note = n == null ? "" : n; return this; }
+        Doc keys(String k) { keys = k == null ? "" : k; return this; }
+        Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
+
+        /** A section heading. */
+        Doc section(String name) { blocks.add(new Block(Block.SECTION, name, null, TEXT)); return this; }
+        /** A line of text. */
+        Doc line(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.LINE, text, null, c == null ? TEXT : c)); return this; }
+        /** A notice: a line with a coloured mark down its left. */
+        Doc callout(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.CALLOUT, text, null, c == null ? WARN : c)); return this; }
+        /** A labelled value; 'selected' marks the row, 'input' draws the value in a box (typed fields). */
+        Doc field(String label, String value, boolean selected, boolean input) {
+            Block b = new Block(Block.FIELD, label, value, TEXT);
+            b.selected = selected;
+            b.input = input;
+            blocks.add(b);
+            return this;
+        }
+        /** A settings row: label, value (with arrows when selected), a tag on the right, an "edited" mark. */
+        Doc option(String label, String value, String tag, boolean selected, boolean edited, boolean typed) {
+            Block b = new Block(Block.OPTION, label, value, TEXT);
+            b.selected = selected;
+            b.tag = tag;
+            b.edited = edited;
+            b.input = typed;
+            blocks.add(b);
+            return this;
+        }
+        Doc space() { blocks.add(new Block(Block.SPACE, "", null, TEXT)); return this; }
+    }
+
+    static final class Block {
+        static final int SECTION = 0, LINE = 1, CALLOUT = 2, FIELD = 3, OPTION = 4, SPACE = 5;
+        final int kind;
+        final String text, value;
+        final Color color;
+        boolean selected, input, edited;
+        String tag;
+        Block(int kind, String text, String value, Color color) { this.kind = kind; this.text = text; this.value = value; this.color = color; }
+    }
+
+    // ---- the older calls: plain lines and a footer ----
 
     /** The usual box, centred a little above the middle of the screen. */
     void render(String title, List<String> lines, List<Color> colors, String footer) {
-        width = WIDTH;
-        anchored = false;
-        draw(title, lines, colors, footer);
+        render(plain(title, lines, colors, footer));
+    }
+
+    /** A box hanging from a point: its top right corner at (right, top), growing downwards. */
+    void renderBelow(float right, float top, float boxWidth, String title, List<String> lines, List<Color> colors, String footer) {
+        renderBelow(right, top, boxWidth, plain(title, lines, colors, footer));
+    }
+
+    private static Doc plain(String title, List<String> lines, List<Color> colors, String footer) {
+        Doc d = new Doc(title).keys(footer);
+        for (int i = 0; i < lines.size(); i++) d.line(lines.get(i), i < colors.size() ? colors.get(i) : TEXT);
+        return d;
+    }
+
+    // ---- drawing ----
+
+    void render(Doc d) {
+        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        draw(d, WIDTH, sw / 2f + WIDTH / 2f, Float.NaN, sh);
     }
 
     /**
-     * A box hanging from a point: its top right corner at (right, top), growing downwards. Used on the title
-     * screen, where the middle is taken by the game's logo and menu, which are drawn over anything of ours.
+     * Hung from a point: its top right corner at (right, top), growing downwards. Used on the title screen, where
+     * the middle is taken by the game's logo and menu, which are drawn over anything of ours.
      */
-    void renderBelow(float right, float top, float boxWidth, String title, List<String> lines, List<Color> colors, String footer) {
-        width = boxWidth;
-        anchored = true;
-        anchorRight = right;
-        anchorTop = top;
-        draw(title, lines, colors, footer);
-        width = WIDTH;
+    void renderBelow(float right, float top, float boxWidth, Doc d) {
+        draw(d, boxWidth, right, top, Global.getSettings().getScreenHeight());
     }
 
-    private void draw(String title, List<String> lines, List<Color> colors, String footer) {
+    private void draw(Doc d, float width, float right, float top, float sh) {
         if (broken) return;
         try {
-            if (bodyFont == null) bodyFont = Global.getSettings().getString("defaultFont"); // the game's normal text font
-            final String FONT = bodyFont;
-            LabelAPI t = label(title, TITLE_FONT, TITLE);
-            LabelAPI f = label(footer, FONT, DIM);
-            LabelAPI[] body = new LabelAPI[lines.size()];
-            float h = PAD * 2f + t.getPosition().getHeight() + GAP * 2f + f.getPosition().getHeight() + GAP * 2f;
-            for (int i = 0; i < body.length; i++) {
-                body[i] = label(lines.get(i), FONT, i < colors.size() ? colors.get(i) : TEXT);
-                h += body[i].getPosition().getHeight() + GAP;
-            }
-            float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-            float x = (sw - width) / 2f, y = sh * 0.62f - h / 2f;
-            if (anchored) {
-                x = Math.max(4f, anchorRight - width);
-                y = Math.max(4f, anchorTop - h);
-            }
-
-            GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
-            GL11.glDisable(GL11.GL_TEXTURE_2D);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glColor4f(0.03f, 0.05f, 0.08f, 0.88f);
-            quad(GL11.GL_QUADS, x, y, width, h);
-            GL11.glColor4f(0.47f, 0.82f, 1f, 0.9f);
-            GL11.glLineWidth(1f);
-            quad(GL11.GL_LINE_LOOP, x, y, width, h);
-            GL11.glPopAttrib();
-
+            float inner = width - PAD * 2f;
+            List<String[]> keys = Style.keys(d.keys);
+            float keysH = keys.isEmpty() ? 0f : Style.keysHeight(keys, inner) + 12f;
+            float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
+            float bodyH = 0f;
+            for (int i = 0; i < d.blocks.size(); i++) bodyH += height(d.blocks.get(i), inner, i == 0);
+            float h = Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
+            float x = right - width, y;
+            if (Float.isNaN(top)) y = sh * 0.6f - h / 2f;
+            else y = top - h;
+            x = Math.max(4f, x);
+            y = Math.max(4f, y);
             lastX = x; lastY = y; lastW = width; lastH = h;
-            float cy = y + h - PAD;
-            cy = draw(t, x + PAD, cy) - GAP * 2f;
-            for (LabelAPI l : body) cy = draw(l, x + PAD, cy) - GAP;
-            draw(f, x + PAD, y + PAD + f.getPosition().getHeight());
+
+            float cy = Style.window(x, y, width, h, d.title, d.note);
+            if (!d.tabs.isEmpty()) {
+                Style.tabs(d.tabs, d.tab, x + 1f, cy, width - 2f);
+                cy -= tabsH;
+            }
+            cy -= PAD;
+            float lx = x + PAD;
+            float labelW = labelColumn(d, inner);
+            for (int i = 0; i < d.blocks.size(); i++) cy = drawBlock(d.blocks.get(i), lx, cy, inner, labelW, i == 0);
+            if (!keys.isEmpty()) {
+                float ky = y + keysH - 4f;
+                Style.rule(x + 1f, ky + 4f, width - 2f);
+                Style.drawKeys(keys, lx, ky - 2f, inner);
+            }
             failures = 0;
         } catch (Throwable e) {
             // Drawing is a nicety: the same information also goes to the message feed, so never let it break co-op.
-            failed("panel '" + title + "'", e);
+            failed("panel '" + d.title + "'", e);
+        }
+    }
+
+    /** How wide the label column of fields and options is: the longest label, within reason. */
+    private static float labelColumn(Doc d, float inner) {
+        float w = 0f;
+        for (Block b : d.blocks) if (b.kind == Block.FIELD || b.kind == Block.OPTION) w = Math.max(w, Style.width(b.text, Style.body()));
+        return Math.min(inner * 0.55f, w + 28f);
+    }
+
+    private static float rowH() { return Math.max(Style.lineHeight(Style.body()) + 10f, Style.chipHeight() + 6f); }
+
+    private static float height(Block b, float inner, boolean first) {
+        switch (b.kind) {
+            case Block.SECTION: return (first ? 0f : 10f) + Style.lineHeight(Style.SMALL_FONT) + 6f;
+            case Block.CALLOUT: return Style.height(b.text, Style.body(), inner - 14f) + 6f + GAP + 2f;
+            case Block.FIELD:
+            case Block.OPTION: return rowH() + 2f;
+            case Block.SPACE: return 8f;
+            default: return Style.height(b.text, Style.body(), inner) + GAP;
+        }
+    }
+
+    private static float drawBlock(Block b, float x, float top, float inner, float labelW, boolean first) {
+        String body = Style.body();
+        switch (b.kind) {
+            case Block.SECTION:
+                return Style.section(b.text, x, top - (first ? 0f : 10f), inner);
+            case Block.CALLOUT:
+                return Style.callout(b.text, b.color, x, top - 2f, inner) - GAP;
+            case Block.SPACE:
+                return top - 8f;
+            case Block.FIELD:
+            case Block.OPTION: {
+                float rh = rowH(), y = top - rh;
+                if (b.selected) {
+                    Style.fill(x - 6f, y, inner + 12f, rh, Style.alpha(Style.ACCENT, 26));
+                    Style.fill(x - 6f, y, 3f, rh, Style.ACCENT);
+                }
+                float bh = Style.lineHeight(body), ty = y + (rh + bh) / 2f;
+                Style.text(b.text, body, b.selected ? TEXT : DIM, x + 4f, ty, labelW - 8f);
+                float vx = x + labelW, vw = inner - labelW;
+                float right = x + inner - 2f;
+                if (b.kind == Block.OPTION) {
+                    float ch = Style.chipHeight(), cTop = y + (rh + ch) / 2f;
+                    if (b.tag != null && !b.tag.isEmpty()) {
+                        float cw = Style.width(b.tag.toUpperCase(), Style.SMALL_FONT) + 10f;
+                        right -= cw;
+                        Style.chip(b.tag, DIM, right, cTop);
+                        right -= 8f;
+                    }
+                    if (b.edited) {
+                        float cw = Style.width("EDITED", Style.SMALL_FONT) + 10f;
+                        right -= cw;
+                        Style.chip("edited", WARN, right, cTop);
+                        right -= 8f;
+                    }
+                    vw = right - vx;
+                }
+                String v = b.value == null ? "" : b.value;
+                if (b.input) {
+                    Style.fill(vx - 6f, y + 3f, vw + 6f, rh - 6f, new Color(0, 0, 0, 90));
+                    Style.outline(vx - 6f, y + 3f, vw + 6f, rh - 6f, b.selected ? Style.ACCENT : Style.alpha(Style.DIM, 90));
+                    Style.text(v, body, b.selected ? TEXT : DIM, vx, ty, vw - 6f);
+                } else if (b.kind == Block.OPTION && b.selected) {
+                    Style.text("<  " + v + "  >", body, Color.WHITE, vx, ty, vw);
+                } else {
+                    Style.text(v, body, b.selected || b.kind == Block.FIELD ? TEXT : Style.TEXT, vx, ty, vw);
+                }
+                return y - 2f;
+            }
+            default:
+                return Style.text(b.text, body, b.color, x, top, inner) - GAP;
         }
     }
 
     private void failed(String what, Throwable e) {
-        cache.clear(); // a bad label may be what failed: make them afresh
+        Style.forget(); // a bad label may be what failed: make them afresh
         String sig = String.valueOf(e);
         if (!sig.equals(lastFailure)) {
             lastFailure = sig;
@@ -137,25 +254,17 @@ final class Panel {
     void banner(String word, String sub, Color color) {
         if (broken) return;
         try {
-            if (bodyFont == null) bodyFont = Global.getSettings().getString("defaultFont");
-            float savedWidth = width;
-            width = 2000f; // labels sized to their text, not wrapped
-            LabelAPI big = label(word, "graphics/fonts/orbitron24aabold.fnt", color);
-            LabelAPI small = sub == null || sub.isEmpty() ? null : label(sub, bodyFont, TEXT);
-            width = savedWidth;
+            LabelAPI big = Style.label(word, Style.BIG_FONT, color, 2000f);
             final float SCALE = 3f;
             float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
             float bw = big.computeTextWidth(word) * SCALE, bh = big.getPosition().getHeight() * SCALE;
-            float sub_h = small == null ? 0f : small.getPosition().getHeight() + GAP;
+            boolean hasSub = sub != null && !sub.isEmpty();
+            float sub_h = hasSub ? Style.lineHeight(Style.body()) + GAP : 0f;
             float cy = sh * 0.68f, bandH = bh + sub_h + PAD * 2f;
 
-            GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
-            GL11.glDisable(GL11.GL_TEXTURE_2D);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glColor4f(0.03f, 0.05f, 0.08f, 0.6f);
-            quad(GL11.GL_QUADS, 0f, cy - bandH / 2f, sw, bandH);
-            GL11.glPopAttrib();
+            Style.fill(0f, cy - bandH / 2f, sw, bandH, new Color(6, 10, 16, 160));
+            Style.fill(0f, cy + bandH / 2f - 1f, sw, 1f, Style.alpha(color, 120));
+            Style.fill(0f, cy - bandH / 2f, sw, 1f, Style.alpha(color, 120));
 
             float top = cy + bandH / 2f - PAD;
             GL11.glPushMatrix();
@@ -164,55 +273,29 @@ final class Panel {
             big.getPosition().setLocation(0f, 0f);
             big.render(1f);
             GL11.glPopMatrix();
-            if (small != null) {
-                float w = small.computeTextWidth(sub);
-                draw(small, (sw - w) / 2f, top - bh - GAP);
+            if (hasSub) {
+                float w = Style.width(sub, Style.body());
+                Style.text(sub, Style.body(), TEXT, (sw - w) / 2f, top - bh - GAP, w + 40f);
             }
         } catch (Throwable e) {
             failed("banner", e);
         }
     }
 
-    /** A small clickable-looking box with one or two lines of text, for the title screen. */
+    /** The CO-OP button on the title screen: a name and a line under it. */
     void button(float x, float y, float w, float h, String text, String sub, boolean hover) {
         if (broken) return;
         try {
-            if (bodyFont == null) bodyFont = Global.getSettings().getString("defaultFont");
-            GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
-            GL11.glDisable(GL11.GL_TEXTURE_2D);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glColor4f(0.03f, 0.05f, 0.08f, 0.85f);
-            quad(GL11.GL_QUADS, x, y, w, h);
-            if (hover) GL11.glColor4f(0.75f, 0.93f, 1f, 1f); else GL11.glColor4f(0.47f, 0.82f, 1f, 0.8f);
-            GL11.glLineWidth(1f);
-            quad(GL11.GL_LINE_LOOP, x, y, w, h);
-            GL11.glPopAttrib();
-            LabelAPI t = label(text, TITLE_FONT, hover ? TEXT : TITLE);
-            LabelAPI u = sub == null || sub.isEmpty() ? null : label(sub, bodyFont, DIM);
-            float th = t.getPosition().getHeight() + (u == null ? 0f : u.getPosition().getHeight() + 2f);
-            float top = y + h / 2f + th / 2f;
-            top = draw(t, x + 10f, top) - 2f;
-            if (u != null) draw(u, x + 10f, top);
+            Style.frame(x, y, w, h, hover ? new Color(14, 26, 38, 235) : new Color(6, 10, 16, 220), hover ? Style.ACCENT : Style.EDGE, 8f);
+            Style.fill(x + 1f, y + 1f, 3f, h - 2f, hover ? Style.ACCENT : Style.alpha(Style.ACCENT, 140));
+            float th = Style.lineHeight(Style.TITLE_FONT);
+            boolean hasSub = sub != null && !sub.isEmpty();
+            float uh = hasSub ? Style.lineHeight(Style.SMALL_FONT) + 3f : 0f;
+            float top = y + h / 2f + (th + uh) / 2f;
+            top = Style.text(text, Style.TITLE_FONT, hover ? Color.WHITE : Style.ACCENT, x + 14f, top, w - 20f) - 3f;
+            if (hasSub) Style.text(sub.toUpperCase(), Style.SMALL_FONT, DIM, x + 14f, top, w - 20f);
         } catch (Throwable e) {
             failed("button", e);
         }
-    }
-
-    private static void quad(int mode, float x, float y, float w, float h) {
-        GL11.glBegin(mode);
-        GL11.glVertex2f(x, y);
-        GL11.glVertex2f(x, y + h);
-        GL11.glVertex2f(x + w, y + h);
-        GL11.glVertex2f(x + w, y);
-        GL11.glEnd();
-    }
-
-    /** Draws a label with its top edge at 'top'; returns the y of its bottom edge. */
-    private static float draw(LabelAPI l, float x, float top) {
-        float h = l.getPosition().getHeight();
-        l.getPosition().setLocation(x, top - h);
-        l.render(1f);
-        return top - h;
     }
 }

@@ -1,4 +1,4 @@
-# The Wingman Project 0.8-beta — Release Notes
+# The Wingman Project 0.9-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,16 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.9-beta
+
+- **Friend refit:** while the host is docked at a market, a joiner can refit the ship they picked, in a refit
+  screen of Wingman's own: weapons and fighters from the host's cargo, storage or the market, vents and
+  capacitors, hull mods, S-mods for a story point. The host gets the request with every change, its cost and the
+  checks, and accepts or denies it. Built-in weapons, wings and hull mods, S-mods and d-mods can't be touched.
+- **A new look** for every Wingman screen: windows in sections, key chips, a tidier lobby and battle report.
+- The host's player list moved to the campaign map.
+- **Protocol 60:** the host and every joiner need 0.9-beta. Full list in CHANGELOG.md.
 
 ## New in 0.8-beta
 
@@ -24,7 +34,7 @@ each fly a ship from the host's fleet, side by side, in real time.
   play, the settings page on the campaign map too (Ctrl+Shift+O), and ships handed back to the AI get the AI a
   mod gives them.
 - Smoother ship changes for joiners, 16 player colours with names by the tags, and many fixes from playtesting.
-- **Protocol 59:** the host and every joiner need 0.8-beta. Full list in CHANGELOG.md.
+- Protocol 59.
 
 ## What it is
 

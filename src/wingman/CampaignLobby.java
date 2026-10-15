@@ -62,6 +62,8 @@ final class CampaignLobby implements EveryFrameScript {
             }
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
+            FriendRefit.advance(s, cfg);
+            FriendRefit.applyWaiting();
             aftermath(s);
             // The fleet as joiners see it: sent when it (or who picked what) changes, and every few seconds anyway.
             if (s.getPlayers().isEmpty()) return;
@@ -80,7 +82,7 @@ final class CampaignLobby implements EveryFrameScript {
         }
     }
 
-    private static void say(String text) {
+    static void say(String text) {
         try { Global.getSector().getCampaignUI().addMessage(text, NOTE); } catch (Throwable t) { /* the log has it */ }
         Global.getLogger(CampaignLobby.class).info("Wingman: " + text);
     }
@@ -174,6 +176,7 @@ final class CampaignLobby implements EveryFrameScript {
         r.hostName = cfg.playerName;
         r.hostState = state;
         r.maxShipSize = cfg.maxShipSize;
+        r.refitMarket = state == 0 ? FriendRefit.availableAt(cfg) : "";
         for (HostSession.Player p : s.getPlayers()) {
             Roster.Player rp = new Roster.Player();
             rp.name = p.name;
@@ -213,6 +216,9 @@ final class CampaignLobby implements EveryFrameScript {
     /** The ship card's details: picture, weapons ("2x Heavy Mauler"), hullmods, the officer's personality. */
     private static final Map<String, String[]> loadouts = new HashMap<String, String[]>();
     private static long loadoutsAt;
+
+    /** A ship was refitted: its card shows the new loadout at once. */
+    static void forgetLoadout(String memberId) { loadouts.remove(memberId); }
 
     private static void loadout(FleetMemberAPI m, Roster.Member rm) {
         long now = System.currentTimeMillis();
@@ -340,7 +346,7 @@ final class CampaignLobby implements EveryFrameScript {
 
     /** What the joiners would see, to send it again only when it changed. */
     private static String signature(Roster r) {
-        StringBuilder sb = new StringBuilder(r.hostState + "|" + r.maxShipSize + "|");
+        StringBuilder sb = new StringBuilder(r.hostState + "|" + r.maxShipSize + "|" + r.refitMarket + "|");
         for (Roster.Player p : r.players) sb.append(p.name).append(',');
         for (Roster.Member m : r.members) sb.append(m.id).append(':').append(m.cr).append(':').append(m.flags).append(':').append(m.pickedBy).append(';');
         return sb.toString();
@@ -426,6 +432,7 @@ final class CampaignLobby implements EveryFrameScript {
     /** Tell everyone connected the host is now in a battle (their title-screen lobby says so). */
     static void battleStarted(HostSession s, WingmanConfig cfg) {
         noteFleetBefore();
+        FriendRefit.closeAll();
         try {
             if (s.getPlayers().isEmpty()) return;
             byte[] m = build(s, cfg, 1).encode();
