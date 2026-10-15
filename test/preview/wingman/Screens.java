@@ -172,7 +172,11 @@ final class Screens {
         return d;
     }
 
-    static void refit(boolean changed) {
+    static void refit(boolean changed) { refit(changed, true); }
+
+    static String searchFor = "";
+
+    static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
         LobbyScreen l = new LobbyScreen();
         l.page = LobbyScreen.REFIT;
@@ -180,6 +184,7 @@ final class Screens {
         v.roster = r; v.me = "Kyrizion"; v.at = 2; v.refitMarket = "Jangala";
         v.hostLine = "NEOysod is docked at Jangala."; v.hostColor = Panel.GOOD; v.players = "Here: NEOysod (host), Kyrizion, Cy, Mosk";
         v.refitData = refitData();
+        if (!docked) { v.refitData.market = ""; v.refitData.markets.clear(); v.refitData.hasStorage = false; v.refitData.storage.clear(); v.refitMarket = ""; v.hostLine = "NEOysod is on the campaign map."; }
         l.refit.setData(v.refitData);
         if (changed) {
             wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
@@ -189,6 +194,7 @@ final class Screens {
             q.vents = 30; q.caps = 26;
             q.addMods.add("Heavy Armor");
         }
+        if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
         l.render(v);
     }
 
@@ -262,6 +268,10 @@ final class Screens {
         out.add(new Shot("lobby-report", 1920, 1080, -1, -1, new Runnable() { public void run() { lobby(LobbyScreen.REPORT, false); } }));
         out.add(new Shot("refit", 1920, 1080, 900, 800, new Runnable() { public void run() { refit(false); } }));
         out.add(new Shot("refit-changed", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true); } }));
+        out.add(new Shot("refit-search", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            searchFor = "autoc"; refit(false); searchFor = "";
+        } }));
+        out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         return out;

@@ -93,6 +93,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     /** Accept, now or (under a core screen) once it closes. True when the list of requests changed. */
     private boolean accept(FriendRefit.Pending pd) {
         if (pd.acceptOnClose) { say("Already accepted: it is done as soon as you close this screen.", Panel.GOOD); return false; }
+        if (!pd.acceptOnClose && !FriendRefit.docked()) { say("Dock at a market to accept it: the refit waits until then.", Panel.WARN); return false; }
         if (!pd.problems.isEmpty()) { say("It doesn't pass the checks (in red above), so it can't be accepted.", Panel.BAD); return false; }
         CampaignUIAPI ui = Global.getSector().getCampaignUI();
         if (ui != null && ui.getCurrentCoreTab() != null) { // this screen's copy of the ship would undo it: done once it closes
@@ -142,7 +143,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     private void drawButtons(FriendRefit.Pending pd, int count) {
         buttons.clear();
         List<Object[]> row = new ArrayList<Object[]>();
-        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose;
+        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose && FriendRefit.docked();
         if (count > 1) row.add(new Object[] { "<", PREV, LobbyScreen.TITLE });
         row.add(new Object[] { pd.acceptOnClose ? "ACCEPTED" : "YES, ACCEPT", YES, canAccept ? Panel.GOOD : Panel.DIM });
         row.add(new Object[] { pd.acceptOnClose ? "NO, CANCEL" : "NO, DENY", NO, Panel.BAD });
@@ -289,10 +290,11 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         d.field("Ordnance points", pd.op + " / " + pd.opMax, false, false);
         d.field("Credits", net > 0 ? "costs " + LobbyScreen.grouped(net) : net < 0 ? "brings in " + LobbyScreen.grouped(-net) : "none", false, false);
         if (pd.plan.storyPoints > 0) d.field("Story points", String.valueOf(pd.plan.storyPoints), false, false);
-        if (net != pd.request.expectCredits || pd.plan.storyPoints != pd.request.expectStoryPoints)
+        if (FriendRefit.docked() && (net != pd.request.expectCredits || pd.plan.storyPoints != pd.request.expectStoryPoints))
             d.callout(pd.player.name + " was shown " + pd.request.expectCredits + " credits and " + pd.request.expectStoryPoints + " story points: something changed since.", Panel.WARN);
         d.section("Checks");
-        if (pd.acceptOnClose) d.callout("Accepted: done as soon as you close this screen (NO cancels it).", Panel.GOOD);
+        if (!pd.acceptOnClose && !FriendRefit.docked()) d.callout("Waiting for a market: dock at one to check this refit there and accept it.", Panel.WARN);
+        else if (pd.acceptOnClose) d.callout("Accepted: done as soon as you close this screen (NO cancels it).", Panel.GOOD);
         else if (pd.problems.isEmpty()) d.callout("All checks pass.", Panel.GOOD);
         else for (String p : pd.problems) d.callout(p, Panel.BAD);
         if (!pd.request.addMods.isEmpty()) d.line("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.", Panel.DIM);
@@ -311,7 +313,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         }
         float w = buttonLabel.computeTextWidth(text) + 30f, h = buttonLabel.getPosition().getHeight() + 16f;
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-        float x = sw - w - 10f, y = sh - h - 10f;
+        float x = sw - w - 10f, y = Math.min(sh, CampaignPlayerList.bottom) - h - 10f; // under the player list, if it shows
         boolean over = LobbyScreen.inside(x, y, w, h);
         boolean pulse = (System.currentTimeMillis() / 600) % 2 == 0;
         Style.frame(x, y, w, h, over ? new Color(14, 26, 38, 240) : new Color(6, 10, 16, 225), over || pulse ? Style.ACCENT : Style.EDGE, 6f);

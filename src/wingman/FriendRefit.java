@@ -103,12 +103,26 @@ final class FriendRefit {
     private static String refusal(HostSession.Player p, String memberId, WingmanConfig cfg) { return refusal(p, memberId, cfg, null); }
 
     /**
+     * Why this player can't have the refit screen open on that member, or null. Docking isn't needed: away from a
+     * market the joiner plans (the ship, the host's cargo, credits and story points are shown), and sends once the
+     * host docks.
+     */
+    private static String refusalToPlan(HostSession.Player p, String memberId, WingmanConfig cfg) {
+        if (!cfg.friendRefit) return "the host has switched friend refits off";
+        return shipRefusal(p, memberId);
+    }
+
+    /**
      * acceptedAt: for a refit the host accepted under a core screen, the market it was docked at then. It no longer
      * needs to be docked: the host said yes while it was, and that market is still at hand.
      */
     private static String refusal(HostSession.Player p, String memberId, WingmanConfig cfg, MarketAPI acceptedAt) {
         if (!cfg.friendRefit) return "the host has switched friend refits off";
         if (dockedMarket() == null && acceptedAt == null) return "the host isn't docked at a market";
+        return shipRefusal(p, memberId);
+    }
+
+    private static String shipRefusal(HostSession.Player p, String memberId) {
         if (!memberId.equals(WingmanAPI.reservedShip(p.name))) return "you can only refit the ship you picked";
         FleetMemberAPI m = member(memberId);
         if (m == null) return "that ship is no longer in the fleet";
@@ -135,7 +149,7 @@ final class FriendRefit {
                 if (ask == null) continue;
                 p.refitAsk = null;
                 if (ask.isEmpty()) { open.remove(p.id); lastSent.remove(p.id); continue; }
-                String why = refusal(p, ask, cfg);
+                String why = refusalToPlan(p, ask, cfg);
                 if (why != null) {
                     p.conn.send(Msg.NOTICE, Msg.utf("Can't refit: " + why + "."));
                     open.remove(p.id);
@@ -154,13 +168,13 @@ final class FriendRefit {
                 Map.Entry<Integer, String> e = it.next();
                 HostSession.Player p = playerById(s, e.getKey());
                 if (p == null) { it.remove(); lastSent.remove(e.getKey()); continue; }
-                String why = refusal(p, e.getValue(), cfg);
-                if (why != null) { // the host left the market, or the pick changed: the joiner's screen closes on the roster
+                String why = refusalToPlan(p, e.getValue(), cfg);
+                if (why != null) { // the pick changed, or the ship can't be refitted: the joiner's screen closes on the roster
                     it.remove();
                     lastSent.remove(p.id);
                     continue;
                 }
-                byte[] data = build(member(e.getValue()), dockedMarket()).encode();
+                byte[] data = build(member(e.getValue()), dockedMarket()).encode(); // away from a market: no market, no storage
                 if (Arrays.equals(data, lastSent.get(p.id))) continue;
                 lastSent.put(p.id, data);
                 p.conn.send(Msg.REFIT_DATA, data);
@@ -192,7 +206,7 @@ final class FriendRefit {
         RefitData d = new RefitData();
         MutableCharacterStatsAPI stats = Global.getSector().getPlayerStats();
         ShipVariantAPI v = m.getVariant();
-        d.market = market.getName() == null ? "" : market.getName();
+        d.market = market == null ? "" : market.getName() == null || market.getName().isEmpty() ? "this market" : market.getName();
         d.memberId = m.getId();
         d.hullId = m.getHullId() == null ? "" : m.getHullId();
         d.hullSize = String.valueOf(m.getHullSpec().getHullSize());
@@ -242,7 +256,7 @@ final class FriendRefit {
         d.credits = pf.getCargo().getCredits().get();
         d.storyPoints = stats.getStoryPoints();
         items(pf.getCargo(), d.cargo, keys);
-        try {
+        if (market != null) try {
             if (Misc.playerHasStorageAccess(market)) {
                 d.hasStorage = true;
                 items(Misc.getStorageCargo(market), d.storage, keys);
@@ -250,9 +264,9 @@ final class FriendRefit {
         } catch (Throwable t) { d.hasStorage = false; d.storage.clear(); }
 
         SubmarketPlugin.TransferAction buy = SubmarketPlugin.TransferAction.PLAYER_BUY, sell = SubmarketPlugin.TransferAction.PLAYER_SELL;
-        CoreUIAPI ui = new TradeUi(tradeMode(market.getPrimaryEntity()));
+        CoreUIAPI ui = market == null ? null : new TradeUi(tradeMode(market.getPrimaryEntity()));
         List<SubmarketPlugin> plugins = new ArrayList<SubmarketPlugin>();
-        for (SubmarketAPI sub : market.getSubmarketsCopy()) {
+        for (SubmarketAPI sub : market == null ? new ArrayList<SubmarketAPI>() : market.getSubmarketsCopy()) {
             if (d.markets.size() >= RefitData.MAX_MARKETS) break;
             try {
                 String id = sub.getSpecId();
@@ -454,6 +468,9 @@ final class FriendRefit {
                 });
     }
 
+    /** True while the host is docked where a refit can be done. */
+    static boolean docked() { return dockedMarket() != null; }
+
     /** Waiting requests by player id, oldest first. */
     static final Map<Integer, Pending> pending = new java.util.LinkedHashMap<Integer, Pending>();
 
@@ -489,7 +506,9 @@ final class FriendRefit {
         for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
             Pending pd = it.next();
             if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
-            String why = refusal(pd.player, pd.request.memberId, cfg, acceptedAt(pd));
+            // Away from a market a request waits (it is checked again at the next one); it is withdrawn only when the
+            // ship can't be refitted at all any more.
+            String why = refusalToPlan(pd.player, pd.request.memberId, cfg);
             if (why != null) {
                 it.remove();
                 send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
@@ -586,6 +605,7 @@ final class FriendRefit {
      */
     static String accept(Pending pd) {
         WingmanConfig cfg = WingmanConfig.load();
+        if (dockedMarket() == null && acceptedAt(pd) == null) return "Dock at a market to accept it: the refit waits until then.";
         String why = refusal(pd.player, pd.request.memberId, cfg, acceptedAt(pd));
         if (why != null) {
             pending.remove(pd.player.id);
@@ -753,7 +773,10 @@ final class FriendRefit {
             if (RefitRequest.CARGO.equals(id)) return "cargo";
             if (RefitRequest.STORAGE.equals(id)) return "storage";
             RefitData.Market m = d == null ? null : d.market(id);
-            return m == null ? id : m.name;
+            if (m != null) return m.name;
+            // a submarket that isn't here (a plan made at another market): its id, made readable ("open_market": "Open market")
+            String s = id.replace('_', ' ').trim();
+            return s.isEmpty() ? "a market" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
         }
     }
 }

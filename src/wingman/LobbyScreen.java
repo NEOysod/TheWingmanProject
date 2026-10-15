@@ -140,7 +140,7 @@ final class LobbyScreen {
             String keys = page == REFIT ? "Click: choose     Mouse wheel: scroll the lists     Esc: back"
                     : page == FLEET
                     ? "Up/Down: choose     PgUp/PgDn: page     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
-                            + (v.refitMarket.isEmpty() ? "" : "     R: refit") + "     Tab: last battle     F1: how to     Esc: close"
+                            + (v.roster != null && v.roster.pickOf(v.me) != null && !v.hostInBattle ? "     R: refit" : "") + "     Tab: last battle     F1: how to     Esc: close"
                     : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: close";
             List<String[]> k = Style.keys(keys);
             float keysH = Style.keysHeight(k, sw - 2 * m);
@@ -253,7 +253,7 @@ final class LobbyScreen {
         float y = Style.window(x, top - h, w, h, Roster.label(mem), (size.isEmpty() ? "" : size) + (mem.cr >= 0 ? "   CR " + mem.cr + "%" : "")) - 10f;
         float px = x + Style.PAD, pw = w - 2 * Style.PAD;
         if (!mem.designation.isEmpty()) y = text(mem.designation, body, Panel.DIM, px, y, pw) - 4f;
-        if (!mem.dmods.isEmpty()) y = Style.callout("D-mods: " + mem.dmods, Panel.WARN, px, y, pw) - 6f;
+        if (!mem.dmods.isEmpty()) y = Style.callout("D-mods: " + mem.dmods, Panel.BAD, px, y, pw) - 6f;
         // The ship's picture, fitted into a well, nose up as the game draws hulls.
         float box = Math.min(pw * 0.8f, Math.max(80f, h * 0.22f));
         fill(px, y - box, pw, box, Style.WELL);
@@ -272,7 +272,7 @@ final class LobbyScreen {
                 : !mem.pickedBy.isEmpty() ? mem.pickedBy + " has picked it." : "Free. F picks it for the next battle.";
         Color c = state.startsWith("Your") ? Panel.GOOD : state.startsWith("Free") ? Style.ACCENT : Panel.WARN;
         boolean mine = mem.pickedBy.equalsIgnoreCase(v.me) && !v.me.isEmpty();
-        boolean refitHere = mine && !v.refitMarket.isEmpty() && (mem.flags & (Roster.FLAGSHIP | Roster.MOTHBALLED)) == 0;
+        boolean refitHere = mine && !v.hostInBattle && (mem.flags & (Roster.FLAGSHIP | Roster.MOTHBALLED)) == 0;
         float stateH = Style.height(state, body, pw - 14f) + 6f;
         float floor = top - h + 12f + stateH + (refitHere ? 44f : 0f) + 8f;
 
@@ -287,10 +287,11 @@ final class LobbyScreen {
 
         float sy = top - h + 12f + stateH;
         if (refitHere) {
-            // Friend refit: only on the ship we picked, only while the host is docked at a market.
-            float bw = Math.min(pw, 240f), bh = 34f, bx = px, by = sy + 10f;
+            // Friend refit: only on the ship we picked. Docked, it can be sent; away from a market, planned and kept.
+            boolean docked = !v.refitMarket.isEmpty();
+            float bw = Math.min(pw, docked ? 240f : 300f), bh = 34f, bx = px, by = sy + 10f;
             boolean over = inside(bx, by, bw, bh);
-            Style.button(bx, by, bw, bh, "REFIT  (R)", TITLE, true, over);
+            Style.button(bx, by, bw, bh, docked ? "REFIT  (R)" : "PLAN A REFIT  (R)", docked ? Panel.GOOD : TITLE, true, over);
             refitButton = new float[] { bx, by, bw, bh };
         }
         Style.callout(state, c, px, sy, pw);

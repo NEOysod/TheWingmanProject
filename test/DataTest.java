@@ -229,6 +229,18 @@ public class DataTest {
         rd.credits = 50f;
         check(new wingman.net.RefitPlan(rd, rq2).allProblems().toString().contains("Credits"), "refit plan: not enough credits");
         rd.credits = 123456.5f;
+        // a plan made at this market, looked at away from any market: what came from (or went to) the market is
+        // named as unavailable there, the rest is fine
+        wingman.net.RefitData away = wingman.net.RefitData.decode(rd.encode());
+        away.market = ""; away.markets.clear(); away.hasStorage = false; away.storage.clear();
+        pl = new wingman.net.RefitPlan(away, rq);
+        check(pl.unavailable.contains("wWS0001") && !pl.unavailable.contains("f1") && pl.unavailableWhy.size() >= 1, "refit plan away from a market: the market's items named " + pl.unavailable + " " + pl.unavailableWhy);
+        // at a market without enough of it: those slots are named too
+        wingman.net.RefitData short1 = wingman.net.RefitData.decode(rd.encode());
+        short1.markets.get(0).stock.clear();
+        pl = new wingman.net.RefitPlan(short1, rq);
+        check(pl.unavailable.contains("wWS0001") && pl.allProblems().containsAll(pl.unavailableWhy), "refit plan at another market: what isn't there is named " + pl.unavailable);
+        check(new wingman.net.RefitPlan(rd, rq).unavailable.isEmpty(), "refit plan: nothing unavailable where it was made");
         wingman.net.RefitResult res = wingman.net.RefitResult.decode(new wingman.net.RefitResult(wingman.net.RefitResult.REFUSED, "a\nb\u0007").encode());
         check(res.status == wingman.net.RefitResult.REFUSED && res.text.equals("a\nb"), "refit result round trip, lines kept, control characters dropped");
 

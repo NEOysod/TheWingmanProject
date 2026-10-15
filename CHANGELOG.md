@@ -1,5 +1,28 @@
 # Changelog
 
+## Next (in progress)
+Protocol 60, as 0.9-beta (host and joiners still both need this build for the new refit behaviour).
+
+**Friend refit: plans that last**
+
+- The refit screen no longer closes when the host leaves a market. Away from a market the joiner plans: the ship,
+  the host's cargo, credits and story points are shown, and sending waits until the host docks. Only a battle (or
+  picking another ship) closes it.
+- Each ship's plan is kept until the host accepts it, through undocking, battles, other picks and restarts (a
+  small file in the game's common folder, at most 24 ships), and comes back when the refit screen opens on that
+  ship again.
+- At another market, what the plan wants that isn't there (an item no longer in stock, a market that isn't here,
+  a place to sell that won't take it) is listed under "Not available at ...", and marked on its slot: click it
+  and pick something else. Away from a market the same list reads "Waits for a market".
+- The host's credits and story points are always shown at the top of the refit screen, with the plan's cost
+  against them.
+- A request the host hasn't decided on waits when the host undocks instead of being withdrawn; it is checked again
+  at the next market, and can be accepted only while docked. The host's FRIEND REFITS button sits under the
+  player list when both show.
+- **Search** over the refit screen's cards: a box above them (click it, or Ctrl+F) narrows weapons, fighter wings
+  or hull mods to those with every typed word in their name. Esc clears it.
+- D-mods are shown in red: on the lobby's ship card and in the refit screen.
+
 ## 0.9-beta
 Protocol 60: host and joiners need this build.
 

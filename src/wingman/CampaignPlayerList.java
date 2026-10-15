@@ -45,6 +45,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {
+        bottom = Float.MAX_VALUE; // until it is drawn this frame
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
         try {
             long now = System.currentTimeMillis();
@@ -73,6 +74,9 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
         final boolean quiet;
         Row(int slot, String name, String ship, boolean quiet) { this.slot = slot; this.name = name; this.ship = ship; this.quiet = quiet; }
     }
+
+    /** The bottom edge of the list as drawn this frame (screen units), for what goes under it; huge when not shown. */
+    static volatile float bottom = Float.MAX_VALUE;
 
     private List<Row> list = new ArrayList<Row>();
     private int more;
@@ -112,6 +116,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
         float w = MAX_W;
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
         float x = sw - w - 10f, y = sh - h - 10f;
+        bottom = y;
         Style.frame(x, y, w, h, new Color(6, 10, 16, 205), Style.EDGE, 6f);
         Style.fill(x + 1f, y + h - headH, w - 8f, headH - 1f, Style.BAR);
         Style.fill(x + 1f, y + h - headH, 3f, headH - 1f, Style.ACCENT);

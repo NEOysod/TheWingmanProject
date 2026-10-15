@@ -216,7 +216,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (state == ClientLink.State.CONNECTED) { form.status = "Connected to " + connectedTo + "."; form.statusColor = Panel.GOOD; }
                 if (state != ClientLink.State.CONNECTED) {
                     welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null;
-                    refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+                    lobby.refit.saveDraft(); refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
                 }
                 lastState = state;
             }
@@ -260,6 +260,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 } else if (p.type == Msg.BATTLE_INFO) {
                     BattleInfo b = BattleInfo.decode(p.data);
                     JoinSetup.remember(b); // the join mission builds its map from this
+                    closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
                     hostLine = "The host is in a battle right now (map " + Math.round(b.width) + " x " + Math.round(b.height) + ").";
                     if (cfg == null) cfg = WingmanConfig.load();
                     welcomed = true; // only a host that has let us in tells us about its battle
@@ -283,9 +284,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
                     for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
                     withHost = names.toString();
-                    if (!refitMember.isEmpty()) { // friend refit: the screen stays only while the host is docked and the ship is ours
-                        if (roster.refitMarket.isEmpty()) closeRefit("The host left the market, so the refit screen closed.");
-                        else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed.");
+                    if (!refitMember.isEmpty()) { // friend refit: the screen stays (docked or not) until a battle, or another pick
+                        if (roster.hostState == 1) closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
+                        else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed. Your plan for that ship is kept.");
                     }
                     if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
                         lobbyShown = true;
@@ -501,7 +502,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private void openRefit() {
         String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
         wingman.net.Roster.Member mine = roster == null ? null : roster.pickOf(me);
-        if (roster == null || roster.refitMarket.isEmpty()) { note("Refitting is possible while the host is docked at a market.", Panel.WARN); return; }
+        if (roster == null) { note("The host's fleet isn't here yet.", Panel.WARN); return; }
+        if (roster.hostState == 1) { note("Refitting waits until the host's battle is over.", Panel.WARN); return; }
         if (mine == null) { note("Pick a ship first: you can refit the ship you picked.", Panel.WARN); return; }
         if ((mine.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED)) != 0) { note("That ship can't be refitted.", Panel.WARN); return; }
         if (lobby.isBroken() || !TitleMenu.hide()) { note("The refit screen needs the full-screen lobby, which can't be shown here.", Panel.BAD); return; }
@@ -527,6 +529,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     /** Close the refit screen (telling the host), with a note why if it wasn't the player's doing. */
     private void closeRefit(String why) {
         if (refitMember.isEmpty()) return;
+        lobby.refit.saveDraft();
         refitMember = "";
         refitData = null;
         if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
