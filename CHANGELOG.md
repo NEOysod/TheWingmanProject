@@ -22,9 +22,31 @@ Protocol 60, as 0.9-beta (host and joiners still both need this build for the ne
 - **Search** over the refit screen's cards: a box above them (click it, or Ctrl+F) narrows weapons, fighter wings
   or hull mods to those with every typed word in their name. Esc clears it.
 - D-mods are shown in red: on the lobby's ship card and in the refit screen.
-- **Whole game** tick beside the search: the cards also list every weapon that fits the slot, every fighter wing or
-  every hull mod in the game, greyed ("Not where the host is", "The host doesn't know it") after what the host can
-  get. They can be searched but not fitted.
+- **Available** tick beside the search (on by default): the cards show only what the host can get. Untick it to see
+  every weapon that fits the slot, every fighter wing or every hull mod in the game, the rest greyed as
+  "Unavailable" after what the host can get. They can be searched but not fitted.
+- **Everything outside battles works with the mouse:**
+  - Every key hint at the bottom of a window is a button that does what the key does, and each window has a close
+    box (X) at the top right.
+  - The CO-OP panel has buttons (CONNECT / JOIN THE BATTLE, LOBBY, HOW TO, MODS, SETTINGS); the boxes take the typing
+    when clicked.
+  - Settings: click a tab for its page, a row to mark it, the arrows (or the marked row again) to change it; DONE and
+    BACK TO DEFAULT buttons. On the campaign map too, and a SETTINGS button in the host's player list opens it.
+  - How-to and mod report: NEXT / BACK / DONE (and FORGET WHAT WAS SEEN) buttons.
+  - Lobby: click a ship in the list to look at it, twice to pick it; PICK THIS SHIP, UNPICK and REFIT on its card;
+    JOIN THE BATTLE at the top while the host is in one; click the page tabs or the last battle box; the mouse wheel
+    goes through the fleet.
+  - The host's friend refit panel: its key hints click too.
+- **Hull mods offered** are now those the host's own refit screen offers: learned ones, the ones the host's faction
+  knows, and the ones every player starts with (before, the ones known from the start were missing). Hidden ones
+  and D-mods are left out.
+- **A refit accepted in the host's refit screen is done at once:** that screen closes for a moment (its copy of the
+  ship would undo the change), the refit is done, and it opens again on the ship. Before, it waited until the
+  screen was closed, which could mean until leaving the market.
+- **Pop-ups** over weapons, fighter wings and hull mods in the refit screen (cards and tiles) and on the lobby's ship
+  card, as in the game's refit screen: what it is, ordnance points on this ship, range, damage and type, damage
+  and flux per second, EMP, ammo (fighters: craft, count, refit time), and the game's own description; hull mods
+  with their description for this hull size.
 - The cards come 20 at a time: "Show 20 more", or the mouse wheel at the end of the list, brings the next 20. New
   pictures load a few a frame, so long lists don't stall the screen.
 

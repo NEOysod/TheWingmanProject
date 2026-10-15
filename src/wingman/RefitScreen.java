@@ -223,8 +223,11 @@ final class RefitScreen {
         Option(String key, String from, int count, float price, boolean usable) { this.key = key; this.from = from; this.count = count; this.price = price; this.usable = usable; }
     }
 
-    /** "Whole game" ticked: the cards also show everything in the game that fits, greyed where the host can't get it. */
-    private boolean wholeGame;
+    /**
+     * "Available" ticked (the default): the cards show only what the host can get. Unticked: everything in the game
+     * that fits, with what the host can't get greyed as "Unavailable".
+     */
+    private boolean availableOnly = true;
     /** How many cards are shown: 20 at first, 20 more each time the list is scrolled to its end or "more" is clicked. */
     private int shownMax = PAGE;
     private static final int PAGE = 20;
@@ -235,7 +238,7 @@ final class RefitScreen {
 
     private List<Option> options(Row row, FriendRefit.Names names, boolean filtered) {
         if (!filtered || row == null) return build(row, names, filtered);
-        String key = row.kind + "|" + row.id + "|" + search + "|" + tab + "|" + wholeGame + "|" + req.addMods + "|" + req.changes.size();
+        String key = row.kind + "|" + row.id + "|" + search + "|" + tab + "|" + availableOnly + "|" + req.addMods + "|" + req.changes.size();
         if (cached == null || cachedData != data || !key.equals(cachedFor)) {
             if (!key.equals(cachedFor)) shownMax = PAGE;
             cached = build(row, names, true);
@@ -281,7 +284,7 @@ final class RefitScreen {
             Collections.sort(ids, new Comparator<String>() { public int compare(String a, String b) { return n.mod(a).compareToIgnoreCase(n.mod(b)); } });
             for (String id : ids) out.add(new Option(id, "", 0, 0f, true));
         }
-        if (filtered && wholeGame && tab.isEmpty()) addWholeGame(out, row, names); // (a source tab shows that source alone)
+        if (filtered && !availableOnly && tab.isEmpty()) addWholeGame(out, row, names); // (a source tab shows that source alone)
         if (filtered && !search.trim().isEmpty()) {
             List<Option> kept = new ArrayList<Option>();
             for (Option o : out) if (o.key == null || matches(o, row, names)) kept.add(o);
@@ -387,7 +390,7 @@ final class RefitScreen {
 
     private void pick(Row row, Option o) {
         if (o.elsewhere) {
-            status = row.kind == ADD_MOD ? "The host doesn't know " + o.name + ": it can't be fitted." : o.name + " isn't where the host is: it can be fitted once it is in their cargo, storage or a market.";
+            status = o.name + " is unavailable: the host can't get it here.";
             statusColor = Panel.WARN;
             return;
         }
@@ -575,7 +578,7 @@ final class RefitScreen {
                         case B_SEARCH: typingSearch = true; typingNote = false; return NOTHING;
                         case B_SEARCH_CLEAR: search = ""; typingSearch = false; optAt = 0; cardScroll = 0; return NOTHING;
                         case B_MORE: shownMax += PAGE; return NOTHING;
-                        case B_WHOLE: wholeGame = !wholeGame; cardScroll = 0; optAt = 0; return NOTHING;
+                        case B_WHOLE: availableOnly = !availableOnly; cardScroll = 0; optAt = 0; return NOTHING;
                         case B_CLEAR: req.note = ""; return NOTHING;
                         default: return NOTHING;
                     }
@@ -944,6 +947,10 @@ final class RefitScreen {
             case ADD_MOD: name = "+  Add a hull mod"; detail = "From those the host knows"; c = CYAN; break;
             default: name = req.note.isEmpty() && !typingNote ? "Write a note to the host" : req.note + (typingNote ? "_" : ""); detail = "Click, then type"; c = req.note.isEmpty() ? Panel.DIM : Panel.TEXT;
         }
+        if (key != null && LobbyScreen.inside(x, y, w, h)) { // the pop-up with its numbers and description
+            Integer op = mod ? data.modCosts.get(key) : data.opCosts.get(key);
+            Tips.hover(key, mod, data.hullSize, op == null ? -1 : op);
+        }
         float icon = h - 8f, tx = x + 4f;
         if (r.kind == SLOT || r.kind == BAY || r.kind == MOD) {
             iconBox(picture(key, mod), x + 4f, y + 4f, icon, r.kind == MOD && req.removeMods.contains(r.id));
@@ -1107,6 +1114,10 @@ final class RefitScreen {
             float cx = x + col * (cardW + gap), cy = y - (rowN + 1) * (cardH + gap) + gap;
             boolean over = LobbyScreen.inside(cx, cy, cardW, cardH);
             boolean chosen = o.key == null ? ch != null && ch.item.isEmpty() : (o.key + "|" + o.from).equals(current);
+            if (over && o.key != null) {
+                Integer op = row.kind == ADD_MOD ? data.modCosts.get(o.key) : data.opCosts.get(o.key);
+                Tips.hover(o.key, row.kind == ADD_MOD, data.hullSize, op == null ? -1 : op);
+            }
             LobbyScreen.fill(cx, cy, cardW, cardH, chosen ? TILE_MARKED : over && o.usable ? TILE_OVER : TILE);
             LobbyScreen.outline(cx, cy, cardW, cardH, chosen ? Panel.GOOD : over && o.usable ? CYAN : LobbyScreen.LINE);
             String name, line;
@@ -1114,7 +1125,7 @@ final class RefitScreen {
             if (o.key == null) { name = row.kind == BAY ? "Leave the bay empty" : "Leave it empty"; line = "The one there now comes out"; c = Panel.DIM; }
             else if (o.elsewhere) {
                 name = o.name == null ? o.key : o.name.replace(" LPC", "");
-                line = row.kind == ADD_MOD ? "The host doesn't know it" : "Not where the host is";
+                line = "Unavailable";
                 c = Style.FAINT;
             } else if (row.kind == ADD_MOD) {
                 Integer cost = data.modCosts.get(o.key);
@@ -1152,14 +1163,14 @@ final class RefitScreen {
         String body = ui.body;
         float h = 28f, bh = Style.lineHeight(body);
         // the "Whole game" tick, right of the box
-        String tickText = "WHOLE GAME";
+        String tickText = "AVAILABLE";
         float tickW = Style.width(tickText, Style.SMALL_FONT) + 34f;
         float kx = x + w - tickW, ks = 14f, ky = top - (h + ks) / 2f;
         boolean overTick = LobbyScreen.inside(kx, top - h, tickW, h);
-        LobbyScreen.fill(kx, ky, ks, ks, wholeGame ? Style.alpha(CYAN, 70) : new Color(0, 0, 0, 90));
-        LobbyScreen.outline(kx, ky, ks, ks, wholeGame || overTick ? CYAN : LobbyScreen.LINE);
-        if (wholeGame) ui.text("x", body, Color.WHITE, kx + 3f, ky + ks - (ks - bh) / 2f + 1f, ks);
-        Style.text(tickText, Style.SMALL_FONT, wholeGame || overTick ? CYAN : Style.DIM, kx + ks + 8f, top - (h - Style.lineHeight(Style.SMALL_FONT)) / 2f, tickW);
+        LobbyScreen.fill(kx, ky, ks, ks, availableOnly ? Style.alpha(CYAN, 70) : new Color(0, 0, 0, 90));
+        LobbyScreen.outline(kx, ky, ks, ks, availableOnly || overTick ? CYAN : LobbyScreen.LINE);
+        if (availableOnly) ui.text("x", body, Color.WHITE, kx + 3f, ky + ks - (ks - bh) / 2f + 1f, ks);
+        Style.text(tickText, Style.SMALL_FONT, availableOnly || overTick ? CYAN : Style.DIM, kx + ks + 8f, top - (h - Style.lineHeight(Style.SMALL_FONT)) / 2f, tickW);
         hits.add(new Hit(kx, top - h, tickW, h, H_BUTTON, B_WHOLE, ""));
         w -= tickW + 10f;
         boolean over = LobbyScreen.inside(x, top - h, w, h);

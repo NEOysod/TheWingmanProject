@@ -305,12 +305,10 @@ final class FriendRefit {
                 } catch (Throwable t) { /* allowed */ }
             }
         }
-        try {
-            for (String id : Global.getSector().getCharacterData().getHullMods()) {
-                if (d.knownHullmods.size() >= RefitData.MAX_MODS) break;
-                d.knownHullmods.add(id);
-            }
-        } catch (Throwable t) { /* none listed */ }
+        for (String id : knownHullmods()) {
+            if (d.knownHullmods.size() >= RefitData.MAX_MODS) break;
+            d.knownHullmods.add(id);
+        }
         for (String k : keys) { // what each item costs in ordnance points on this ship
             if (d.opCosts.size() >= RefitData.MAX_VALUES) break;
             try {
@@ -340,6 +338,29 @@ final class FriendRefit {
             } catch (Throwable t) { /* no price known: shown as 0 */ }
         }
         return d;
+    }
+
+    /**
+     * The hull mods the host's refit screen offers: those the player has learned, those the player's faction knows,
+     * and those every player has from the start (always unlocked), less the hidden ones and D-mods. (The character's
+     * own list alone misses the ones known from the start.)
+     */
+    static List<String> knownHullmods() {
+        Set<String> ids = new LinkedHashSet<String>();
+        try { ids.addAll(Global.getSector().getCharacterData().getHullMods()); } catch (Throwable t) { /* none from there */ }
+        try { ids.addAll(Global.getSector().getPlayerFaction().getKnownHullMods()); } catch (Throwable t) { /* none from there */ }
+        try {
+            for (HullModSpecAPI spec : Global.getSettings().getAllHullModSpecs()) if (spec.isAlwaysUnlocked()) ids.add(spec.getId());
+        } catch (Throwable t) { /* none from there */ }
+        List<String> out = new ArrayList<String>();
+        for (String id : ids) {
+            try {
+                HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
+                if (spec == null || spec.isHidden() || spec.isHiddenEverywhere() || spec.hasTag(Tags.HULLMOD_DMOD)) continue;
+                out.add(id);
+            } catch (Throwable t) { /* not a hull mod this game has */ }
+        }
+        return out;
     }
 
     /** Weapons and fighter LPCs in a cargo, into the list; their keys into keys. */
@@ -393,6 +414,8 @@ final class FriendRefit {
         /** Then: the market docked at, and the dialog that was up (its closing closes its core screen too). */
         MarketAPI acceptedAt;
         InteractionDialogAPI dialogAtAccept;
+        /** Frames since Wingman closed that screen itself (-1: it didn't); the refit is done the frame after. */
+        int framesSinceClosed = -1;
     }
 
     /** Where a request is done: the market docked at, else the one a refit accepted under a core screen was accepted at. */
@@ -411,7 +434,18 @@ final class FriendRefit {
         pd.acceptOnClose = true;
         pd.acceptedAt = dockedMarket();
         pd.dialogAtAccept = Global.getSector().getCampaignUI().getCurrentInteractionDialog();
-        send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + ". It is done as soon as they close their refit screen."));
+        // The screen is closed now (its copy of the ship goes with it); the refit is done the next frame, and the
+        // refit screen opens again on the ship. Without a dialog to close it through, it waits for the host to.
+        try {
+            if (pd.dialogAtAccept != null) {
+                pd.dialogAtAccept.getVisualPanel().closeCoreUI();
+                pd.framesSinceClosed = 0;
+            }
+        } catch (Throwable t) {
+            pd.framesSinceClosed = -1;
+            Global.getLogger(FriendRefit.class).warn("Wingman: couldn't close the refit screen for a friend's refit; it is done when the host closes it", t);
+        }
+        send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + "."));
     }
 
     /**
@@ -438,8 +472,10 @@ final class FriendRefit {
             boolean reopenable = false;
             for (Pending pd : new ArrayList<Pending>(pending.values())) {
                 if (!pd.acceptOnClose) continue;
-                // The screen has closed: no core tab, or the dialog it was opened over is gone (taking its screen with it).
-                boolean closed = ui.getCurrentCoreTab() == null || (pd.dialogAtAccept != null && dialog != pd.dialogAtAccept);
+                // The screen has closed: Wingman closed it (a frame ago), there is no core tab, or the dialog it was opened
+                // over is gone (taking its screen with it).
+                if (pd.framesSinceClosed >= 0) pd.framesSinceClosed++;
+                boolean closed = pd.framesSinceClosed >= 2 || ui.getCurrentCoreTab() == null || (pd.dialogAtAccept != null && dialog != pd.dialogAtAccept);
                 if (!closed) continue;
                 reopenable = dialog != null && dialog == pd.dialogAtAccept;
                 String why = accept(pd);

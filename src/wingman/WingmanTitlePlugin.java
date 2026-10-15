@@ -48,6 +48,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private String withHost = "";
 
     private final Panel panel = new Panel();
+    { panel.mouse = true; } // clicks on it are acted on
     private final JoinForm form = new JoinForm();
     private final Settings.Menu settings = new Settings.Menu();
     private boolean open, wasDown, broken;
@@ -71,6 +72,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     // ---- the pre-battle lobby (see CampaignLobby): the host's fleet, and the ship we pick from it ----
     private wingman.net.Roster roster;
     private boolean lobbyOpen, lobbyShown, wasClickDown;
+    /** What the corner window showed last frame (for clicks on it): one of the SHOWN_ values. */
+    private int shown;
+    private static final int SHOWN_NONE = 0, SHOWN_REPORT = 1, SHOWN_SETTINGS = 2, SHOWN_HELP = 3, SHOWN_LOBBY = 4, SHOWN_COOP = 5;
+    /** Keys made by clicks (key hints, close boxes), handed to the key handling with the next frame's input. */
+    private final List<InputEventAPI> clicked = new ArrayList<InputEventAPI>();
+    /** For a double click on a ship in the lobby's list: which, and when. */
+    private int lastRowClicked = -1;
+    private long lastRowClickAt;
     private int lobbyAt;
     private String lobbyNote = "";
     private java.awt.Color lobbyNoteColor = Panel.DIM;
@@ -338,11 +347,26 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     public void processInputPreCoreControls(float amount, List<InputEventAPI> events) {
         if (broken || !onTitle() || events == null) return;
         try {
-            boolean over = overButton();
+            if (!clicked.isEmpty()) { // clicks on key hints: as if those keys were pressed, before the real ones
+                List<InputEventAPI> all = new ArrayList<InputEventAPI>(clicked);
+                all.addAll(events);
+                events = all;
+                clicked.clear();
+            }
+            float mx0 = Global.getSettings().getMouseX(), my0 = Global.getSettings().getMouseY();
+            boolean over = overButton() || (shown != SHOWN_NONE && panel.contains(mx0, my0))
+                    || (open && lobbyOpen && TitleMenu.isHidden() && ClientLink.get().getState() == ClientLink.State.CONNECTED);
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
-                // A click on our button must not also land on whatever the title screen has underneath it.
+                // A click on our button or windows must not also land on whatever the title screen has underneath.
                 if (e.isMouseEvent() && (e.isMouseDownEvent() || e.isMouseUpEvent()) && over) { e.consume(); continue; }
+                if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.FLEET && lobby.listBox != null && roster != null && !roster.members.isEmpty()
+                        && LobbyScreen.inside(lobby.listBox[0], lobby.listBox[1], lobby.listBox[2], lobby.listBox[3])) { // the wheel goes through the fleet
+                    int n = roster.members.size();
+                    lobbyAt = Math.max(0, Math.min(n - 1, lobbyAt + (e.getEventValue() > 0 ? -1 : 1)));
+                    e.consume();
+                    continue;
+                }
                 if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.REFIT) { // the wheel scrolls the refit screen's lists
                     int dir = e.getEventValue();
                     if (lobby.refit.scroll(Global.getSettings().getMouseX(), Global.getSettings().getMouseY(), dir)) e.consume();
@@ -651,6 +675,43 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         form.statusColor = Panel.WARN;
     }
 
+    /** A click on the corner window: a key hint or close box acts as its key; settings rows and tabs; the form's boxes. */
+    private void panelClick(Panel.Hit h) {
+        if (h == null) return;
+        sound();
+        if (shown == SHOWN_SETTINGS || settings.open) {
+            FakeKey k = settings.mouse(h);
+            if (k != null) clicked.add(k);
+            return;
+        }
+        if (h.kind == Panel.Hit.KEY) { clicked.add(new FakeKey(h.value, h.ctrl)); return; }
+        if (h.kind == Panel.Hit.ROW && shown == SHOWN_COOP && h.value >= 0 && h.value <= 2) form.field = h.value; // the box clicked takes the typing
+    }
+
+    /** A click on the full-screen lobby: a ship in the list (twice: pick it), a page tab, a button or key hint. */
+    private void lobbyClick(float[] h) {
+        sound();
+        int kind = (int) h[4], value = (int) h[5];
+        if (kind == LobbyScreen.ROW) {
+            long now = System.currentTimeMillis();
+            boolean twice = value == lastRowClicked && now - lastRowClickAt < 450;
+            lastRowClicked = value;
+            lastRowClickAt = now;
+            lobbyAt = value;
+            if (twice) lobbyKey(33, (char) 0, false, false); // a double click picks it
+        } else if (kind == LobbyScreen.TAB) {
+            if (value == lobby.page) return;
+            if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
+            if (value == LobbyScreen.REFIT) openRefit(); else lobby.page = value;
+        } else {
+            lobbyKey(value, (char) 0, h[6] > 0f, false);
+        }
+    }
+
+    private static void sound() {
+        try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
+    }
+
     /** The CO-OP panel: joining, the host once connected, hosting from this PC, and anything to look at. */
     Panel.Doc coopDoc(ClientLink.State state, boolean canJoin) {
         String version = Mods.ownVersion();
@@ -668,19 +729,19 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             } else if (canJoin && !launchFailed) {
                 if (hostLine.isEmpty()) d.callout(auto ? "The host is not in a battle yet. You will be taken into the next one when it begins."
                         : "The host is not in a battle yet. Wait for them to start one, then press Enter to join it.", Panel.WARN);
-                else d.callout("Press Enter to join the battle.", Panel.GOOD);
+                else d.callout("The battle is on: JOIN THE BATTLE below (or Enter).", Panel.GOOD);
             }
             if (!withHost.isEmpty()) d.line("In this game: " + withHost, Panel.DIM);
             if (roster != null) {
                 wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg == null ? "" : cfg.playerName));
-                d.line(mine == null ? "F4 opens the lobby: the host's fleet, to pick your ship before the battle." : "Your ship: " + wingman.net.Roster.label(mine) + ".   F4: the lobby.",
+                d.line(mine == null ? "LOBBY shows the host's fleet: pick your ship there before the battle." : "Your ship: " + wingman.net.Roster.label(mine) + ".",
                         mine == null ? Panel.TEXT : Panel.GOOD);
             }
         }
         d.section("Host a game");
         d.line("Start any battle: friends can join it. They type " + (myAddresses == null || myAddresses.isEmpty() ? "this PC's address." : "one of these:"), Panel.DIM);
         if (myAddresses != null && !myAddresses.isEmpty()) d.line(myAddresses, Panel.TEXT);
-        if (cfg != null && cfg.hostEnabled && cfg.password.isEmpty()) d.callout("No password set: anyone who can reach this PC can join. F3 to set one.", Panel.WARN);
+        if (cfg != null && cfg.hostEnabled && cfg.password.isEmpty()) d.callout("No password set: anyone who can reach this PC can join. Set one in SETTINGS.", Panel.WARN);
         List<String> off = SystemWatch.get().blockedIds();
         if (!off.isEmpty()) {
             StringBuilder names = new StringBuilder();
@@ -689,6 +750,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             d.section("Notices");
             d.callout("Switched off on this PC after a possible crash, so not shown when the host uses them: " + names + ".  F5: switch them back on.", Panel.WARN);
         }
+        String main = canJoin ? (hostLine.isEmpty() ? "JOIN WHEN IT STARTS" : "JOIN THE BATTLE") : form.address.length() == 0 ? "SAVE NAME"
+                : state == ClientLink.State.CONNECTING ? "CONNECTING..." : "CONNECT";
+        d.buttons(Panel.Doc.button(main, 28, Panel.GOOD),
+                connected ? Panel.Doc.button("LOBBY", 62, Style.ACCENT) : null,
+                Panel.Doc.button("HOW TO", 59, Style.ACCENT), Panel.Doc.button("MODS", 60, Style.ACCENT), Panel.Doc.button("SETTINGS", 61, Style.ACCENT));
         d.keys((canJoin ? "Enter: join the battle" : form.address.length() == 0 ? "Enter: save name" : "Enter: connect")
                 + "     Tab: next field     Ctrl+V: paste     F1: how to use     F2: mods     F3: settings     Esc: close");
         return d;
@@ -705,6 +771,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             if (last || (p == 0 && i == 2)) d.callout(page[i], Panel.WARN);
             else d.line(page[i], Panel.TEXT);
         }
+        d.buttons(Panel.Doc.button(last ? "DONE" : "NEXT", 28, Panel.GOOD), p > 0 ? Panel.Doc.button("BACK", 14, Style.ACCENT) : null);
         d.keys((last ? "Enter: done" : "Enter: next") + (p > 0 ? "     Backspace: back" : "") + "     Esc: close");
         return d;
     }
@@ -728,6 +795,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             } else if (line.startsWith("Seen in play") || line.startsWith("Nothing seen")) d.line(line, Panel.GOOD);
             else d.line(line, Panel.TEXT);
         }
+        d.buttons(Panel.Doc.button(page + 1 >= pages ? "DONE" : "NEXT", 28, Panel.GOOD), page > 0 ? Panel.Doc.button("BACK", 14, Style.ACCENT) : null,
+                Panel.Doc.button("FORGET WHAT WAS SEEN", 211, Panel.WARN));
         d.keys((page + 1 >= pages ? "Enter: done" : "Enter: next") + (page > 0 ? "     Backspace: back" : "") + "     Delete: forget what was seen     Esc: close");
         return d;
     }
@@ -763,15 +832,22 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             // The lobby as a screen of its own, with the game's menu moved aside (other pages draw over it).
             boolean full = open && lobbyOpen && state == ClientLink.State.CONNECTED && !lobby.isBroken() && TitleMenu.hide();
             if (!full) TitleMenu.show();
+            boolean click = down && !wasClickDown;
+            float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+            if (click && shown != SHOWN_NONE && panel.contains(mx, my)) { // the corner window (drawn last frame) is on top
+                panelClick(panel.hitAt(mx, my));
+                click = false;
+            }
             if (full) {
                 float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
-                if (down && !wasClickDown && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
-                else if (down && !wasClickDown && lobby.page == LobbyScreen.REFIT) {
-                    refitAction(lobby.refit.click(Global.getSettings().getMouseX(), Global.getSettings().getMouseY()));
-                }
+                float[] lh = click ? lobby.hitAt(mx, my) : null;
+                if (lh != null) lobbyClick(lh);
+                else if (click && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
+                else if (click && lobby.page == LobbyScreen.REFIT) refitAction(lobby.refit.click(mx, my));
                 lobby.render(lobbyView());
             }
             wasClickDown = down;
+            shown = SHOWN_NONE;
 
             List<String> lines = new ArrayList<String>();
             List<Color> colors = new ArrayList<Color>();
@@ -779,11 +855,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 int pages = Math.max(1, (report.size() + REPORT_LINES - 1) / REPORT_LINES);
                 int page = Math.min(reportPage, pages - 1);
                 panel.renderBelow(bx() + W, by() - 6f, boxWidth(), reportDoc(report, page, pages, REPORT_LINES));
+                shown = SHOWN_REPORT;
                 return;
             }
             if (settings.open) {
                 try {
                     panel.renderBelow(bx() + W, by() - 6f, Math.max(boxWidth(), 520f), settings.doc());
+                    shown = SHOWN_SETTINGS;
                 } catch (Throwable t) { // close the page, keep the CO-OP button
                     settings.open = false;
                     Global.getLogger(WingmanTitlePlugin.class).error("Wingman: the settings page could not be shown and was closed", t);
@@ -792,20 +870,22 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             }
             if (helpPage >= 0) {
                 panel.renderBelow(bx() + W, by() - 6f, boxWidth(), helpDoc(helpPage));
+                shown = SHOWN_HELP;
                 return;
             }
-            if (!open) return;
-            if (full) return;
+            if (!open || full) { panel.hide(); return; }
             if (lobbyOpen && roster != null && state == ClientLink.State.CONNECTED) {
                 renderLobby(lines, colors);
                 panel.renderBelow(bx() + W, by() - 6f, boxWidth(), "LOBBY:  " + roster.hostName.toUpperCase() + "'S FLEET", lines, colors,
                         "Up/Down: choose     F: pick this ship     Delete: no pick     "
                         + (roster.hostState == 1 ? "Enter: join the battle" : "Enter: pick") + "     Esc: back");
+                shown = SHOWN_LOBBY;
                 return;
             }
 
             boolean canJoin = state == ClientLink.State.CONNECTED && welcomed && form.address.toString().trim().equals(connectedRaw);
             panel.renderBelow(bx() + W, by() - 6f, boxWidth(), coopDoc(state, canJoin));
+            shown = SHOWN_COOP;
         } catch (Throwable t) {
             fail(t);
         }
