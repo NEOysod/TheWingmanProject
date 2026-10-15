@@ -175,6 +175,7 @@ final class Screens {
     static void refit(boolean changed) { refit(changed, true); }
 
     static String searchFor = "";
+    static boolean whole;
 
     static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
@@ -195,6 +196,7 @@ final class Screens {
             q.addMods.add("Heavy Armor");
         }
         if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
+        if (whole) set(l.refit, "wholeGame", true);
         l.render(v);
     }
 
@@ -271,6 +273,7 @@ final class Screens {
         out.add(new Shot("refit-search", 1920, 1080, -1, -1, new Runnable() { public void run() {
             searchFor = "autoc"; refit(false); searchFor = "";
         } }));
+        out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));

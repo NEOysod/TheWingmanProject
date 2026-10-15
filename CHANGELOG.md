@@ -22,6 +22,11 @@ Protocol 60, as 0.9-beta (host and joiners still both need this build for the ne
 - **Search** over the refit screen's cards: a box above them (click it, or Ctrl+F) narrows weapons, fighter wings
   or hull mods to those with every typed word in their name. Esc clears it.
 - D-mods are shown in red: on the lobby's ship card and in the refit screen.
+- **Whole game** tick beside the search: the cards also list every weapon that fits the slot, every fighter wing or
+  every hull mod in the game, greyed ("Not where the host is", "The host doesn't know it") after what the host can
+  get. They can be searched but not fitted.
+- The cards come 20 at a time: "Show 20 more", or the mouse wheel at the end of the list, brings the next 20. New
+  pictures load a few a frame, so long lists don't stall the screen.
 
 ## 0.9-beta
 Protocol 60: host and joiners need this build.

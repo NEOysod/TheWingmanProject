@@ -104,6 +104,7 @@ final class LobbyScreen {
         try {
             if (body == null) body = Global.getSettings().getString("defaultFont");
             refitButton = null;
+            loadBudget = 4;
             float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
             float m = Math.max(24f, sw * 0.022f);
             fill(0f, 0f, sw, sh, new Color(4, 7, 12, 238));
@@ -301,15 +302,18 @@ final class LobbyScreen {
 
     private static final Color ELITE = new Color(255, 200, 60), ICON_BACK = new Color(255, 255, 255, 18);
     private static final java.util.Set<String> loadTried = new java.util.HashSet<String>();
+    /** Pictures that may still be loaded this frame (set each frame the lobby draws). */
+    static int loadBudget = 4;
 
     /** A sprite by its path, loaded if the game hasn't yet (portraits load as they are first shown); null if none. */
     static SpriteAPI sprite(String path) {
         if (path == null || path.isEmpty()) return null;
         try {
             SpriteAPI s = Global.getSettings().getSprite(path);
-            // (only a picture under graphics/ is ever loaded from what the host names, and each once, at most 200)
+            // (only a picture under graphics/ is ever loaded from what the host names, and each once, at most 600, a few a frame)
             boolean picture = path.startsWith("graphics/") && !path.contains("..") && (path.endsWith(".png") || path.endsWith(".jpg"));
-            if ((s == null || s.getWidth() <= 0f) && picture && loadTried.size() < 200 && loadTried.add(path)) {
+            if ((s == null || s.getWidth() <= 0f) && picture && loadBudget > 0 && loadTried.size() < 600 && loadTried.add(path)) {
+                loadBudget--; // a few new pictures a frame, so a long list doesn't stall the screen
                 Global.getSettings().loadTexture(path);
                 s = Global.getSettings().getSprite(path);
             }

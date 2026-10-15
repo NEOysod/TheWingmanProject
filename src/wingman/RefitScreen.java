@@ -217,10 +217,35 @@ final class RefitScreen {
         final int count;
         final float price;
         final boolean usable;
+        /** From the whole game, not where the host is (shown with "Whole game" ticked): to look at, not to pick. */
+        boolean elsewhere;
+        String name;
         Option(String key, String from, int count, float price, boolean usable) { this.key = key; this.from = from; this.count = count; this.price = price; this.usable = usable; }
     }
 
+    /** "Whole game" ticked: the cards also show everything in the game that fits, greyed where the host can't get it. */
+    private boolean wholeGame;
+    /** How many cards are shown: 20 at first, 20 more each time the list is scrolled to its end or "more" is clicked. */
+    private int shownMax = PAGE;
+    private static final int PAGE = 20;
+    /** The filtered cards, worked out again only when what they depend on changes (the whole game is a long list). */
+    private List<Option> cached;
+    private String cachedFor = "";
+    private RefitData cachedData;
+
     private List<Option> options(Row row, FriendRefit.Names names, boolean filtered) {
+        if (!filtered || row == null) return build(row, names, filtered);
+        String key = row.kind + "|" + row.id + "|" + search + "|" + tab + "|" + wholeGame + "|" + req.addMods + "|" + req.changes.size();
+        if (cached == null || cachedData != data || !key.equals(cachedFor)) {
+            if (!key.equals(cachedFor)) shownMax = PAGE;
+            cached = build(row, names, true);
+            cachedFor = key;
+            cachedData = data;
+        }
+        return cached;
+    }
+
+    private List<Option> build(Row row, FriendRefit.Names names, boolean filtered) {
         List<Option> out = new ArrayList<Option>();
         if (row == null) return out;
         if (row.kind == SLOT || row.kind == BAY) {
@@ -256,6 +281,7 @@ final class RefitScreen {
             Collections.sort(ids, new Comparator<String>() { public int compare(String a, String b) { return n.mod(a).compareToIgnoreCase(n.mod(b)); } });
             for (String id : ids) out.add(new Option(id, "", 0, 0f, true));
         }
+        if (filtered && wholeGame && tab.isEmpty()) addWholeGame(out, row, names); // (a source tab shows that source alone)
         if (filtered && !search.trim().isEmpty()) {
             List<Option> kept = new ArrayList<Option>();
             for (Option o : out) if (o.key == null || matches(o, row, names)) kept.add(o);
@@ -264,9 +290,58 @@ final class RefitScreen {
         return out;
     }
 
+    /**
+     * Everything in this game (the joiner's copy, the same mods as the host's) that could go in the row and isn't
+     * already listed, by name, after what the host can get: weapons that fit the slot, fighter wings, hull mods. Specs
+     * the game keeps out of its codex are left out.
+     */
+    private void addWholeGame(List<Option> out, Row row, FriendRefit.Names names) {
+        java.util.Set<String> have = new java.util.HashSet<String>();
+        for (Option o : out) if (o.key != null) have.add(o.key);
+        List<Option> more = new ArrayList<Option>();
+        String hide = com.fs.starfarer.api.impl.campaign.ids.Tags.HIDE_IN_CODEX;
+        try {
+            if (row.kind == SLOT) {
+                WeaponSlotAPI slot = null;
+                try { slot = hull().getWeaponSlotAPI(row.id); } catch (Throwable t) { /* no fit check */ }
+                for (WeaponSpecAPI w : Global.getSettings().getAllWeaponSpecs()) {
+                    String k = RefitData.key(RefitData.WEAPON, w.getWeaponId());
+                    if (have.contains(k) || w.hasTag(hide) || w.getAIHints().contains(com.fs.starfarer.api.combat.WeaponAPI.AIHints.SYSTEM)) continue;
+                    if (slot != null && !slot.weaponFits(w)) continue;
+                    Option o = new Option(k, "", 0, 0f, false);
+                    o.elsewhere = true;
+                    o.name = w.getWeaponName();
+                    more.add(o);
+                }
+            } else if (row.kind == BAY) {
+                for (com.fs.starfarer.api.loading.FighterWingSpecAPI f : Global.getSettings().getAllFighterWingSpecs()) {
+                    String k = RefitData.key(RefitData.WING, f.getId());
+                    if (have.contains(k) || f.hasTag(hide)) continue;
+                    Option o = new Option(k, "", 0, 0f, false);
+                    o.elsewhere = true;
+                    o.name = f.getWingName();
+                    more.add(o);
+                }
+            } else if (row.kind == ADD_MOD) {
+                for (HullModSpecAPI m : Global.getSettings().getAllHullModSpecs()) {
+                    String id = m.getId();
+                    if (have.contains(id) || m.isHidden() || m.isHiddenEverywhere() || m.hasTag(hide) || m.hasTag(com.fs.starfarer.api.impl.campaign.ids.Tags.HULLMOD_DMOD)) continue;
+                    if (data.hullmods.contains(id) || data.sMods.contains(id) || data.permaMods.contains(id)) continue;
+                    if (hull() != null && hull().getBuiltInMods().contains(id)) continue;
+                    Option o = new Option(id, "", 0, 0f, false);
+                    o.elsewhere = true;
+                    o.name = m.getDisplayName();
+                    more.add(o);
+                }
+            }
+        } catch (Throwable t) { /* what was found so far */ }
+        Collections.sort(more, new Comparator<Option>() { public int compare(Option a, Option b) { return String.valueOf(a.name).compareToIgnoreCase(String.valueOf(b.name)); } });
+        out.addAll(more);
+    }
+
     /** Every word of the search in the card's name (or its id), any case. */
     private boolean matches(Option o, Row row, FriendRefit.Names names) {
-        String name = (row.kind == ADD_MOD ? names.mod(o.key) : names.item(o.key)) + " " + o.key;
+        String name = (o.name != null ? o.name : row.kind == ADD_MOD ? names.mod(o.key) : names.item(o.key)) + " " + o.key;
         name = name.toLowerCase();
         for (String w : search.toLowerCase().trim().split("\\s+")) if (!name.contains(w)) return false;
         return true;
@@ -311,6 +386,11 @@ final class RefitScreen {
     }
 
     private void pick(Row row, Option o) {
+        if (o.elsewhere) {
+            status = row.kind == ADD_MOD ? "The host doesn't know " + o.name + ": it can't be fitted." : o.name + " isn't where the host is: it can be fitted once it is in their cargo, storage or a market.";
+            statusColor = Panel.WARN;
+            return;
+        }
         if (row.kind == ADD_MOD) {
             if (o.key != null && !req.addMods.contains(o.key)) req.addMods.add(o.key);
             return;
@@ -444,7 +524,9 @@ final class RefitScreen {
 
     private static final int H_ROW = 0, H_CARD = 1, H_TAB = 2, H_RING = 3, H_BUTTON = 4;
     private static final int B_SEND = 0, B_RESET = 1, B_BACK = 2, B_DEST = 3, B_UNDO = 4, B_MINUS5 = 5, B_MINUS = 6, B_PLUS = 7, B_PLUS5 = 8,
-            B_OFF = 9, B_BUILD = 10, B_NOTE = 11, B_CLEAR = 12, B_SEARCH = 13, B_SEARCH_CLEAR = 14;
+            B_OFF = 9, B_BUILD = 10, B_NOTE = 11, B_CLEAR = 12, B_SEARCH = 13, B_SEARCH_CLEAR = 14, B_MORE = 15, B_WHOLE = 16;
+    /** Cards not shown yet, and how far the cards can scroll, as last drawn. */
+    private int moreLeft, maxCardScroll;
 
     private static final class Hit {
         final float x, y, w, h;
@@ -492,6 +574,8 @@ final class RefitScreen {
                         case B_NOTE: typingNote = true; typingSearch = false; return NOTHING;
                         case B_SEARCH: typingSearch = true; typingNote = false; return NOTHING;
                         case B_SEARCH_CLEAR: search = ""; typingSearch = false; optAt = 0; cardScroll = 0; return NOTHING;
+                        case B_MORE: shownMax += PAGE; return NOTHING;
+                        case B_WHOLE: wholeGame = !wholeGame; cardScroll = 0; optAt = 0; return NOTHING;
                         case B_CLEAR: req.note = ""; return NOTHING;
                         default: return NOTHING;
                     }
@@ -506,7 +590,11 @@ final class RefitScreen {
     boolean scroll(float mx, float my, int dir) {
         int by = dir > 0 ? -1 : 1;
         if (tileArea != null && mx >= tileArea[0] && mx <= tileArea[0] + tileArea[2] && my >= tileArea[1] && my <= tileArea[1] + tileArea[3]) { rowScroll = Math.max(0, rowScroll + by); return true; }
-        if (cardArea != null && mx >= cardArea[0] && mx <= cardArea[0] + cardArea[2] && my >= cardArea[1] && my <= cardArea[1] + cardArea[3]) { cardScroll = Math.max(0, cardScroll + by); return true; }
+        if (cardArea != null && mx >= cardArea[0] && mx <= cardArea[0] + cardArea[2] && my >= cardArea[1] && my <= cardArea[1] + cardArea[3]) {
+            if (by > 0 && cardScroll >= maxCardScroll && moreLeft > 0) shownMax += PAGE; // at the end: the next 20
+            cardScroll = Math.max(0, cardScroll + by);
+            return true;
+        }
         return false;
     }
 
@@ -1003,13 +1091,17 @@ final class RefitScreen {
             if (opts.isEmpty()) return;
         }
         float gap = 8f, cardW = (w - gap) / 2f, cardH = 58f;
+        // 20 cards at a time: the rest come in sets of 20 (the whole game's list is long, and each picture is a texture)
+        int shown = Math.min(opts.size(), shownMax);
+        moreLeft = opts.size() - shown;
         int cols = 2, rowsFit = Math.max(1, (int) ((y - floor + gap) / (cardH + gap)));
-        int totalRows = (opts.size() + cols - 1) / cols;
-        cardScroll = Math.max(0, Math.min(cardScroll, Math.max(0, totalRows - rowsFit)));
+        int totalRows = (shown + cols - 1) / cols + (moreLeft > 0 ? 1 : 0);
+        maxCardScroll = Math.max(0, totalRows - rowsFit);
+        cardScroll = Math.max(0, Math.min(cardScroll, maxCardScroll));
         cardArea = new float[] { x, floor, w, y - floor };
         RefitRequest.Change ch = row.kind == SLOT || row.kind == BAY ? req.change(row.id, row.kind == BAY) : null;
         String current = ch != null ? (ch.item.isEmpty() ? null : RefitData.key(row.kind == BAY ? RefitData.WING : RefitData.WEAPON, ch.item) + "|" + ch.from) : "";
-        for (int i = cardScroll * cols; i < opts.size() && i < (cardScroll + rowsFit) * cols; i++) {
+        for (int i = cardScroll * cols; i < shown && i < (cardScroll + rowsFit) * cols; i++) {
             Option o = opts.get(i);
             int col = (i - cardScroll * cols) % cols, rowN = (i - cardScroll * cols) / cols;
             float cx = x + col * (cardW + gap), cy = y - (rowN + 1) * (cardH + gap) + gap;
@@ -1020,7 +1112,11 @@ final class RefitScreen {
             String name, line;
             Color c = o.usable ? Panel.TEXT : Panel.DIM;
             if (o.key == null) { name = row.kind == BAY ? "Leave the bay empty" : "Leave it empty"; line = "The one there now comes out"; c = Panel.DIM; }
-            else if (o.from.isEmpty()) {
+            else if (o.elsewhere) {
+                name = o.name == null ? o.key : o.name.replace(" LPC", "");
+                line = row.kind == ADD_MOD ? "The host doesn't know it" : "Not where the host is";
+                c = Style.FAINT;
+            } else if (row.kind == ADD_MOD) {
                 Integer cost = data.modCosts.get(o.key);
                 name = names.mod(o.key);
                 line = cost == null ? "" : cost + " OP";
@@ -1030,16 +1126,24 @@ final class RefitScreen {
                 line = (op == null ? "" : op + " OP   ") + names.source(o.from) + " (" + o.count + ")" + (o.price > 0 ? "   " + grouped(Math.round(o.price)) + " cr" : "");
             }
             float icon = cardH - 10f;
-            if (o.key != null) iconBox(picture(o.key, o.from.isEmpty()), cx + 5f, cy + 5f, icon, !o.usable);
+            if (o.key != null) iconBox(picture(o.key, row.kind == ADD_MOD), cx + 5f, cy + 5f, icon, !o.usable);
             float tx = cx + (o.key != null ? icon + 12f : 10f);
             float nameW = cardW - (tx - cx) - 6f;
-            if (!o.usable) nameW -= Style.width("LOCKED", Style.SMALL_FONT) + 16f;
-            if (!o.usable) Style.chip("locked", Panel.WARN, cx + cardW - Style.width("LOCKED", Style.SMALL_FONT) - 16f, cy + cardH - 6f);
+            if (!o.usable && !o.elsewhere) nameW -= Style.width("LOCKED", Style.SMALL_FONT) + 16f;
+            if (!o.usable && !o.elsewhere) Style.chip("locked", Panel.WARN, cx + cardW - Style.width("LOCKED", Style.SMALL_FONT) - 16f, cy + cardH - 6f);
             ui.text(name, body, c, tx, cy + cardH - 6f, nameW);
             ui.text(line, body, Panel.DIM, tx, cy + cardH / 2f - 2f, cardW - (tx - cx) - 6f);
             hits.add(new Hit(cx, cy, cardW, cardH, H_CARD, i, ""));
         }
-        if (totalRows > rowsFit) ui.text((cardScroll + 1) + "-" + Math.min(totalRows, cardScroll + rowsFit) + " of " + totalRows + " rows (wheel to scroll)",
+        // the "more" card, a full row after the shown ones, when scrolled to
+        int moreRow = (shown + cols - 1) / cols;
+        if (moreLeft > 0 && moreRow >= cardScroll && moreRow < cardScroll + rowsFit) {
+            float cy = y - (moreRow - cardScroll + 1) * (cardH + gap) + gap;
+            boolean over = LobbyScreen.inside(x, cy, w, cardH);
+            Style.button(x, cy + 12f, w, cardH - 24f, "Show " + Math.min(PAGE, moreLeft) + " more  (" + moreLeft + " not shown)", CYAN, true, over);
+            hits.add(new Hit(x, cy, w, cardH, H_BUTTON, B_MORE, ""));
+        }
+        if (totalRows > rowsFit) ui.text(Math.min(shown, (cardScroll + rowsFit) * cols) + " of " + opts.size() + (moreLeft > 0 ? " (the wheel, at the end, shows more)" : "  (wheel to scroll)"),
                 body, Panel.DIM, x, floor + 2f, w);
     }
 
@@ -1047,6 +1151,17 @@ final class RefitScreen {
     private float searchBox(Row row, float x, float top, float w) {
         String body = ui.body;
         float h = 28f, bh = Style.lineHeight(body);
+        // the "Whole game" tick, right of the box
+        String tickText = "WHOLE GAME";
+        float tickW = Style.width(tickText, Style.SMALL_FONT) + 34f;
+        float kx = x + w - tickW, ks = 14f, ky = top - (h + ks) / 2f;
+        boolean overTick = LobbyScreen.inside(kx, top - h, tickW, h);
+        LobbyScreen.fill(kx, ky, ks, ks, wholeGame ? Style.alpha(CYAN, 70) : new Color(0, 0, 0, 90));
+        LobbyScreen.outline(kx, ky, ks, ks, wholeGame || overTick ? CYAN : LobbyScreen.LINE);
+        if (wholeGame) ui.text("x", body, Color.WHITE, kx + 3f, ky + ks - (ks - bh) / 2f + 1f, ks);
+        Style.text(tickText, Style.SMALL_FONT, wholeGame || overTick ? CYAN : Style.DIM, kx + ks + 8f, top - (h - Style.lineHeight(Style.SMALL_FONT)) / 2f, tickW);
+        hits.add(new Hit(kx, top - h, tickW, h, H_BUTTON, B_WHOLE, ""));
+        w -= tickW + 10f;
         boolean over = LobbyScreen.inside(x, top - h, w, h);
         LobbyScreen.fill(x, top - h, w, h, typingSearch ? new Color(0, 0, 0, 120) : over ? TILE_OVER : new Color(0, 0, 0, 80));
         LobbyScreen.outline(x, top - h, w, h, typingSearch ? CYAN : LobbyScreen.LINE);

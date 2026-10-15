@@ -149,6 +149,24 @@ public class UiPreview {
                 if (n.equals("getMouseY")) return (int) mouseY;
                 if (n.equals("getString") && "defaultFont".equals(a[0])) return "graphics/fonts/insignia15LTaa.fnt";
                 if (n.equals("createLabel")) return label((String) a[0], (String) a[1]);
+                if (n.equals("getAllWeaponSpecs")) {
+                    List<Object> l = new ArrayList<Object>();
+                    String[] base = { "Antimatter Blaster", "Arbalest Autocannon", "Assault Chaingun", "Autopulse Laser", "Burst PD Laser", "Cryoblaster", "Devastator Cannon", "Gauss Cannon",
+                        "Graviton Beam", "Heavy Blaster", "Heavy Mortar", "Hellbore Cannon", "High Intensity Laser", "Hephaestus Assault Gun", "Ion Cannon", "Ion Pulser", "Kinetic Blaster",
+                        "Lightning Gun", "Mark IX Autocannon", "Mjolnir Cannon", "Multi-Needler", "Phase Lance", "Plasma Cannon", "Pulse Laser", "Railgun", "Storm Needler", "Tachyon Lance",
+                        "Thumper", "Typhoon Reaper", "Squall MLRS", "Locust SRM", "Hurricane MIRV", "Sabot SRM", "Atropos Torpedo", "Gorgon SRM", "Harpoon MRM", "Hammer Barrage", "Pilum LRM",
+                        "Salamander MRM", "Breach SRM", "Dual Flak", "Flak Cannon", "Heavy Machine Gun", "Light Dual Autocannon", "Light Needler", "Vulcan Cannon", "Shredder", "Hypervelocity Driver" };
+                    for (final String w : base) l.add(proxy(com.fs.starfarer.api.loading.WeaponSpecAPI.class, new InvocationHandler() {
+                        public Object invoke(Object p2, Method m2, Object[] a2) {
+                            String n2 = m2.getName();
+                            if (n2.equals("getWeaponId")) return w;
+                            if (n2.equals("getWeaponName")) return w;
+                            if (n2.equals("getAIHints")) return java.util.EnumSet.noneOf(com.fs.starfarer.api.combat.WeaponAPI.AIHints.class);
+                            return zero(m2.getReturnType());
+                        }
+                    }));
+                    return l;
+                }
                 if (n.equals("getModManager")) return proxy(com.fs.starfarer.api.ModManagerAPI.class, new InvocationHandler() {
                     public Object invoke(Object p2, Method m2, Object[] a2) {
                         if (m2.getName().equals("getModSpec")) return proxy(com.fs.starfarer.api.ModSpecAPI.class, new InvocationHandler() {
