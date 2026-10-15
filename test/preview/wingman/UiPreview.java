@@ -131,6 +131,33 @@ public class UiPreview {
         });
     }
 
+    static Object fakeWeapon(final String id) {
+        final Object stats = proxy(com.fs.starfarer.api.combat.WeaponAPI.DerivedWeaponStatsAPI.class, new InvocationHandler() {
+            public Object invoke(Object p, Method m, Object[] a) {
+                String n = m.getName();
+                if (n.equals("getDps")) return 160f; if (n.equals("getSustainedDps")) return 160f; if (n.equals("getDamagePerShot")) return 200f;
+                if (n.equals("getFluxPerSecond")) return 130f; if (n.equals("getFluxPerDam")) return 0.8f; if (n.equals("getRoF")) return 0.8f;
+                return zero(m.getReturnType());
+            }
+        });
+        return proxy(com.fs.starfarer.api.loading.WeaponSpecAPI.class, new InvocationHandler() {
+            public Object invoke(Object p, Method m, Object[] a) {
+                String n = m.getName();
+                if (n.equals("getWeaponName") || n.equals("getWeaponId")) return id;
+                if (n.equals("getSize")) return com.fs.starfarer.api.combat.WeaponAPI.WeaponSize.MEDIUM;
+                if (n.equals("getMountType") || n.equals("getType")) return com.fs.starfarer.api.combat.WeaponAPI.WeaponType.BALLISTIC;
+                if (n.equals("getPrimaryRoleStr")) return "Anti armor";
+                if (n.equals("getManufacturer")) return "Common";
+                if (n.equals("getOrdnancePointCost")) return 12f;
+                if (n.equals("getMaxRange")) return 700f;
+                if (n.equals("getDerivedStats")) return stats;
+                if (n.equals("getDamageType")) return com.fs.starfarer.api.combat.DamageType.HIGH_EXPLOSIVE;
+                if (n.equals("getAIHints")) return java.util.EnumSet.noneOf(com.fs.starfarer.api.combat.WeaponAPI.AIHints.class);
+                return zero(m.getReturnType());
+            }
+        });
+    }
+
     static void setUp() {
         img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
         g = img.createGraphics();
@@ -149,10 +176,34 @@ public class UiPreview {
                 if (n.equals("getMouseY")) return (int) mouseY;
                 if (n.equals("getString") && "defaultFont".equals(a[0])) return "graphics/fonts/insignia15LTaa.fnt";
                 if (n.equals("createLabel")) return label((String) a[0], (String) a[1]);
+                if (n.equals("getWeaponSpec")) return fakeWeapon((String) a[0]);
+                if (n.equals("getDescription")) {
+                    com.fs.starfarer.api.loading.Description d = new com.fs.starfarer.api.loading.Description((String) a[0], (com.fs.starfarer.api.loading.Description.Type) a[1]);
+                    d.setText1("A heavy, slow-firing cannon that trades rate of fire for raw punch. Its high-explosive shells crack armor plating that lighter guns barely scratch, though it struggles against shields.");
+                    return d;
+                }
+                if (n.equals("getAllWeaponSpecs")) {
+                    List<Object> l = new ArrayList<Object>();
+                    String[] base = { "Antimatter Blaster", "Arbalest Autocannon", "Assault Chaingun", "Autopulse Laser", "Burst PD Laser", "Cryoblaster", "Devastator Cannon", "Gauss Cannon",
+                        "Graviton Beam", "Heavy Blaster", "Heavy Mortar", "Hellbore Cannon", "High Intensity Laser", "Hephaestus Assault Gun", "Ion Cannon", "Ion Pulser", "Kinetic Blaster",
+                        "Lightning Gun", "Mark IX Autocannon", "Mjolnir Cannon", "Multi-Needler", "Phase Lance", "Plasma Cannon", "Pulse Laser", "Railgun", "Storm Needler", "Tachyon Lance",
+                        "Thumper", "Typhoon Reaper", "Squall MLRS", "Locust SRM", "Hurricane MIRV", "Sabot SRM", "Atropos Torpedo", "Gorgon SRM", "Harpoon MRM", "Hammer Barrage", "Pilum LRM",
+                        "Salamander MRM", "Breach SRM", "Dual Flak", "Flak Cannon", "Heavy Machine Gun", "Light Dual Autocannon", "Light Needler", "Vulcan Cannon", "Shredder", "Hypervelocity Driver" };
+                    for (final String w : base) l.add(proxy(com.fs.starfarer.api.loading.WeaponSpecAPI.class, new InvocationHandler() {
+                        public Object invoke(Object p2, Method m2, Object[] a2) {
+                            String n2 = m2.getName();
+                            if (n2.equals("getWeaponId")) return w;
+                            if (n2.equals("getWeaponName")) return w;
+                            if (n2.equals("getAIHints")) return java.util.EnumSet.noneOf(com.fs.starfarer.api.combat.WeaponAPI.AIHints.class);
+                            return zero(m2.getReturnType());
+                        }
+                    }));
+                    return l;
+                }
                 if (n.equals("getModManager")) return proxy(com.fs.starfarer.api.ModManagerAPI.class, new InvocationHandler() {
                     public Object invoke(Object p2, Method m2, Object[] a2) {
                         if (m2.getName().equals("getModSpec")) return proxy(com.fs.starfarer.api.ModSpecAPI.class, new InvocationHandler() {
-                            public Object invoke(Object p3, Method m3, Object[] a3) { return m3.getName().equals("getVersion") ? "0.9-beta" : zero(m3.getReturnType()); }
+                            public Object invoke(Object p3, Method m3, Object[] a3) { return m3.getName().equals("getVersion") ? "0.9.1-beta" : zero(m3.getReturnType()); }
                         });
                         return zero(m2.getReturnType());
                     }

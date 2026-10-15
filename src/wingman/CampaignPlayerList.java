@@ -45,6 +45,8 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {
+        bottom = Float.MAX_VALUE; // until it is drawn this frame
+        settingsButton = null;
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
         try {
             long now = System.currentTimeMillis();
@@ -73,6 +75,12 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
         final boolean quiet;
         Row(int slot, String name, String ship, boolean quiet) { this.slot = slot; this.name = name; this.ship = ship; this.quiet = quiet; }
     }
+
+    /** The SETTINGS button in the list's header as drawn ({x, y, w, h}), or null: CampaignSettings opens on a click. */
+    static volatile float[] settingsButton;
+
+    /** The bottom edge of the list as drawn this frame (screen units), for what goes under it; huge when not shown. */
+    static volatile float bottom = Float.MAX_VALUE;
 
     private List<Row> list = new ArrayList<Row>();
     private int more;
@@ -107,16 +115,25 @@ final class CampaignPlayerList implements CampaignUIRenderingListener {
     private void draw(List<Row> rows) {
         String body = Style.body();
         float rowH = Math.max(Style.chipHeight(), Style.lineHeight(body)) + 6f;
-        float headH = Style.lineHeight(Style.SMALL_FONT) + 10f;
+        float headH = Style.lineHeight(Style.SMALL_FONT) + 14f;
         float h = headH + rows.size() * rowH + (more > 0 ? rowH : 0f) + 8f;
         float w = MAX_W;
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
         float x = sw - w - 10f, y = sh - h - 10f;
+        bottom = y;
         Style.frame(x, y, w, h, new Color(6, 10, 16, 205), Style.EDGE, 6f);
         Style.fill(x + 1f, y + h - headH, w - 8f, headH - 1f, Style.BAR);
         Style.fill(x + 1f, y + h - headH, 3f, headH - 1f, Style.ACCENT);
         Style.text("CO-OP", Style.SMALL_FONT, Style.ACCENT, x + 10f, y + h - 5f, 80f);
-        Style.textRight((rows.size() + more) + " players", Style.SMALL_FONT, Style.DIM, x + w - 10f, y + h - 5f);
+        // SETTINGS, a button for the mouse (the same page as Ctrl+Shift+O)
+        String st = "SETTINGS";
+        float sbw = Style.width(st, Style.SMALL_FONT) + 14f, sbh = headH - 6f, sbx = x + w - 10f - sbw, sby = y + h - headH + 3f;
+        boolean overS = Style.over(sbx, sby, sbw, sbh);
+        Style.fill(sbx, sby, sbw, sbh, overS ? Style.alpha(Style.ACCENT, 60) : Style.CHIP);
+        Style.outline(sbx, sby, sbw, sbh, overS ? Style.ACCENT : Style.CHIP_EDGE);
+        Style.text(st, Style.SMALL_FONT, overS ? java.awt.Color.WHITE : Style.TEXT, sbx + 7f, y + h - 6f, sbw);
+        settingsButton = new float[] { sbx, sby, sbw, sbh };
+        Style.textRight((rows.size() + more) + " players", Style.SMALL_FONT, Style.DIM, sbx - 8f, y + h - 5f);
         float top = y + h - headH - 4f;
         for (Row r : rows) {
             Color c = PlayerTags.color(r.slot);

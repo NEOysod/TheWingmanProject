@@ -237,7 +237,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (disabled || leaving || halted || engine == null) return;
+        if (disabled || leaving || engine == null) return;
+        // The joiner ended the battle from the game's own menu: straight back to the lobby, no results screen
+        // (that screen only knows this PC's copy of the battle; the host's report is in the lobby).
+        try {
+            if (ready && engine.isCombatOver()) {
+                Global.getLogger(WingmanClientPlugin.class).info("Wingman: the battle was ended on this PC; back to the lobby");
+                leaveBattle(false);
+                return;
+            }
+        } catch (Throwable t) { /* the results screen, as before */ }
+        if (halted) return;
         try {
             if (!ready) {
                 if (!prepare()) return;
@@ -1536,7 +1546,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     break;
                 }
                 int myShips = 0, myFighters = 0, mySum = 0;
-                for (Puppet pp : puppets.values()) { if (pp.fighter) myFighters++; else myShips++; mySum += pp.netId; }
+                // Sorted as the host sorts them, by hull size: a drone (UAF's Rafflesya launches some) has no wing,
+                // so it is not a "fighter" here otherwise, but it is fighter-sized and counted as one there.
+                for (Puppet pp : puppets.values()) {
+                    boolean small = pp.fighter;
+                    try { if (pp.ship != null) small = pp.ship.isFighter(); } catch (Throwable t) { /* by its wing */ }
+                    if (small) myFighters++; else myShips++;
+                    mySum += pp.netId;
+                }
                 for (Map.Entry<Integer, Boolean> e : skippedIds.entrySet()) { if (e.getValue()) myFighters++; else myShips++; mySum += e.getKey(); }
                 if (ships == myShips && fighters == myFighters && sum == mySum) { checkMisses = 0; break; }
                 if (++checkMisses < 3) break;
@@ -2700,9 +2717,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         ShipMasteryBridge.track(member); // (in its fleet now: the commander whose masteries apply is known)
         CombatFleetManagerAPI fm = engine.getFleetManager(sp.owner);
+        if (sp.ally) { try { member.setAlly(true); } catch (Throwable t) { /* shown as the player's */ } }
         fm.setSuppressDeploymentMessages(true);
         ShipAPI ship = fm.spawnFleetMember(member, new Vector2f(sp.x, sp.y), sp.facing, 0f);
         fm.setSuppressDeploymentMessages(false);
+        // An allied ship (another fleet on the player's side) is marked so, as on the host: the game shows it as an
+        // ally, and it can't be taken over (the host refuses that too).
+        if (sp.ally && ship != null) { try { ship.setAlly(true); } catch (Throwable t) { /* shown as the player's */ } }
         // Arma Armatura sends a strikecraft that needs repairs to a carrier by itself. Here that is the host's
         // decision (a LANDING message says when): its own off switch is set for good on every copy.
         try { if (ship != null) ship.getCustomData().put(WingmanHostPlugin.ARMAA_NO_REFIT, 1e9f); } catch (Throwable t) { /* no such mod: nothing to do */ }

@@ -23,6 +23,8 @@ public final class ShipSpawn {
     /** A multi-part ship: the numbers of its modules. Their own descriptions are always sent before this one. */
     public List<Integer> moduleIds = new ArrayList<Integer>();
     public int vents, caps;
+    /** An allied ship (owner 0, but another fleet's): shown and treated as an ally, not as the player's. */
+    public boolean ally;
     public float x, y, facing;
     /** Combat readiness, 0..1. */
     public float cr = 1f;
@@ -143,6 +145,7 @@ public final class ShipSpawn {
             w.out.writeBoolean(captain != null);
             if (captain != null) captain.write(w.out);
             w.out.writeInt(fleetKey);
+            w.out.writeBoolean(ally);
         } catch (IOException e) { throw new IllegalStateException(e); }
         return w.done();
     }
@@ -213,6 +216,7 @@ public final class ShipSpawn {
         if (s.variantTags.size() > 200) throw new IOException("too many variant tags");
         if (in.readBoolean()) s.captain = Person.read(in);
         s.fleetKey = in.readInt();
+        if (in.remaining() > 0) s.ally = in.readBoolean();
         return s;
     }
 }

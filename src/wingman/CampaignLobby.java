@@ -112,6 +112,7 @@ final class CampaignLobby implements EveryFrameScript {
         if (m == flagship) return "that is the host's flagship";
         if (m.isMothballed()) return "that ship is mothballed";
         if (m.isStation()) return "a station can't be flown";
+        try { if (com.fs.starfarer.api.util.Misc.isAutomated(m)) return "an automated ship can't be flown"; } catch (Throwable t) { /* not known: allowed */ }
         try {
             if (m.getHullSpec().getHullSize().ordinal() > ShipAPI.HullSize.valueOf(cfg.maxShipSize).ordinal()) {
                 return "the host only lets joiners fly ships up to " + cfg.maxShipSize.toLowerCase().replace('_', ' ') + " size";

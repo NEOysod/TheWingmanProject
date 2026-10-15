@@ -1170,6 +1170,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipSpawn sp = new ShipSpawn();
         sp.netId = id;
         sp.owner = s.getOwner();
+        try { sp.ally = s.isAlly(); } catch (Throwable t) { /* not an ally */ }
         sp.hullId = s.getHullSpec().getHullId();
         sp.name = s.getName() == null ? "" : s.getName();
         sp.x = s.getLocation().x;
@@ -2253,6 +2254,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             return "That ship can't be flown.";
         }
         if (s == hostShip) return "That is the host's ship.";
+        if (s.isAlly()) return "That is an allied ship: its own fleet commands it.";
+        if (s.isStation()) return "A station can't be flown.";
+        try { if (com.fs.starfarer.api.util.Misc.isAutomated(s)) return "An automated ship can't be flown: it has no crew to take the helm."; } catch (Throwable t) { /* not known: allowed */ }
         if (tooBig(s)) return "The host only lets joiners fly ships up to " + cfg.maxShipSize.toLowerCase().replace('_', ' ') + " size.";
         HostSession.Player other = pilotOf(s);
         if (other != null && other != p) return other.name + " is already flying that ship.";

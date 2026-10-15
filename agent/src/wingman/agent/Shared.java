@@ -67,4 +67,71 @@ public final class Shared {
 
     /** The agent's own counts (classes changed, calls swapped). */
     public static volatile java.util.concurrent.Callable<?> reportSource;
+
+    // ---- looking into objects, for Hooks ----
+    // Hooks may be copied into the game's script class loader, which refuses java.lang.reflect to the classes it
+    // defines (a SecurityException the moment such a class is named). Shared stays in the agent's own loader,
+    // where reflection is allowed: Hooks asks here instead of naming those classes itself.
+
+    private static final Map<String, Object> members = Collections.synchronizedMap(new java.util.HashMap<String, Object>());
+
+    /** The value of a field (any access) declared on the named class or the first of o's classes so named; null if none. */
+    public static Object field(Object o, String declaringClass, String name) throws Exception {
+        Class<?> c = o.getClass();
+        while (c != null && !c.getName().equals(declaringClass)) c = c.getSuperclass();
+        if (c == null) return null;
+        String key = "f|" + c.getName() + "|" + name + "|" + System.identityHashCode(c.getClassLoader());
+        java.lang.reflect.Field f = (java.lang.reflect.Field) members.get(key);
+        if (f == null) {
+            f = c.getDeclaredField(name);
+            f.setAccessible(true);
+            members.put(key, f);
+        }
+        return f.get(o);
+    }
+
+    /**
+     * Calls a public method taking one float, declared on the named class (or above it); what it throws comes out
+     * as itself (a checked one wrapped in an IllegalStateException).
+     */
+    public static void callFloat(Object o, String declaringClass, String name, float arg) {
+        Class<?> c = o.getClass();
+        while (c != null && !c.getName().equals(declaringClass)) c = c.getSuperclass();
+        if (c == null) throw new IllegalStateException("not a " + declaringClass + ": " + o.getClass());
+        String key = "m|" + c.getName() + "|" + name + "|" + System.identityHashCode(c.getClassLoader());
+        try {
+            java.lang.reflect.Method m = (java.lang.reflect.Method) members.get(key);
+            if (m == null) {
+                m = c.getMethod(name, float.class);
+                members.put(key, m);
+            }
+            m.invoke(o, arg);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable t = e.getCause();
+            if (t instanceof RuntimeException) throw (RuntimeException) t;
+            if (t instanceof Error) throw (Error) t;
+            throw new IllegalStateException(t);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The values of o's own (not static) fields whose type could hold a 'type', in all its classes; empty if it can't be looked at. */
+    public static java.util.List<Object> fieldsOfType(Object o, Class<?> type) {
+        java.util.List<Object> out = new java.util.ArrayList<Object>();
+        try {
+            for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()) continue;
+                    if (!f.getType().isAssignableFrom(type) && !type.isAssignableFrom(f.getType())) continue;
+                    f.setAccessible(true);
+                    Object v = f.get(o);
+                    if (v != null) out.add(v);
+                }
+            }
+        } catch (Throwable t) { /* can't look: what was found */ }
+        return out;
+    }
 }

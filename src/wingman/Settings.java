@@ -245,6 +245,31 @@ final class Settings {
             put(it, it.options[at]);
         }
 
+        /**
+         * A click on the page (as Panel.hitAt found it): a row marks that setting, a tab shows that page, an arrow
+         * steps the value, a clicked marked row steps it on. Key hints and the close box come back as keys
+         * (returned for the owner to hand to keys(), as a FakeKey), else null.
+         */
+        FakeKey mouse(Panel.Hit h) {
+            if (!open || h == null) return null;
+            List<Item> rows = rows();
+            switch (h.kind) {
+                case Panel.Hit.TAB:
+                    if (h.value >= 0 && h.value < PAGES.length) { page = h.value; row = 0; }
+                    return null;
+                case Panel.Hit.ROW:
+                    if (h.value < 0 || h.value >= rows.size()) return null;
+                    if (h.value == row && rows.get(row).options != null) step(rows.get(row), 1); // a second click: the next value
+                    row = h.value;
+                    return null;
+                case Panel.Hit.STEP:
+                    if (row < rows.size()) step(rows.get(row), h.value);
+                    return null;
+                default:
+                    return new FakeKey(h.value, h.ctrl);
+            }
+        }
+
         /** Takes every key while the page is up. */
         void keys(List<InputEventAPI> events) {
             if (!open || events == null) return;
@@ -380,6 +405,7 @@ final class Settings {
                 if (overrides.containsKey(it.key)) d.line("Edited here. wingman_settings.json says " + display(file.get(it.key)) + "; Delete goes back to that.", Panel.WARN);
             }
             if (saveFailed) d.callout("Could not save: these settings last until the game is closed. See starsector.log.", Panel.BAD);
+            d.buttons(Panel.Doc.button("DONE", 1, Panel.GOOD), rows.isEmpty() ? null : Panel.Doc.button("BACK TO DEFAULT", 211, Panel.WARN));
             d.keys("Up/Down: pick     Left/Right: change     Delete: default     Tab: next page     Esc: done");
             return d;
         }

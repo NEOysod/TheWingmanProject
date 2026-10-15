@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.9.1-beta
+
+Protocol 60, as 0.9-beta. The host and every joiner should still update together: the refit and battle fixes
+are on both sides.
+
+**Friend refit: plans that last**
+
+- The refit screen no longer closes when the host leaves a market. Away from a market the joiner plans: the ship,
+  the host's cargo, credits and story points are shown, and sending waits until the host docks. Only a battle (or
+  picking another ship) closes it.
+- Each ship's plan is kept until the host accepts it, through undocking, battles, other picks and restarts (a
+  small file in the game's common folder, at most 24 ships), and comes back when the refit screen opens on that
+  ship again.
+- At another market, what the plan wants that isn't there (an item no longer in stock, a market that isn't here,
+  a place to sell that won't take it) is listed under "Not available at ...", and marked on its slot: click it
+  and pick something else. Away from a market the same list reads "Waits for a market".
+- The host's credits and story points are always shown at the top of the refit screen, with the plan's cost
+  against them.
+- A request the host hasn't decided on waits when the host undocks instead of being withdrawn; it is checked again
+  at the next market, and can be accepted only while docked. The host's FRIEND REFITS button sits under the
+  player list when both show.
+- **Search** over the refit screen's cards: a box above them (click it, or Ctrl+F) narrows weapons, fighter wings
+  or hull mods to those with every typed word in their name. Esc clears it.
+- D-mods are shown in red: on the lobby's ship card and in the refit screen.
+- **Available** tick beside the search (on by default): the cards show only what the host can get. Untick it to see
+  every weapon that fits the slot, every fighter wing or every hull mod in the game, the rest greyed as
+  "Unavailable" after what the host can get. They can be searched but not fitted.
+- **Everything outside battles works with the mouse:**
+  - Every key hint at the bottom of a window is a button that does what the key does, and each window has a close
+    box (X) at the top right.
+  - The CO-OP panel has buttons (CONNECT / JOIN THE BATTLE, LOBBY, HOW TO, MODS, SETTINGS); the boxes take the typing
+    when clicked.
+  - Settings: click a tab for its page, a row to mark it, the arrows (or the marked row again) to change it; DONE and
+    BACK TO DEFAULT buttons. On the campaign map too, and a SETTINGS button in the host's player list opens it.
+  - How-to and mod report: NEXT / BACK / DONE (and FORGET WHAT WAS SEEN) buttons.
+  - Lobby: click a ship in the list to look at it, twice to pick it; PICK THIS SHIP, UNPICK and REFIT on its card;
+    JOIN THE BATTLE at the top while the host is in one; click the page tabs or the last battle box; the mouse wheel
+    goes through the fleet.
+  - The host's friend refit panel: its key hints click too.
+- **Hull mods offered** are now those the host's own refit screen offers: the ones the host has learned and the ones
+  every player starts with (before, the ones known from the start were missing). Hidden ones and D-mods are left
+  out.
+- After a refit is accepted, the joiner's refit screen asks the host for the ship afresh before anything new can be
+  planned (before, a new plan could start from the old loadout). Refused refits are written to the host's log with
+  the reason, and the host's answers to the joiner's.
+- **A refit accepted in the host's refit screen is done at once:** that screen closes for a moment (its copy of the
+  ship would undo the change), the refit is done, and it opens again on the ship. Before, it waited until the
+  screen was closed, which could mean until leaving the market.
+- **Pop-ups** over weapons, fighter wings and hull mods in the refit screen (cards and tiles) and on the lobby's ship
+  card, as in the game's refit screen: what it is, ordnance points on this ship, range, damage and type, damage
+  and flux per second, EMP, ammo (fighters: craft, count, refit time), and the game's own description; hull mods
+  with their description for this hull size.
+- **Fix: a crash in battle with MagicLib subsystems** on some setups (Fast Rendering's loader): Wingman's own hook
+  named a class the game refuses to scripts ("File access and reflection are not allowed"). It no longer does, and
+  the build now checks that hook too.
+- **Allied ships** (another fleet fighting on the player's side) are marked as allies on joiners' screens too, as on
+  the host; before, they looked like the player's own.
+- **Joiners can't take allied ships, stations or automated ships** (in a battle, and automated ones can't be
+  picked in the lobby either).
+- A joiner who ends the battle from the game's own menu goes straight back to the lobby, without the results
+  screen.
+- A **LOBBY** button beside CO-OP on the title screen while connected.
+- Hidden hull mods aren't listed in the refit screen; S-mods are shown in green (lobby card and refit screen).
+- The cards come 20 at a time: "Show 20 more", or the mouse wheel at the end of the list, brings the next 20. New
+  pictures load a few a frame, so long lists don't stall the screen.
+- **Fixed: a joiner flying Isenoria's Rafflesya was thrown back into the carrier once its drones launched.** The
+  drift check counted the drones as fighters on the host and as ships on the joiner, saw a mismatch, and refreshed
+  the whole battle, which ended the hand-over. The joiner now counts by hull size, as the host does.
+
 ## 0.9-beta
 Protocol 60: host and joiners need this build.
 

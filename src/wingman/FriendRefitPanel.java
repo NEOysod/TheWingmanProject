@@ -29,6 +29,7 @@ import com.fs.starfarer.api.ui.LabelAPI;
 final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderingListener {
     private static final String SMALL = "graphics/fonts/orbitron12condensed.fnt";
     private final Panel panel = new Panel();
+    { panel.mouse = true; } // clicks on it are acted on
     private boolean open, broken, wasDown;
     private int at;
     private String message = "";
@@ -92,12 +93,13 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     /** Accept, now or (under a core screen) once it closes. True when the list of requests changed. */
     private boolean accept(FriendRefit.Pending pd) {
-        if (pd.acceptOnClose) { say("Already accepted: it is done as soon as you close this screen.", Panel.GOOD); return false; }
+        if (pd.acceptOnClose) { say("Already accepted: it is being done.", Panel.GOOD); return false; }
+        if (!pd.acceptOnClose && !FriendRefit.docked()) { say("Dock at a market to accept it: the refit waits until then.", Panel.WARN); return false; }
         if (!pd.problems.isEmpty()) { say("It doesn't pass the checks (in red above), so it can't be accepted.", Panel.BAD); return false; }
         CampaignUIAPI ui = Global.getSector().getCampaignUI();
         if (ui != null && ui.getCurrentCoreTab() != null) { // this screen's copy of the ship would undo it: done once it closes
             FriendRefit.acceptOnClose(pd);
-            say("Accepted. It is done as soon as you close this screen" + (WingmanConfig.load().friendRefitReopen ? ", which then opens again on " + pd.ship + "." : "."), Panel.GOOD);
+            say("Accepted: the refit screen closes for a moment while it is done" + (WingmanConfig.load().friendRefitReopen ? ", then opens again on " + pd.ship + "." : "."), Panel.GOOD);
             return false;
         }
         String why = FriendRefit.accept(pd);
@@ -123,6 +125,17 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     /** A click on a button (polled while drawing, so it works over any screen). */
     private void clicked(float mx, float my, List<FriendRefit.Pending> list) {
+        Panel.Hit ph = panel.contains(mx, my) ? panel.hitAt(mx, my) : null;
+        if (ph != null && ph.kind == Panel.Hit.KEY) { // the key hints and the close box, for the mouse
+            at = Math.max(0, Math.min(list.size() - 1, at));
+            if (ph.value == 30) accept(list.get(at));
+            else if (ph.value == 32) deny(list.get(at));
+            else if (ph.value == 203) { at = (at + list.size() - 1) % list.size(); message = ""; }
+            else if (ph.value == 205) { at = (at + 1) % list.size(); message = ""; }
+            else if (ph.value == 1) open = false;
+            try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
+            return;
+        }
         for (float[] b : buttons) {
             if (mx < b[0] || mx > b[0] + b[2] || my < b[1] || my > b[1] + b[3]) continue;
             at = Math.max(0, Math.min(list.size() - 1, at));
@@ -142,7 +155,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     private void drawButtons(FriendRefit.Pending pd, int count) {
         buttons.clear();
         List<Object[]> row = new ArrayList<Object[]>();
-        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose;
+        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose && FriendRefit.docked();
         if (count > 1) row.add(new Object[] { "<", PREV, LobbyScreen.TITLE });
         row.add(new Object[] { pd.acceptOnClose ? "ACCEPTED" : "YES, ACCEPT", YES, canAccept ? Panel.GOOD : Panel.DIM });
         row.add(new Object[] { pd.acceptOnClose ? "NO, CANCEL" : "NO, DENY", NO, Panel.BAD });
@@ -289,15 +302,16 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         d.field("Ordnance points", pd.op + " / " + pd.opMax, false, false);
         d.field("Credits", net > 0 ? "costs " + LobbyScreen.grouped(net) : net < 0 ? "brings in " + LobbyScreen.grouped(-net) : "none", false, false);
         if (pd.plan.storyPoints > 0) d.field("Story points", String.valueOf(pd.plan.storyPoints), false, false);
-        if (net != pd.request.expectCredits || pd.plan.storyPoints != pd.request.expectStoryPoints)
+        if (FriendRefit.docked() && (net != pd.request.expectCredits || pd.plan.storyPoints != pd.request.expectStoryPoints))
             d.callout(pd.player.name + " was shown " + pd.request.expectCredits + " credits and " + pd.request.expectStoryPoints + " story points: something changed since.", Panel.WARN);
         d.section("Checks");
-        if (pd.acceptOnClose) d.callout("Accepted: done as soon as you close this screen (NO cancels it).", Panel.GOOD);
+        if (!pd.acceptOnClose && !FriendRefit.docked()) d.callout("Waiting for a market: dock at one to check this refit there and accept it.", Panel.WARN);
+        else if (pd.acceptOnClose) d.callout("Accepted: being done now.", Panel.GOOD);
         else if (pd.problems.isEmpty()) d.callout("All checks pass.", Panel.GOOD);
         else for (String p : pd.problems) d.callout(p, Panel.BAD);
         if (!pd.request.addMods.isEmpty()) d.line("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.", Panel.DIM);
         if (!message.isEmpty()) d.callout(message, messageColor);
-        d.keys("A: accept     D: deny     " + (count > 1 ? "Left/Right: other requests     " : "") + "Esc: close");
+        d.keys("A: accept     D: deny     " + (count > 1 ? "Left: previous     Right: next     " : "") + "Esc: close");
         return d;
     }
 
@@ -311,7 +325,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         }
         float w = buttonLabel.computeTextWidth(text) + 30f, h = buttonLabel.getPosition().getHeight() + 16f;
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-        float x = sw - w - 10f, y = sh - h - 10f;
+        float x = sw - w - 10f, y = Math.min(sh, CampaignPlayerList.bottom) - h - 10f; // under the player list, if it shows
         boolean over = LobbyScreen.inside(x, y, w, h);
         boolean pulse = (System.currentTimeMillis() / 600) % 2 == 0;
         Style.frame(x, y, w, h, over ? new Color(14, 26, 38, 240) : new Color(6, 10, 16, 225), over || pulse ? Style.ACCENT : Style.EDGE, 6f);

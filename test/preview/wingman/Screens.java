@@ -52,12 +52,14 @@ final class Screens {
             set(t, "roster", r);
         }
         float sw = UiPreview.W, sh = UiPreview.H, W = 150f, H = 46f, M = 8f;
-        Panel p = new Panel();
+        Panel p = new Panel(); p.mouse = true;
         p.button(sw - W - M, sh - H - M, W, H, "CO-OP", connected ? "connected" : "join or host", true);
         float clear = sw / 2f - 520f - M;
         float bw = clear >= 380f ? Math.min(560f, clear) : 560f;
         p.renderBelow(sw - M, sh - H - M - 6f, bw, t.coopDoc(connected ? ClientLink.State.CONNECTED : ClientLink.State.IDLE, connected));
     }
+
+    static Panel mousePanel() { Panel p = new Panel(); p.mouse = true; return p; }
 
     static void settings(int page, int row) {
         Settings.Menu m = new Settings.Menu();
@@ -72,7 +74,7 @@ final class Screens {
         m.open = true;
         if (page == 1) cfg.bandwidthLimit = 48;
         float sw = UiPreview.W, sh = UiPreview.H, M = 8f;
-        new Panel().renderBelow(sw - M, sh - 46f - M - 6f, 560f, m.doc());
+        mousePanel().renderBelow(sw - M, sh - 46f - M - 6f, 560f, m.doc());
     }
 
 
@@ -172,7 +174,12 @@ final class Screens {
         return d;
     }
 
-    static void refit(boolean changed) {
+    static void refit(boolean changed) { refit(changed, true); }
+
+    static String searchFor = "";
+    static boolean whole;
+
+    static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
         LobbyScreen l = new LobbyScreen();
         l.page = LobbyScreen.REFIT;
@@ -180,6 +187,7 @@ final class Screens {
         v.roster = r; v.me = "Kyrizion"; v.at = 2; v.refitMarket = "Jangala";
         v.hostLine = "NEOysod is docked at Jangala."; v.hostColor = Panel.GOOD; v.players = "Here: NEOysod (host), Kyrizion, Cy, Mosk";
         v.refitData = refitData();
+        if (!docked) { v.refitData.market = ""; v.refitData.markets.clear(); v.refitData.hasStorage = false; v.refitData.storage.clear(); v.refitMarket = ""; v.hostLine = "NEOysod is on the campaign map."; }
         l.refit.setData(v.refitData);
         if (changed) {
             wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
@@ -189,6 +197,8 @@ final class Screens {
             q.vents = 30; q.caps = 26;
             q.addMods.add("Heavy Armor");
         }
+        if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
+        if (whole) set(l.refit, "availableOnly", false);
         l.render(v);
     }
 
@@ -247,7 +257,7 @@ final class Screens {
         out.add(new Shot("coop-connected", 1920, 1080, -1, -1, new Runnable() { public void run() { coop(true); } }));
         out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 6); } }));
         out.add(new Shot("help", 1920, 1080, -1, -1, new Runnable() { public void run() {
-            new Panel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
+            mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
         } }));
         out.add(new Shot("modreport", 1920, 1080, -1, -1, new Runnable() { public void run() {
             List<String> r = Arrays.asList("Ultimate Armada Fleet:  12 missile hit effects, 4 gun hit effects, 9 ship systems, 6 hullmods",
@@ -255,13 +265,19 @@ final class Screens {
                     "Seen in play as a joiner: 38 kinds of missile, shot, script and ship system; 35 behaved as intended.",
                     "Worth a look:  ship system uaf_rama_charge: used 12 times as a joiner, did not start on the host 2 times",
                     "Worth a look:  script shu_overcharge: failed 1 time");
-            new Panel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.reportDoc(r, 0, 1, 14));
+            mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.reportDoc(r, 0, 1, 14));
         } }));
         out.add(new Shot("lobby-fleet", 1920, 1080, 300, 700, new Runnable() { public void run() { lobby(LobbyScreen.FLEET, true); } }));
         out.add(new Shot("lobby-fleet-1366", 1366, 768, -1, -1, new Runnable() { public void run() { lobby(LobbyScreen.FLEET, false); } }));
         out.add(new Shot("lobby-report", 1920, 1080, -1, -1, new Runnable() { public void run() { lobby(LobbyScreen.REPORT, false); } }));
         out.add(new Shot("refit", 1920, 1080, 900, 800, new Runnable() { public void run() { refit(false); } }));
         out.add(new Shot("refit-changed", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true); } }));
+        out.add(new Shot("refit-search", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            searchFor = "autoc"; refit(false); searchFor = "";
+        } }));
+        out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
+        out.add(new Shot("refit-tip", 1920, 1080, 1600, 770, new Runnable() { public void run() { refit(false); try { Thread.sleep(300); } catch (Exception e) { } refit(false); } }));
+        out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         return out;

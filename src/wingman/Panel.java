@@ -36,6 +36,35 @@ final class Panel {
 
     boolean contains(float mx, float my) { return lastW > 0f && mx >= lastX && mx <= lastX + lastW && my >= lastY && my <= lastY + lastH; }
 
+    // ---- the mouse: what was drawn where, for clicks (the owner asks hitAt and acts on it) ----
+
+    /** Something clickable in the window as last drawn. */
+    static final class Hit {
+        static final int KEY = 0, ROW = 1, TAB = 2, STEP = 3;
+        final float x, y, w, h;
+        /** KEY: a key code (as if pressed, with ctrl); ROW: a field or option row (in order); TAB: a tab; STEP: -1 or +1 on the marked option. */
+        final int kind, value;
+        final boolean ctrl;
+        Hit(float x, float y, float w, float h, int kind, int value, boolean ctrl) { this.x = x; this.y = y; this.w = w; this.h = h; this.kind = kind; this.value = value; this.ctrl = ctrl; }
+        boolean has(float mx, float my) { return mx >= x && mx <= x + w && my >= y && my <= y + h; }
+    }
+
+    private final List<Hit> hits = new ArrayList<Hit>();
+    /**
+     * Whether whoever shows this window acts on clicks (Hit). Only then are there a close box and lit key hints:
+     * in a battle, where the keys are used, nothing pretends to be clickable.
+     */
+    boolean mouse;
+
+    /** What is under the mouse in the window as last drawn (the topmost), or null. */
+    Hit hitAt(float mx, float my) {
+        for (int i = hits.size() - 1; i >= 0; i--) if (hits.get(i).has(mx, my)) return hits.get(i);
+        return null;
+    }
+
+    /** Forget where things were (the window isn't shown any more). */
+    void hide() { hits.clear(); lastW = 0f; }
+
     // ---- what a window holds ----
 
     /** One window's content, built each frame by whoever shows it. */
@@ -60,8 +89,11 @@ final class Panel {
         /** A notice: a line with a coloured mark down its left. */
         Doc callout(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.CALLOUT, text, null, c == null ? WARN : c)); return this; }
         /** A labelled value; 'selected' marks the row, 'input' draws the value in a box (typed fields). */
+        private int rows;
+
         Doc field(String label, String value, boolean selected, boolean input) {
             Block b = new Block(Block.FIELD, label, value, TEXT);
+            b.row = rows++;
             b.selected = selected;
             b.input = input;
             blocks.add(b);
@@ -70,6 +102,7 @@ final class Panel {
         /** A settings row: label, value (with arrows when selected), a tag on the right, an "edited" mark. */
         Doc option(String label, String value, String tag, boolean selected, boolean edited, boolean typed) {
             Block b = new Block(Block.OPTION, label, value, TEXT);
+            b.row = rows++;
             b.selected = selected;
             b.tag = tag;
             b.edited = edited;
@@ -78,15 +111,31 @@ final class Panel {
             return this;
         }
         Doc space() { blocks.add(new Block(Block.SPACE, "", null, TEXT)); return this; }
+
+        /**
+         * A row of buttons for the mouse, each doing what a key does: {label, key code, colour}, the first the main
+         * one. Only shown where clicks are acted on (Panel.mouse); elsewhere the key hints say the same.
+         */
+        Doc buttons(Object[]... b) {
+            Block bl = new Block(Block.BUTTONS, "", null, TEXT);
+            for (Object[] o : b) if (o != null) bl.buttons.add(o);
+            if (!bl.buttons.isEmpty()) blocks.add(bl);
+            return this;
+        }
+
+        static Object[] button(String label, int key, Color c) { return new Object[] { label, key, c }; }
     }
 
     static final class Block {
-        static final int SECTION = 0, LINE = 1, CALLOUT = 2, FIELD = 3, OPTION = 4, SPACE = 5;
+        static final int SECTION = 0, LINE = 1, CALLOUT = 2, FIELD = 3, OPTION = 4, SPACE = 5, BUTTONS = 6;
+        final List<Object[]> buttons = new ArrayList<Object[]>();
         final int kind;
         final String text, value;
         final Color color;
         boolean selected, input, edited;
         String tag;
+        /** Which field or option row this is, in order (for clicks). */
+        int row = -1;
         Block(int kind, String text, String value, Color color) { this.kind = kind; this.text = text; this.value = value; this.color = color; }
     }
 
@@ -131,7 +180,7 @@ final class Panel {
             float keysH = keys.isEmpty() ? 0f : Style.keysHeight(keys, inner) + 12f;
             float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
             float bodyH = 0f;
-            for (int i = 0; i < d.blocks.size(); i++) bodyH += height(d.blocks.get(i), inner, i == 0);
+            for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
             float h = Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
             float x = right - width, y;
             if (Float.isNaN(top)) y = sh * 0.6f - h / 2f;
@@ -139,26 +188,42 @@ final class Panel {
             x = Math.max(4f, x);
             y = Math.max(4f, y);
             lastX = x; lastY = y; lastW = width; lastH = h;
+            hits.clear();
 
-            float cy = Style.window(x, y, width, h, d.title, d.note);
+            float cy = Style.window(x, y, width, h, d.title, d.note, mouse ? Style.BAR_H - 2f : 0f);
+            if (mouse) closeBox(x + width, y + h);
             if (!d.tabs.isEmpty()) {
-                Style.tabs(d.tabs, d.tab, x + 1f, cy, width - 2f);
+                float[] at = Style.tabs(d.tabs, d.tab, x + 1f, cy, width - 2f);
+                for (int i = 0; i < d.tabs.size(); i++) hits.add(new Hit(at[i * 2], cy - Style.TAB_H, at[i * 2 + 1] - at[i * 2], Style.TAB_H, Hit.TAB, i, false));
                 cy -= tabsH;
             }
             cy -= PAD;
             float lx = x + PAD;
             float labelW = labelColumn(d, inner);
-            for (int i = 0; i < d.blocks.size(); i++) cy = drawBlock(d.blocks.get(i), lx, cy, inner, labelW, i == 0);
+            for (int i = 0; i < d.blocks.size(); i++) cy = drawBlock(d.blocks.get(i), lx, cy, inner, labelW, i == 0, mouse ? hits : null);
             if (!keys.isEmpty()) {
                 float ky = y + keysH - 4f;
                 Style.rule(x + 1f, ky + 4f, width - 2f);
-                Style.drawKeys(keys, lx, ky - 2f, inner);
+                List<float[]> kh = new ArrayList<float[]>();
+                Style.drawKeys(keys, lx, ky - 2f, inner, mouse ? kh : null);
+                for (float[] k : kh) hits.add(new Hit(k[0], k[1], k[2], k[3], Hit.KEY, (int) k[4], k[5] > 0f));
             }
             failures = 0;
         } catch (Throwable e) {
             // Drawing is a nicety: the same information also goes to the message feed, so never let it break co-op.
             failed("panel '" + d.title + "'", e);
         }
+    }
+
+    /** A small X at the top right of the title bar: Esc, for the mouse. */
+    private void closeBox(float right, float top) {
+        float s = Style.BAR_H - 12f, bx = right - s - 14f, by = top - Style.BAR_H + 6f;
+        boolean over = Style.over(bx, by, s, s);
+        Style.fill(bx, by, s, s, over ? Style.alpha(Style.BAD, 70) : Style.CHIP);
+        Style.outline(bx, by, s, s, over ? Style.BAD : Style.CHIP_EDGE);
+        float tw = Style.width("X", Style.SMALL_FONT), th = Style.lineHeight(Style.SMALL_FONT);
+        Style.text("X", Style.SMALL_FONT, over ? Color.WHITE : DIM, bx + (s - tw) / 2f, by + (s + th) / 2f, s);
+        hits.add(new Hit(bx, by, s, s, Hit.KEY, 1, false));
     }
 
     /** How wide the label column of fields and options is: the longest label, within reason. */
@@ -177,11 +242,12 @@ final class Panel {
             case Block.FIELD:
             case Block.OPTION: return rowH() + 2f;
             case Block.SPACE: return 8f;
+            case Block.BUTTONS: return 12f + 34f + 6f + (b.buttons.size() >= 3 ? 28f + 8f : 0f);
             default: return Style.height(b.text, Style.body(), inner) + GAP;
         }
     }
 
-    private static float drawBlock(Block b, float x, float top, float inner, float labelW, boolean first) {
+    private static float drawBlock(Block b, float x, float top, float inner, float labelW, boolean first, List<Hit> hits) {
         String body = Style.body();
         switch (b.kind) {
             case Block.SECTION:
@@ -190,9 +256,31 @@ final class Panel {
                 return Style.callout(b.text, b.color, x, top - 2f, inner) - GAP;
             case Block.SPACE:
                 return top - 8f;
+            case Block.BUTTONS: {
+                if (hits == null) return top; // keys only: the hints say it
+                float bh = 34f, gap = 8f, y = top - 12f - bh, bx = x;
+                int n = b.buttons.size();
+                boolean twoRows = n >= 3; // the main one across, the others in a row under it
+                float mainW = n == 1 || twoRows ? inner : Math.max(inner * 0.4f, Style.width(String.valueOf(b.buttons.get(0)[0]), Style.TITLE_FONT) + 30f);
+                float restW = n <= 1 ? 0f : twoRows ? (inner - gap * (n - 2)) / (n - 1) : (inner - mainW - gap * (n - 1)) / (n - 1);
+                for (int i = 0; i < n; i++) {
+                    Object[] o = b.buttons.get(i);
+                    float bw = i == 0 ? mainW : restW;
+                    if (twoRows && i == 1) { bx = x; y -= 28f + 8f; }
+                    float h2 = i == 0 ? bh : 28f, y2 = twoRows && i > 0 ? y + bh - 28f : y + (bh - h2) / 2f; // the others smaller, in small capitals
+                    boolean over = Style.over(bx, y2, bw, h2);
+                    Style.button(bx, y2, bw, h2, String.valueOf(o[0]), (Color) o[2], true, over);
+                    hits.add(new Hit(bx, y2, bw, h2, Hit.KEY, (Integer) o[1], false));
+                    bx += bw + gap;
+                }
+                return y - 6f;
+            }
             case Block.FIELD:
             case Block.OPTION: {
                 float rh = rowH(), y = top - rh;
+                boolean hover = hits != null && Style.over(x - 6f, y, inner + 12f, rh);
+                if (hover && !b.selected) Style.fill(x - 6f, y, inner + 12f, rh, Style.alpha(Style.ACCENT, 14));
+                if (hits != null) hits.add(new Hit(x - 6f, y, inner + 12f, rh, Hit.ROW, b.row, false));
                 if (b.selected) {
                     Style.fill(x - 6f, y, inner + 12f, rh, Style.alpha(Style.ACCENT, 26));
                     Style.fill(x - 6f, y, 3f, rh, Style.ACCENT);
@@ -222,8 +310,20 @@ final class Panel {
                     Style.fill(vx - 6f, y + 3f, vw + 6f, rh - 6f, new Color(0, 0, 0, 90));
                     Style.outline(vx - 6f, y + 3f, vw + 6f, rh - 6f, b.selected ? Style.ACCENT : Style.alpha(Style.DIM, 90));
                     Style.text(v, body, b.selected ? TEXT : DIM, vx, ty, vw - 6f);
-                } else if (b.kind == Block.OPTION && b.selected) {
+                } else if (b.kind == Block.OPTION && b.selected && hits == null) {
                     Style.text("<  " + v + "  >", body, Color.WHITE, vx, ty, vw);
+                } else if (b.kind == Block.OPTION && b.selected) {
+                    // arrows to click: the value one step back or on
+                    float aw = Style.width("<", body) + 12f, ah = rh - 8f;
+                    float vwid = Math.min(vw - 2 * aw - 12f, Style.width(v, body));
+                    boolean ol = Style.over(vx - 6f, y + 4f, aw, ah), or = Style.over(vx + aw + vwid + 6f, y + 4f, aw, ah);
+                    Style.fill(vx - 6f, y + 4f, aw, ah, ol ? Style.alpha(Style.ACCENT, 70) : Style.CHIP);
+                    Style.text("<", body, Color.WHITE, vx, ty, aw);
+                    Style.text(v, body, Color.WHITE, vx + aw, ty, Math.max(20f, vw - 2 * aw));
+                    Style.fill(vx + aw + vwid + 6f, y + 4f, aw, ah, or ? Style.alpha(Style.ACCENT, 70) : Style.CHIP);
+                    Style.text(">", body, Color.WHITE, vx + aw + vwid + 12f, ty, aw);
+                    hits.add(new Hit(vx - 6f, y + 4f, aw, ah, Hit.STEP, -1, false));
+                    hits.add(new Hit(vx + aw + vwid + 6f, y + 4f, aw, ah, Hit.STEP, 1, false));
                 } else {
                     Style.text(v, body, b.selected || b.kind == Block.FIELD ? TEXT : Style.TEXT, vx, ty, vw);
                 }

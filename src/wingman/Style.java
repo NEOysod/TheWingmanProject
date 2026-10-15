@@ -178,19 +178,24 @@ final class Style {
      * A window: dark body, cut corners, a title bar with an accent mark, the title, and a note on the right of the
      * bar. Returns the top of the space under the bar.
      */
-    static float window(float x, float y, float w, float h, String title, String note) {
+    static float window(float x, float y, float w, float h, String title, String note) { return window(x, y, w, h, title, note, 0f); }
+
+    /** The same, keeping 'reserve' clear at the right end of the bar (for a close box). */
+    static float window(float x, float y, float w, float h, String title, String note, float reserve) {
         frame(x, y, w, h, WINDOW, EDGE, 10f);
-        return titleBar(x, y + h, w, title, note);
+        return titleBar(x, y + h, w, title, note, reserve);
     }
 
+    static float titleBar(float x, float top, float w, String title, String note) { return titleBar(x, top, w, title, note, 0f); }
+
     /** The title bar along the top edge of a box ('top'); returns the y under it. */
-    static float titleBar(float x, float top, float w, String title, String note) {
+    static float titleBar(float x, float top, float w, String title, String note, float reserve) {
         float bar = BAR_H;
         fill(x + 1f, top - bar, w - 11f, bar - 1f, BAR);
         fill(x + 1f, top - bar, 3f, bar - 1f, ACCENT);
         fill(x + 1f, top - bar, w - 2f, 1f, alpha(ACCENT, 150));
         float th = lineHeight(TITLE_FONT);
-        float right = x + w - PAD;
+        float right = x + w - PAD - reserve;
         if (note != null && !note.isEmpty()) {
             float nh = lineHeight(body());
             right = textRight(note, body(), DIM, right, top - (bar - nh) / 2f) - 12f;
@@ -283,12 +288,56 @@ final class Style {
     }
 
     /** How tall a row of key hints is when wrapped to 'w'. */
-    static float keysHeight(List<String[]> keys, float w) { return layoutKeys(keys, 0f, 0f, w, false); }
+    static float keysHeight(List<String[]> keys, float w) { return layoutKeys(keys, 0f, 0f, w, false, null); }
 
     /** Draws the key hints from 'top' down, wrapping; returns the height used. */
-    static float drawKeys(List<String[]> keys, float x, float top, float w) { return layoutKeys(keys, x, top, w, true); }
+    static float drawKeys(List<String[]> keys, float x, float top, float w) { return layoutKeys(keys, x, top, w, true, null); }
 
-    private static float layoutKeys(List<String[]> keys, float x, float top, float w, boolean draw) {
+    /**
+     * The same, each hint a button for the mouse: clicking it does what the key does. Where each is goes into
+     * 'hits' as {x, y, w, h, key code, ctrl (1/0)}; hints whose key isn't one key (Up/Down) are drawn but not added.
+     */
+    static float drawKeys(List<String[]> keys, float x, float top, float w, List<float[]> hits) { return layoutKeys(keys, x, top, w, true, hits); }
+
+    /** The key code (LWJGL) for a key's name as the hints write it ("Enter", "F3", "Ctrl+V", "R"), and ctrl; null if none. */
+    static int[] keyCode(String name) {
+        String n = name.trim().toUpperCase();
+        int ctrl = 0;
+        if (n.startsWith("CTRL+")) { ctrl = 1; n = n.substring(5); }
+        if (n.contains("/") || n.contains("+") || n.contains(" ")) return null;
+        if (n.equals("ENTER")) return new int[] { 28, ctrl };
+        if (n.equals("ESC")) return new int[] { 1, ctrl };
+        if (n.equals("TAB")) return new int[] { 15, ctrl };
+        if (n.equals("BACKSPACE")) return new int[] { 14, ctrl };
+        if (n.equals("DELETE")) return new int[] { 211, ctrl };
+        if (n.equals("SPACE")) return new int[] { 57, ctrl };
+        if (n.equals("LEFT")) return new int[] { 203, ctrl };
+        if (n.equals("RIGHT")) return new int[] { 205, ctrl };
+        if (n.equals("UP")) return new int[] { 200, ctrl };
+        if (n.equals("DOWN")) return new int[] { 208, ctrl };
+        if (n.matches("F[1-9]|F10")) { int k = Integer.parseInt(n.substring(1)); return new int[] { 58 + k, ctrl }; }
+        if (n.length() == 1) {
+            int i = "QWERTYUIOP".indexOf(n.charAt(0));
+            if (i >= 0) return new int[] { 16 + i, ctrl };
+            i = "ASDFGHJKL".indexOf(n.charAt(0));
+            if (i >= 0) return new int[] { 30 + i, ctrl };
+            i = "ZXCVBNM".indexOf(n.charAt(0));
+            if (i >= 0) return new int[] { 44 + i, ctrl };
+        }
+        return null;
+    }
+
+    /** True if the mouse is over that box. */
+    static boolean over(float x, float y, float w, float h) {
+        try {
+            float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static float layoutKeys(List<String[]> keys, float x, float top, float w, boolean draw, List<float[]> hits) {
         if (keys.isEmpty()) return 0f;
         float rowH = Math.max(chipHeight(), lineHeight(body())) + 4f;
         float cx = x, cy = top, used = rowH;
@@ -299,8 +348,12 @@ final class Style {
             if (cx > x && cx + total > x + w) { cx = x; cy -= rowH; used += rowH; }
             if (draw) {
                 float ch = chipHeight(), bh = lineHeight(body());
-                if (!k[0].isEmpty()) chip(k[0], TEXT, cx, cy - (rowH - 4f - ch) / 2f);
-                text(k[1], body(), DIM, cx + kw, cy - (rowH - 4f - bh) / 2f, aw + 40f);
+                int[] code = hits == null || k[0].isEmpty() ? null : keyCode(k[0]);
+                boolean lit = code != null && over(cx - 4f, cy - rowH + 2f, total + 8f, rowH);
+                if (lit) fill(cx - 4f, cy - rowH + 2f, total + 8f, rowH, HOVER);
+                if (!k[0].isEmpty()) chip(k[0], lit ? Color.WHITE : TEXT, cx, cy - (rowH - 4f - ch) / 2f);
+                text(k[1], body(), lit ? TEXT : DIM, cx + kw, cy - (rowH - 4f - bh) / 2f, aw + 40f);
+                if (code != null) hits.add(new float[] { cx - 4f, cy - rowH + 2f, total + 8f, rowH, code[0], code[1] });
             }
             cx += total + 20f;
         }

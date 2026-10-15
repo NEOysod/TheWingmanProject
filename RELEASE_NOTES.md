@@ -1,4 +1,4 @@
-# The Wingman Project 0.9-beta — Release Notes
+# The Wingman Project 0.9.1-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,22 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.9.1-beta
+
+- **Friend refit plans that last:** the refit screen stays open away from markets (plan there, send at the next
+  market), each ship's plan is kept until the host accepts it, and what isn't sold at the current market is marked
+  so it can be swapped. The host's credits and story points are always shown.
+- **Search** in the refit screen (Ctrl+F), an **Available** tick to see every weapon, wing or hull mod in the
+  game, and **pop-ups** with stats and descriptions, as in the game's refit screen. D-mods in red, S-mods in green.
+- **The mouse works everywhere outside battles:** buttons on every window, clickable key hints, tabs and lists,
+  and a LOBBY button on the title screen while connected.
+- A refit the host accepts is done at once, and the hull mods offered are the host's own.
+- Allied ships show as allies for joiners; joiners can't take allied ships, stations or automated ships. Ending
+  the battle from the game's menu goes straight back to the lobby.
+- **Fixes:** a battle crash with MagicLib subsystems under Fast Rendering's loader; a joiner flying Isenoria's
+  Rafflesya being thrown back into the carrier once its drones launched.
+- Still protocol 60, but the host and every joiner should update together.
 
 ## New in 0.9-beta
 
