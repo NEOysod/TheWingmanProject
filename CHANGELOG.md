@@ -1,7 +1,9 @@
 # Changelog
 
-## Next (in progress)
-Protocol 60, as 0.9-beta (host and joiners still both need this build for the new refit behaviour).
+## 0.9.1-beta
+
+Protocol 60, as 0.9-beta. The host and every joiner should still update together: the refit and battle fixes
+are on both sides.
 
 **Friend refit: plans that last**
 
@@ -37,9 +39,12 @@ Protocol 60, as 0.9-beta (host and joiners still both need this build for the ne
     JOIN THE BATTLE at the top while the host is in one; click the page tabs or the last battle box; the mouse wheel
     goes through the fleet.
   - The host's friend refit panel: its key hints click too.
-- **Hull mods offered** are now those the host's own refit screen offers: learned ones, the ones the host's faction
-  knows, and the ones every player starts with (before, the ones known from the start were missing). Hidden ones
-  and D-mods are left out.
+- **Hull mods offered** are now those the host's own refit screen offers: the ones the host has learned and the ones
+  every player starts with (before, the ones known from the start were missing). Hidden ones and D-mods are left
+  out.
+- After a refit is accepted, the joiner's refit screen asks the host for the ship afresh before anything new can be
+  planned (before, a new plan could start from the old loadout). Refused refits are written to the host's log with
+  the reason, and the host's answers to the joiner's.
 - **A refit accepted in the host's refit screen is done at once:** that screen closes for a moment (its copy of the
   ship would undo the change), the refit is done, and it opens again on the ship. Before, it waited until the
   screen was closed, which could mean until leaving the market.
@@ -47,8 +52,22 @@ Protocol 60, as 0.9-beta (host and joiners still both need this build for the ne
   card, as in the game's refit screen: what it is, ordnance points on this ship, range, damage and type, damage
   and flux per second, EMP, ammo (fighters: craft, count, refit time), and the game's own description; hull mods
   with their description for this hull size.
+- **Fix: a crash in battle with MagicLib subsystems** on some setups (Fast Rendering's loader): Wingman's own hook
+  named a class the game refuses to scripts ("File access and reflection are not allowed"). It no longer does, and
+  the build now checks that hook too.
+- **Allied ships** (another fleet fighting on the player's side) are marked as allies on joiners' screens too, as on
+  the host; before, they looked like the player's own.
+- **Joiners can't take allied ships, stations or automated ships** (in a battle, and automated ones can't be
+  picked in the lobby either).
+- A joiner who ends the battle from the game's own menu goes straight back to the lobby, without the results
+  screen.
+- A **LOBBY** button beside CO-OP on the title screen while connected.
+- Hidden hull mods aren't listed in the refit screen; S-mods are shown in green (lobby card and refit screen).
 - The cards come 20 at a time: "Show 20 more", or the mouse wheel at the end of the list, brings the next 20. New
   pictures load a few a frame, so long lists don't stall the screen.
+- **Fixed: a joiner flying Isenoria's Rafflesya was thrown back into the carrier once its drones launched.** The
+  drift check counted the drones as fighters on the host and as ships on the joiner, saw a mismatch, and refreshed
+  the whole battle, which ended the hand-over. The joiner now counts by hull size, as the host does.
 
 ## 0.9-beta
 Protocol 60: host and joiners need this build.

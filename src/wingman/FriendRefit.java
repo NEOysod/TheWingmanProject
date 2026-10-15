@@ -341,14 +341,13 @@ final class FriendRefit {
     }
 
     /**
-     * The hull mods the host's refit screen offers: those the player has learned, those the player's faction knows,
-     * and those every player has from the start (always unlocked), less the hidden ones and D-mods. (The character's
-     * own list alone misses the ones known from the start.)
+     * The hull mods the host's refit screen offers: those the player has learned and those every player has from
+     * the start (always unlocked), less the hidden ones and D-mods. (The player faction's list is left out: mods
+     * fill it with hull mods the player can't fit.)
      */
     static List<String> knownHullmods() {
         Set<String> ids = new LinkedHashSet<String>();
         try { ids.addAll(Global.getSector().getCharacterData().getHullMods()); } catch (Throwable t) { /* none from there */ }
-        try { ids.addAll(Global.getSector().getPlayerFaction().getKnownHullMods()); } catch (Throwable t) { /* none from there */ }
         try {
             for (HullModSpecAPI spec : Global.getSettings().getAllHullModSpecs()) if (spec.isAlwaysUnlocked()) ids.add(spec.getId());
         } catch (Throwable t) { /* none from there */ }
@@ -518,7 +517,11 @@ final class FriendRefit {
         RefitRequest r;
         try { r = RefitRequest.decode(data); } catch (java.io.IOException e) { return; } // garbled: nothing to answer
         String why = refusal(p, r.memberId, cfg);
-        if (why != null) { send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + ".")); return; }
+        if (why != null) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + why);
+            send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + "."));
+            return;
+        }
         Pending pd = new Pending();
         pd.player = p;
         pd.request = r;
@@ -526,8 +529,13 @@ final class FriendRefit {
         FleetMemberAPI m = member(r.memberId);
         pd.ship = CampaignLobby.label(m);
         check(pd, m);
-        if (pd.plan.isEmpty()) { send(p, new RefitResult(RefitResult.REFUSED, "Nothing changes in that refit.")); return; }
+        if (pd.plan.isEmpty()) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: it changes nothing");
+            send(p, new RefitResult(RefitResult.REFUSED, "Nothing changes in that refit."));
+            return;
+        }
         if (!pd.problems.isEmpty()) { // the design: a request that fails a check is refused with the reason
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + join(pd.problems).replace('\n', ' '));
             send(p, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
             return;
         }

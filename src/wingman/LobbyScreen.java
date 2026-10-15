@@ -317,7 +317,7 @@ final class LobbyScreen {
         y = gear(mem, px, y, pw, floor + 24f) - 10f;
         if (!mem.hullmods.isEmpty() && y - 40f > floor) {
             y = Style.section("Hull mods", px, y, pw) - 2f;
-            text(mem.hullmods, body, Panel.TEXT, px, y, pw);
+            modList(mem.hullmods, px, y, pw);
         }
 
         float sy = top - h + 12f + stateH;
@@ -345,6 +345,21 @@ final class LobbyScreen {
             }
         }
         Style.callout(state, c, px, sy, pw);
+    }
+
+    /** Hull mods one after another, wrapping: S-mods (marked "(S)") in green, the rest in the usual colour. */
+    private float modList(String mods, float x, float top, float w) {
+        float lh = Style.lineHeight(body), cx = x, cy = top;
+        String[] parts = mods.split(", ");
+        for (int i = 0; i < parts.length; i++) {
+            String p = parts[i] + (i + 1 < parts.length ? "," : "");
+            boolean s = parts[i].endsWith(" (S)");
+            float pw = Style.width(p, body);
+            if (cx > x && cx + pw > x + w) { cx = x; cy -= lh + 2f; }
+            Style.text(p, body, s ? Panel.GOOD : Panel.TEXT, cx, cy, pw + 20f);
+            cx += pw + Style.width(" ", body) + 2f;
+        }
+        return cy - lh;
     }
 
     // ---- the officer and the loadout, with their pictures ----

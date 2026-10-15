@@ -1,7 +1,5 @@
 package wingman.agent;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -102,34 +100,18 @@ public final class Hooks {
         try { ship.advance(amount); } finally { Shared.acting = prev; }
     }
 
-    private static Method advanceInternal;
-    private static Field subsystemShip;
-
-    /** MagicLib advances every ship's subsystems from one screen-wide plugin: give each its ship's context. */
+    /**
+     * MagicLib advances every ship's subsystems from one screen-wide plugin: give each its ship's context. (No
+     * java.lang.reflect here: this class may be a copy in the game's script loader, which refuses it. Shared does
+     * the looking.)
+     */
     public static void subsystemAdvance(Object subsystem, float amount) {
-        try {
-            if (advanceInternal == null) {
-                Class<?> c = subsystem.getClass();
-                while (c != null && !"org.magiclib.subsystems.MagicSubsystem".equals(c.getName())) c = c.getSuperclass();
-                if (c == null) throw new IllegalStateException("not a MagicSubsystem: " + subsystem.getClass());
-                advanceInternal = c.getMethod("advanceInternal", float.class);
-                subsystemShip = c.getDeclaredField("ship");
-                subsystemShip.setAccessible(true);
-            }
-        } catch (RuntimeException e) { throw e; } catch (Exception e) { throw new IllegalStateException(e); }
         ShipAPI prev = ((ShipAPI) Shared.acting);
         if (Shared.bridge != null) {
-            try { Shared.acting = actingFor((ShipAPI) subsystemShip.get(subsystem)); } catch (Throwable t) { Shared.acting = null; }
+            try { Shared.acting = actingFor((ShipAPI) Shared.field(subsystem, "org.magiclib.subsystems.MagicSubsystem", "ship")); } catch (Throwable t) { Shared.acting = null; }
         }
         try {
-            advanceInternal.invoke(subsystem, amount);
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            Throwable c = e.getCause();
-            if (c instanceof RuntimeException) throw (RuntimeException) c;
-            if (c instanceof Error) throw (Error) c;
-            throw new IllegalStateException(c);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException(e);
+            Shared.callFloat(subsystem, "org.magiclib.subsystems.MagicSubsystem", "advanceInternal", amount);
         } finally {
             Shared.acting = prev;
         }
@@ -154,14 +136,8 @@ public final class Hooks {
     /** Does this object keep, in a field of its own, the ((ShipAPI) Shared.acting) ship (or one of its modules or fighters)? */
     static boolean holds(Object o, ShipAPI a) {
         try {
-            for (Class<?> c = o.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-                for (Field f : c.getDeclaredFields()) {
-                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()) continue;
-                    if (!f.getType().isAssignableFrom(ShipAPI.class) && !ShipAPI.class.isAssignableFrom(f.getType())) continue;
-                    f.setAccessible(true);
-                    Object v = f.get(o);
-                    if (v == a || (v instanceof ShipAPI && same(actingFor((ShipAPI) v), actingFor(a)))) return true;
-                }
+            for (Object v : Shared.fieldsOfType(o, ShipAPI.class)) {
+                if (v == a || (v instanceof ShipAPI && same(actingFor((ShipAPI) v), actingFor(a)))) return true;
             }
         } catch (Throwable t) { /* can't look: leave it alone */ }
         return false;

@@ -104,7 +104,12 @@ final class RefitScreen {
     void onResult(RefitResult r) {
         switch (r.status) {
             case RefitResult.RECEIVED: statusColor = Panel.GOOD; break;
-            case RefitResult.ACCEPTED: statusColor = Panel.GOOD; if (req != null) Drafts.forget(req.memberId); req = null; break; // starts afresh on the new loadout the host sends
+            case RefitResult.ACCEPTED: // starts afresh on the new loadout, once the host has sent it
+                statusColor = Panel.GOOD;
+                if (req != null) Drafts.forget(req.memberId);
+                req = null;
+                data = null;
+                break;
             case RefitResult.DENIED: statusColor = Panel.WARN; break;
             default: statusColor = Panel.BAD;
         }
@@ -176,9 +181,10 @@ final class RefitScreen {
         rows.add(new Row(VENTS, ""));
         rows.add(new Row(CAPS, ""));
         rows.add(new Row(HEAD, "HULL MODS"));
-        for (String id : data.sMods) rows.add(new Row(MOD, id));
-        for (String id : data.permaMods) rows.add(new Row(MOD, id));
-        for (String id : data.hullmods) rows.add(new Row(MOD, id));
+        // (hidden hull mods, the ones the game's refit screen doesn't show, aren't shown here either)
+        for (String id : data.sMods) if (!hiddenMod(id)) rows.add(new Row(MOD, id));
+        for (String id : data.permaMods) if (!hiddenMod(id)) rows.add(new Row(MOD, id));
+        for (String id : data.hullmods) if (!hiddenMod(id)) rows.add(new Row(MOD, id));
         for (String id : req.addMods) rows.add(new Row(MOD, id));
         rows.add(new Row(ADD_MOD, ""));
         rows.add(new Row(HEAD, "NOTE"));
@@ -781,6 +787,16 @@ final class RefitScreen {
         try { return hull().getWeaponSlotAPI(id); } catch (Throwable t) { return null; }
     }
 
+    /** A hull mod the game keeps out of sight (its refit screen doesn't list it). */
+    static boolean hiddenMod(String id) {
+        try {
+            HullModSpecAPI s = Global.getSettings().getHullModSpec(id);
+            return s.isHidden() || s.isHiddenEverywhere();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** A D-mod (damage the hull carries), by the hull mod's own tag. */
     static boolean isDmod(String id) {
         try { return Global.getSettings().getHullModSpec(id).hasTag(com.fs.starfarer.api.impl.campaign.ids.Tags.HULLMOD_DMOD); } catch (Throwable t) { return false; }
@@ -934,7 +950,7 @@ final class RefitScreen {
                 mod = true;
                 name = names.mod(r.id);
                 Integer cost = data.modCosts.get(r.id);
-                if (data.sMods.contains(r.id)) { detail = "S-mod (built in)"; c = Panel.DIM; }
+                if (data.sMods.contains(r.id)) { detail = "S-mod (built in)"; c = Panel.GOOD; }
                 else if (data.permaMods.contains(r.id)) { boolean dm = isDmod(r.id); detail = dm ? "D-mod (permanent)" : "Permanent"; c = dm ? Panel.BAD : Panel.WARN; }
                 else if (req.removeMods.contains(r.id)) { detail = "Taken off"; c = Panel.WARN; }
                 else {

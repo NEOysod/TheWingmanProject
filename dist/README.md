@@ -1,4 +1,4 @@
-# The Wingman Project 0.9-beta
+# The Wingman Project 0.9.1-beta
 
 **Co-op multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and each
 fly a ship from the host's fleet, side by side, in real time.
