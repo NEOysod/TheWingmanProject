@@ -86,6 +86,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private static final int LOBBY_ROWS = 9;
     /** The lobby as a screen of its own (the game's menu moved aside); the corner box if that can't be done. */
     private final LobbyScreen lobby = new LobbyScreen();
+    /** The co-op pages as a screen of their own (header with MAIN MENU / DISCONNECT), with the game's menu moved aside. */
+    private final CoopScreen screen = new CoopScreen();
+    /** Whether a co-op screen covered the title screen last frame (its clicks are ours alone). */
+    private boolean screenUp;
     /** Friend refit: the refit screen is open on this member ("" closed), and what the host last sent for it. */
     private String refitMember = "";
     private wingman.net.RefitData refitData;
@@ -133,7 +137,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     };
 
     @Override
-    public void init(CombatEngineAPI engine) { TitleMenu.forget(); } // a fresh title screen shows its own menu
+    public void init(CombatEngineAPI engine) {
+        TitleMenu.forget(); // a fresh title screen shows its own menu
+        if (TitleLauncher.launched) { TitleLauncher.launched = false; missionListFrames = 1; } // back from the join mission
+    }
+
+    /** Back from the join mission: the game opens its missions list over everything; closed a few frames in (0: done). */
+    private int missionListFrames;
 
     private static boolean onTitle() {
         return Global.getCurrentState() == GameState.TITLE;
@@ -186,6 +196,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         LunaCopy.restoreIfLeft();
         wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
         ObjectiveMirror.restoreIfLeft();
+        if (missionListFrames > 0 && ++missionListFrames >= 3) { // (the list is shown as the title screen sets itself up)
+            missionListFrames = 0;
+            try {
+                if (TitleLauncher.backToMenu()) TitleMenu.forget(); // the menu is shown again: the co-op screen hides it afresh
+            } catch (Throwable t) {
+                Global.getLogger(WingmanTitlePlugin.class).warn("Wingman: could not close the game's missions list after the battle", t);
+            }
+        }
         try {
             if (!firstRunChecked) { // the very first time: show the how-to pages without being asked
                 firstRunChecked = true;
@@ -371,7 +389,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             }
             float mx0 = Global.getSettings().getMouseX(), my0 = Global.getSettings().getMouseY();
             boolean over = overButton() || overLobbyButton() || (shown != SHOWN_NONE && panel.contains(mx0, my0))
-                    || (open && lobbyOpen && TitleMenu.isHidden() && ClientLink.get().getState() == ClientLink.State.CONNECTED);
+                    || (open && lobbyOpen && TitleMenu.isHidden() && ClientLink.get().getState() == ClientLink.State.CONNECTED)
+                    || screenUp;
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
                 // A click on our button or windows must not also land on whatever the title screen has underneath.
@@ -691,6 +710,49 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         form.statusColor = Panel.WARN;
     }
 
+    /** How far down the co-op screen's header reaches this frame (windows are kept below it). */
+    private float headerBottom;
+
+    private String screenTitle() {
+        if (reportPage >= 0) return "CO-OP: MOD COMPATIBILITY";
+        if (settings.open) return "CO-OP: SETTINGS";
+        if (helpPage >= 0) return "CO-OP: HOW TO";
+        return "CO-OP";
+    }
+
+    private String screenLine(ClientLink.State state) {
+        if (state == ClientLink.State.CONNECTED) return "Connected to " + (roster != null ? roster.hostName + "'s game" : connectedTo.isEmpty() ? "the host" : connectedTo) + ".";
+        if (state == ClientLink.State.CONNECTING) return "Connecting to " + connectedTo + "...";
+        return "Not connected. Join a friend's game, or host one by starting any battle.";
+    }
+
+    /** MAIN MENU: every co-op window closed, the game's own title screen back. The connection stays. */
+    private void toMainMenu() {
+        if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
+        if (helpPage >= 0) closeHelp();
+        reportPage = -1;
+        settings.open = false;
+        cfg = WingmanConfig.load();
+        lobbyOpen = false;
+        open = false;
+        autoJoinAt = 0;
+    }
+
+    /** DISCONNECT: leave the host (or stop connecting); the connection page stays up to connect again. */
+    private void disconnect() {
+        if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
+        ClientLink.get().disconnect();
+        Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: disconnected from the host");
+        connectedRaw = null;
+        welcomed = false;
+        autoJoinAt = 0;
+        lobbyOpen = false;
+        hostLine = "";
+        form.status = "Disconnected. CONNECT joins again.";
+        form.statusColor = Panel.WARN;
+        open = true;
+    }
+
     /** A click on the corner window: a key hint or close box acts as its key; settings rows and tabs; the form's boxes. */
     private void panelClick(Panel.Hit h) {
         if (h == null) return;
@@ -731,7 +793,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     /** The CO-OP panel: joining, the host once connected, hosting from this PC, and anything to look at. */
     Panel.Doc coopDoc(ClientLink.State state, boolean canJoin) {
         String version = Mods.ownVersion();
-        Panel.Doc d = new Panel.Doc("CO-OP").note(version);
+        Panel.Doc d = new Panel.Doc("CONNECTION").note(version);
         boolean connected = state == ClientLink.State.CONNECTED;
         d.section(connected ? "Connection" : "Join a game");
         form.doc(d, state == ClientLink.State.CONNECTING);
@@ -772,7 +834,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 connected ? Panel.Doc.button("LOBBY", 62, Style.ACCENT) : null,
                 Panel.Doc.button("HOW TO", 59, Style.ACCENT), Panel.Doc.button("MODS", 60, Style.ACCENT), Panel.Doc.button("SETTINGS", 61, Style.ACCENT));
         d.keys((canJoin ? "Enter: join the battle" : form.address.length() == 0 ? "Enter: save name" : "Enter: connect")
-                + "     Tab: next field     Ctrl+V: paste     F1: how to use     F2: mods     F3: settings     Esc: close");
+                + "     Tab: next field     Ctrl+V: paste     F1: how to use     F2: mods     F3: settings     Esc: main menu");
         return d;
     }
 
@@ -824,7 +886,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             ClientLink.State state = ClientLink.get().getState();
             boolean over = overButton();
             boolean down = Mouse.isButtonDown(0);
-            if (down && !wasDown && over && helpPage < 0 && reportPage < 0 && !settings.open) {
+            if (down && !wasDown && over && !screenUp && helpPage < 0 && reportPage < 0 && !settings.open) {
                 open = !open;
                 if (open) {
                     cfg = WingmanConfig.load();
@@ -842,10 +904,27 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 }
             }
             wasDown = down;
+            // Anything of ours open: a screen of its own, the game's menu moved aside (on a small screen the menu sat
+            // over our windows). If the menu can't be moved, the windows hang from the corner as before.
+            boolean anything = open || helpPage >= 0 || reportPage >= 0 || settings.open;
+            boolean wasUp = screenUp;
+            screenUp = anything && !lobby.isBroken() && TitleMenu.hide();
+            boolean disconnectShown = state == ClientLink.State.CONNECTED || state == ClientLink.State.CONNECTING;
+            if (screenUp && down && !wasClickDown && wasUp) { // the header's buttons, as drawn last frame
+                int a = screen.hitAt(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+                if (a != 0) {
+                    sound();
+                    if (a == CoopScreen.MAIN_MENU) toMainMenu();
+                    else if (a == CoopScreen.DISCONNECT) disconnect();
+                    wasDown = down;
+                    wasClickDown = down;
+                    return; // the screen is drawn afresh next frame
+                }
+            }
             String sub = state == ClientLink.State.CONNECTED ? "connected" : state == ClientLink.State.CONNECTING ? "connecting..." : "join or host";
-            panel.button(bx(), by(), W, H, "CO-OP", sub, over || open);
+            if (!screenUp) panel.button(bx(), by(), W, H, "CO-OP", sub, over || open);
             // Connected: a LOBBY button beside it, straight to the host's fleet (when the lobby isn't up already).
-            lobbyButtonShown = state == ClientLink.State.CONNECTED && !(open && lobbyOpen);
+            lobbyButtonShown = state == ClientLink.State.CONNECTED && !(open && lobbyOpen) && !screenUp;
             if (lobbyButtonShown) {
                 boolean overL = overLobbyButton();
                 panel.button(lbx(), by(), W, H, "LOBBY", roster == null ? "the host's fleet" : roster.hostName + "'s fleet", overL);
@@ -860,8 +939,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             wasLobbyDown = down;
 
             // The lobby as a screen of its own, with the game's menu moved aside (other pages draw over it).
-            boolean full = open && lobbyOpen && state == ClientLink.State.CONNECTED && !lobby.isBroken() && TitleMenu.hide();
-            if (!full) TitleMenu.show();
+            boolean full = screenUp && open && lobbyOpen && state == ClientLink.State.CONNECTED;
+            if (!screenUp) { TitleMenu.show(); screen.clear(); }
             boolean click = down && !wasClickDown;
             float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
             if (click && shown != SHOWN_NONE && panel.contains(mx, my)) { // the corner window (drawn last frame) is on top
@@ -874,7 +953,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (lh != null) lobbyClick(lh);
                 else if (click && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
                 else if (click && lobby.page == LobbyScreen.REFIT) refitAction(lobby.refit.click(mx, my));
-                lobby.render(lobbyView());
+                LobbyScreen.View v = lobbyView();
+                v.reserveRight = CoopScreen.buttonsWidth(disconnectShown) + 14f;
+                lobby.render(v);
+                float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+                screen.buttons(sw - CoopScreen.margin(), sh - CoopScreen.margin() + 2f, disconnectShown);
+            } else if (screenUp) { // the backdrop and header under the window drawn below
+                headerBottom = screen.frame(screenTitle(), screenLine(state), state == ClientLink.State.CONNECTED ? Panel.GOOD : Panel.DIM, disconnectShown);
             }
             wasClickDown = down;
             shown = SHOWN_NONE;
@@ -884,13 +969,15 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             if (reportPage >= 0 && report != null) {
                 int pages = Math.max(1, (report.size() + REPORT_LINES - 1) / REPORT_LINES);
                 int page = Math.min(reportPage, pages - 1);
-                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), reportDoc(report, page, pages, REPORT_LINES));
+                if (screenUp) panel.renderCentred(720f, headerBottom, reportDoc(report, page, pages, REPORT_LINES));
+                else panel.renderBelow(bx() + W, by() - 6f, boxWidth(), reportDoc(report, page, pages, REPORT_LINES));
                 shown = SHOWN_REPORT;
                 return;
             }
             if (settings.open) {
                 try {
-                    panel.renderBelow(bx() + W, by() - 6f, Math.max(boxWidth(), 520f), settings.doc());
+                    if (screenUp) panel.renderCentred(680f, headerBottom, settings.doc());
+                    else panel.renderBelow(bx() + W, by() - 6f, Math.max(boxWidth(), 520f), settings.doc());
                     shown = SHOWN_SETTINGS;
                 } catch (Throwable t) { // close the page, keep the CO-OP button
                     settings.open = false;
@@ -899,7 +986,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
             if (helpPage >= 0) {
-                panel.renderBelow(bx() + W, by() - 6f, boxWidth(), helpDoc(helpPage));
+                if (screenUp) panel.renderCentred(680f, headerBottom, helpDoc(helpPage));
+                else panel.renderBelow(bx() + W, by() - 6f, boxWidth(), helpDoc(helpPage));
                 shown = SHOWN_HELP;
                 return;
             }
@@ -914,7 +1002,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             }
 
             boolean canJoin = state == ClientLink.State.CONNECTED && welcomed && form.address.toString().trim().equals(connectedRaw);
-            panel.renderBelow(bx() + W, by() - 6f, boxWidth(), coopDoc(state, canJoin));
+            if (screenUp) panel.renderCentred(640f, headerBottom, coopDoc(state, canJoin));
+            else panel.renderBelow(bx() + W, by() - 6f, boxWidth(), coopDoc(state, canJoin));
             shown = SHOWN_COOP;
         } catch (Throwable t) {
             fail(t);

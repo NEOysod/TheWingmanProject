@@ -1,4 +1,4 @@
-# The Wingman Project 0.9.1-beta — Release Notes
+# The Wingman Project 0.9.2-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,16 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.9.2-beta
+
+- **CO-OP is a screen of its own:** the connection window, how-to, mods and settings no longer sit behind the
+  game's title menu on small screens. A header has **MAIN MENU** and a red **DISCONNECT**; the lobby has them too.
+- The game's missions list no longer pops up over the lobby when a joiner leaves a battle themselves.
+- The market dialog no longer goes empty after the host accepts a friend's refit with the refit screen open.
+- **Host tethering** (host setting, off by default, Troubleshooting page): if a mod's script moves the host into an
+  enemy ship, the host is put back in their own and the log names the script. Dev mode is left alone.
+- Still protocol 60, but the host and every joiner should update together.
 
 ## New in 0.9.1-beta
 

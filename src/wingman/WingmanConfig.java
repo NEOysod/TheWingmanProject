@@ -45,6 +45,8 @@ public final class WingmanConfig {
     public boolean friendRefit = true;
     /** Host: after a friend's refit accepted under the refit screen is done, that screen opens again on the ship. */
     public boolean friendRefitReopen = true;
+    /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */
+    public boolean hostTethering = false;
     /** Joiner: while connected on the title screen, go into the host's battles as they begin, without being asked. */
     public boolean autoJoin = true;
     /** Joiner: at the start of a battle, sit down in the ship flown last time if it is there and free. */
@@ -158,6 +160,7 @@ public final class WingmanConfig {
             c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
             c.friendRefit = j.optBoolean("friendRefit", c.friendRefit);
             c.friendRefitReopen = j.optBoolean("friendRefitReopen", c.friendRefitReopen);
+            c.hostTethering = j.optBoolean("hostTethering", c.hostTethering);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
             c.playerOutlines = j.optBoolean("playerOutlines", c.playerOutlines);
@@ -218,6 +221,7 @@ public final class WingmanConfig {
         if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
         if ("friendRefit".equals(key)) return String.valueOf(friendRefit);
         if ("friendRefitReopen".equals(key)) return String.valueOf(friendRefitReopen);
+        if ("hostTethering".equals(key)) return String.valueOf(hostTethering);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
         if ("playerOutlines".equals(key)) return String.valueOf(playerOutlines);
@@ -274,6 +278,7 @@ public final class WingmanConfig {
             else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
             else if ("friendRefit".equals(key)) friendRefit = yes(value);
             else if ("friendRefitReopen".equals(key)) friendRefitReopen = yes(value);
+            else if ("hostTethering".equals(key)) hostTethering = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);
             else if ("playerOutlines".equals(key)) playerOutlines = yes(value);

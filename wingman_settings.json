@@ -77,6 +77,10 @@
     # keeps its own copy of the ship). true: the refit screen then opens again on that ship.
     "friendRefitReopen": true,
 
+    # Host tethering. true: if a mod's script moves the host's controls into an enemy ship, the host is put back in
+    # their own ship, and the log names the script (with the agent). Dev mode's own takeovers are left alone.
+    "hostTethering": false,
+
     # ---- JOINING ----
     # Only used until an address has been typed into the CO-OP panel, which then takes over.
     # 127.0.0.1 is this PC itself (two copies of the game on one machine).

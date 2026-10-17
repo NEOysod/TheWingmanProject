@@ -172,7 +172,16 @@ final class Panel {
         draw(d, boxWidth, right, top, Global.getSettings().getScreenHeight());
     }
 
-    private void draw(Doc d, float width, float right, float top, float sh) {
+    /** In the middle of the screen, but no higher than 'maxTop' (below a screen's header): the co-op screen's windows. */
+    void renderCentred(float boxWidth, float maxTop, Doc d) {
+        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        boxWidth = Math.min(boxWidth, sw - 16f);
+        draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh, maxTop);
+    }
+
+    private void draw(Doc d, float width, float right, float top, float sh) { draw(d, width, right, top, sh, sh); }
+
+    private void draw(Doc d, float width, float right, float top, float sh, float maxTop) {
         if (broken) return;
         try {
             float inner = width - PAD * 2f;
@@ -183,7 +192,7 @@ final class Panel {
             for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
             float h = Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
             float x = right - width, y;
-            if (Float.isNaN(top)) y = sh * 0.6f - h / 2f;
+            if (Float.isNaN(top)) y = Math.min(sh * 0.6f - h / 2f, maxTop - h);
             else y = top - h;
             x = Math.max(4f, x);
             y = Math.max(4f, y);

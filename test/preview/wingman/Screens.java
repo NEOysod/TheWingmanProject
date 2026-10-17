@@ -51,12 +51,10 @@ final class Screens {
             r.hostName = "NEOysod";
             set(t, "roster", r);
         }
-        float sw = UiPreview.W, sh = UiPreview.H, W = 150f, H = 46f, M = 8f;
         Panel p = new Panel(); p.mouse = true;
-        p.button(sw - W - M, sh - H - M, W, H, "CO-OP", connected ? "connected" : "join or host", true);
-        float clear = sw / 2f - 520f - M;
-        float bw = clear >= 380f ? Math.min(560f, clear) : 560f;
-        p.renderBelow(sw - M, sh - H - M - 6f, bw, t.coopDoc(connected ? ClientLink.State.CONNECTED : ClientLink.State.IDLE, connected));
+        float below = new CoopScreen().frame("CO-OP", connected ? "Connected to NEOysod's game." : "Not connected. Join a friend's game, or host one by starting any battle.",
+                connected ? Panel.GOOD : Panel.DIM, connected);
+        p.renderCentred(640f, below, t.coopDoc(connected ? ClientLink.State.CONNECTED : ClientLink.State.IDLE, connected));
     }
 
     static Panel mousePanel() { Panel p = new Panel(); p.mouse = true; return p; }
@@ -139,7 +137,9 @@ final class Screens {
         if (refit) v.refitMarket = "Jangala";
         v.note = "Picked: ISS Long Wait.";
         v.noteColor = Panel.GOOD;
+        v.reserveRight = CoopScreen.buttonsWidth(true) + 14f;
         l.render(v);
+        new CoopScreen().buttons(UiPreview.W - CoopScreen.margin(), UiPreview.H - CoopScreen.margin() + 2f, true);
     }
 
     static wingman.net.RefitData refitData() {
@@ -255,7 +255,10 @@ final class Screens {
         } }));
         out.add(new Shot("coop-join", 1920, 1080, -1, -1, new Runnable() { public void run() { coop(false); } }));
         out.add(new Shot("coop-connected", 1920, 1080, -1, -1, new Runnable() { public void run() { coop(true); } }));
+        out.add(new Shot("coop-join-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(false); } }));
+        out.add(new Shot("coop-connected-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(true); } }));
         out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 6); } }));
+        out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(3, 1); } }));
         out.add(new Shot("help", 1920, 1080, -1, -1, new Runnable() { public void run() {
             mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
         } }));

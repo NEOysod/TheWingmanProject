@@ -439,6 +439,7 @@ final class FriendRefit {
             if (pd.dialogAtAccept != null) {
                 pd.dialogAtAccept.getVisualPanel().closeCoreUI();
                 pd.framesSinceClosed = 0;
+                watch(pd.dialogAtAccept);
             }
         } catch (Throwable t) {
             pd.framesSinceClosed = -1;
@@ -452,6 +453,7 @@ final class FriendRefit {
      * refit screen opens again on the (last) ship refitted, from the market's dialog as the game's own rules open it.
      */
     static void applyWaiting() {
+        keepOptions();
         if (broken || pending.isEmpty()) return;
         try {
             com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
@@ -482,8 +484,48 @@ final class FriendRefit {
                 else last = member(pd.request.memberId);
             }
             if (last != null && reopenable && WingmanConfig.load().friendRefitReopen) reopen(last);
+            else if (last != null) Dbg.info(FriendRefit.class, "Wingman: refit screen not opened again (" + (!reopenable ? "the dialog changed" : "setting off") + ")");
         } catch (Throwable t) {
             Global.getLogger(FriendRefit.class).warn("Wingman: a friend's refit accepted under the refit screen failed", t);
+        }
+    }
+
+    /** The market dialog Wingman closed a screen of (or opened one in), watched until its options are back. */
+    private static InteractionDialogAPI watched;
+    private static int watchedFrames;
+
+    private static void watch(InteractionDialogAPI d) {
+        watched = d;
+        watchedFrames = 0;
+    }
+
+    /**
+     * After Wingman closes the host's refit screen, or opens it again, the market dialog must get its options back,
+     * as when the host closes it by hand. Some ways out don't (the screen closed from code, a reopen the game turned
+     * down, a refit that failed so nothing reopened): the dialog was left with no options and nothing to click, as
+     * if it had vanished. Once no screen is up, a dialog with no options gets the market's options again.
+     */
+    private static void keepOptions() {
+        InteractionDialogAPI d = watched;
+        if (d == null) return;
+        try {
+            com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
+            if (ui == null || ui.getCurrentInteractionDialog() != d) { watched = null; return; } // closed or replaced: not ours to fix
+            if (ui.getCurrentCoreTab() != null) return; // a screen is up: its own closing brings them back
+            if (++watchedFrames < 3) return; // the game's own listener gets the first frames
+            watched = null;
+            if (d.getOptionPanel().hasOptions()) return;
+            if (!(d.getPlugin() instanceof com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl)) {
+                Global.getLogger(FriendRefit.class).warn("Wingman: the market dialog was left without options after a friend's refit, and it isn't one Wingman can refill");
+                return;
+            }
+            Map<String, com.fs.starfarer.api.campaign.rules.MemoryAPI> memory =
+                    ((com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl) d.getPlugin()).getMemoryMap();
+            com.fs.starfarer.api.impl.campaign.rulecmd.FireAll.fire(null, d, memory, "PopulateOptions");
+            Global.getLogger(FriendRefit.class).info("Wingman: the market dialog's options were put back after a friend's refit");
+        } catch (Throwable t) {
+            watched = null;
+            Global.getLogger(FriendRefit.class).warn("Wingman: could not put the market dialog's options back after a friend's refit", t);
         }
     }
 
@@ -494,6 +536,7 @@ final class FriendRefit {
         final Map<String, com.fs.starfarer.api.campaign.rules.MemoryAPI> memory =
                 ((com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl) dialog.getPlugin()).getMemoryMap();
         dialog.getOptionPanel().clearOptions();
+        watch(dialog); // if the game doesn't open it, the options come back (keepOptions)
         dialog.getVisualPanel().showCore(com.fs.starfarer.api.campaign.CoreUITabId.REFIT, dialog.getInteractionTarget(), m,
                 tradeMode(dialog.getInteractionTarget()), new com.fs.starfarer.api.campaign.CoreInteractionListener() {
                     public void coreUIDismissed() {

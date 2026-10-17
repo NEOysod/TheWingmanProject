@@ -20,6 +20,8 @@ public final class Shared {
     /** Plugins a script added for a joiner's ship (plugin -> ship). Weak keys. */
     public static final Map<Object, Object> owners = Collections.synchronizedMap(new WeakHashMap<Object, Object>());
     /** Diagnostics: how often each hook changed an answer. */
+    /** Where a script last handed the host's player another ship itself (not for a joiner): for the host's log. */
+    public static volatile Throwable lastSet;
     public static volatile long playerShipAnswers, moves, mouseAnswers, keyAnswers, statusDropped, timeDropped, contexts, pluginsOwned,
             screenDropped, frames;
     /**

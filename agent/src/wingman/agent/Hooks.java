@@ -213,6 +213,7 @@ public final class Hooks {
             if (moved) Shared.acting = ship; // the rest of this script runs for the ship the joiner is moving to
             return;
         }
+        Shared.lastSet = new Throwable("a script handed the player another ship"); // (only where from: nothing asked of the ship)
         engine.setPlayerShipExternal(ship);
     }
 
@@ -355,6 +356,13 @@ public final class Hooks {
     }
 
     /** One line for the log. */
+    /** Where a script last handed this PC's player another ship (not for a joiner), or null; forgotten once asked. */
+    public static Throwable takeLastSet() {
+        Throwable t = Shared.lastSet;
+        Shared.lastSet = null;
+        return t;
+    }
+
     public static String report() {
         String agent = "Wingman agent";
         try { if (Shared.reportSource != null) agent = String.valueOf(Shared.reportSource.call()); } catch (Throwable t) { /* just the counts */ }

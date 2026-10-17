@@ -28,6 +28,7 @@ final class AgentLink implements Bridge {
 
     private static ShipAPI ship(Object o) { return o instanceof ShipAPI ? (ShipAPI) o : null; }
     static String report() { return Hooks.report(); }
+    static Throwable takeLastSet() { return Hooks.takeLastSet(); }
     static void recordLookups(boolean on) { Hooks.setRecording(on); }
     static java.util.Map<String, Integer> takeMisses() { return Hooks.takeMisses(); }
     static long[] polledKeys() { return Hooks.polledKeys(); }
