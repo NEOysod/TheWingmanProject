@@ -129,6 +129,12 @@ final class AgentGate {
         try { return AgentLink.polledKeys(); } catch (Throwable t) { return null; } // (an older agent: none)
     }
 
+    /** Where a mod's script last handed this PC's player another ship, or null (none, or no agent). */
+    static Throwable takeLastSet() {
+        if (!present() || failed) return null;
+        try { return AgentLink.takeLastSet(); } catch (Throwable t) { return null; } // (an older agent: unknown)
+    }
+
     /** One line for the log, or null without the agent. */
     static String report() {
         if (!present()) return null;

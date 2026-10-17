@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.2-beta
+
+Protocol 60, as before. The host and every joiner should update together (the agent changed too).
+
+- **The CO-OP panel is a screen of its own.** On a small screen the game's title menu sat over Wingman's windows. Now
+  CO-OP opens a full screen (the game's menu moved aside, as for the lobby) with the connection window in the
+  middle; how-to, mods and settings open there too. A header across the top has **MAIN MENU** (back to the game's
+  title screen; the connection stays) and, while connected or connecting, a red **DISCONNECT**. The lobby has the
+  same two buttons. If the game's menu can't be moved aside, the windows hang from the corner as before.
+- **Fixed: the game's missions list came up over the lobby** after a joiner left a battle themselves (Esc, End
+  Battle): back on the title screen, the list the join mission was started from is closed, as its own Back does.
+- **Host tethering** (host setting, off by default): if a mod's script (or a joiner's ship's
+  script run on the host) moves the host's controls into an enemy ship, the host is put straight back in their own
+  ship, and the log says what did it (with the agent, the script's own lines). Dev mode, where the game's own
+  Transfer Command can take enemy ships, is left alone.
+- **Fixed: the market dialog could be left empty after the host accepted a friend's refit** with the refit
+  screen open. Wingman closes that screen to do the refit and opens it again; when the dialog came back without
+  its options (nothing to click, as if it had vanished), they are now put back.
+
 ## 0.9.1-beta
 
 Protocol 60, as 0.9-beta. The host and every joiner should still update together: the refit and battle fixes

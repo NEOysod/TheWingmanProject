@@ -55,6 +55,8 @@ final class LobbyScreen {
 
     /** Everything the screen shows, gathered by the title plugin each frame. */
     static final class View {
+        /** Room left at the top right for the co-op screen's own buttons (see CoopScreen). */
+        float reserveRight;
         Roster roster;
         String me = "", hostLine = "", note = "", players = "";
         /** Friend refit: the market the host is docked at ("" none), and the refit screen's state. */
@@ -139,7 +141,7 @@ final class LobbyScreen {
             else { tabs.add("Fleet"); tabs.add("Last battle"); active = page == FLEET ? 0 : 1; }
             float tabsW = 0f;
             for (String t : tabs) tabsW += Style.width(t.toUpperCase(), Style.SMALL_FONT) + 30f;
-            float[] tat = Style.tabs(tabs, active, sw - m - tabsW, top + 2f, tabsW);
+            float[] tat = Style.tabs(tabs, active, sw - m - v.reserveRight - tabsW, top + 2f, tabsW); // (right of them: MAIN MENU, DISCONNECT)
             int[] pages = { FLEET, REPORT, REFIT };
             for (int i = 0; i < tabs.size(); i++) hits.add(new float[] { tat[i * 2], top + 2f - Style.TAB_H, tat[i * 2 + 1] - tat[i * 2], Style.TAB_H, TAB, pages[i], 0 });
             float y = top - titleH - 10f;
@@ -166,8 +168,8 @@ final class LobbyScreen {
             String keys = page == REFIT ? "Click: choose     Mouse wheel: scroll the lists     Esc: back"
                     : page == FLEET
                     ? "Up/Down: choose     PgUp/PgDn: page     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
-                            + (v.roster != null && v.roster.pickOf(v.me) != null && !v.hostInBattle ? "     R: refit" : "") + "     Tab: last battle     F1: how to     Esc: close"
-                    : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: close";
+                            + (v.roster != null && v.roster.pickOf(v.me) != null && !v.hostInBattle ? "     R: refit" : "") + "     Tab: last battle     F1: how to     Esc: back"
+                    : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: back";
             List<String[]> k = Style.keys(keys);
             float keysH = Style.keysHeight(k, sw - 2 * m);
             float noteH = v.note.isEmpty() ? 0f : Style.height(v.note, body, sw - 2 * m - 14f) + 12f;
@@ -203,11 +205,11 @@ final class LobbyScreen {
     }
 
     /** LunaLib's "Mod Settings" and "Version Checker" buttons: 130 wide from x 5, from 2.5% below the top, 105 tall. */
-    private static final float LUNA_BUTTONS_W = 140f, LUNA_BUTTONS_H = 110f;
+    static final float LUNA_BUTTONS_W = 140f, LUNA_BUTTONS_H = 110f;
     private static Boolean luna;
 
     /** How far right of the margin the header starts: clear of LunaLib's buttons when LunaLib is on. */
-    private static float lunaCorner() {
+    static float lunaCorner() {
         if (luna == null) {
             try { luna = Global.getSettings().getModManager().isModEnabled("lunalib"); } catch (Throwable t) { luna = Boolean.FALSE; }
         }

@@ -203,7 +203,7 @@ public class UiPreview {
                 if (n.equals("getModManager")) return proxy(com.fs.starfarer.api.ModManagerAPI.class, new InvocationHandler() {
                     public Object invoke(Object p2, Method m2, Object[] a2) {
                         if (m2.getName().equals("getModSpec")) return proxy(com.fs.starfarer.api.ModSpecAPI.class, new InvocationHandler() {
-                            public Object invoke(Object p3, Method m3, Object[] a3) { return m3.getName().equals("getVersion") ? "0.9.1-beta" : zero(m3.getReturnType()); }
+                            public Object invoke(Object p3, Method m3, Object[] a3) { return m3.getName().equals("getVersion") ? "0.9.2-beta" : zero(m3.getReturnType()); }
                         });
                         return zero(m2.getReturnType());
                     }

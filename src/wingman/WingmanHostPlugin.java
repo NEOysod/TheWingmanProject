@@ -1978,11 +1978,45 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (now == lastHostShip) return;
         ShipAPI was = lastHostShip;
         lastHostShip = now;
-        if (now == null || was == null || !was.isAlive() || was.isHulk()) return;
-        if (!now.isFighter() || linked(now, was)) return;
+        Throwable by = AgentGate.takeLastSet(); // with the agent: which script did it, if one did
+        if (now == null || was == null) return;
+        // An enemy ship is never the host's to fly (the game's own Transfer Command never picks one): something
+        // handed it over, a mod's script or a joiner's ship script run here, and the host was flying the enemy.
+        // (Dev mode lets the host take any ship, enemies included, by the game's own Transfer Command: allowed then.)
+        boolean enemy = false;
+        // Only with the host's "Host tethering" setting on (off by default).
+        try { enemy = cfg != null && cfg.hostTethering && now.getOwner() != 0 && was.getOwner() == 0 && !Global.getSettings().isDevMode(); } catch (Throwable t) { /* not known: let it be */ }
+        boolean strayFighter = now.isFighter() && !linked(now, was);
+        if (!enemy && !strayFighter) return;
+        String what = (enemy ? "an enemy ship (" : "a fighter not from the host's ship (") + now.getHullSpec().getHullId() + ")";
+        if (!was.isAlive() || was.isHulk()) {
+            if (enemy && hostShipWarnings++ < 5) Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the host was handed " + what
+                    + " after their own ship was lost; it can't be undone" + where(by));
+            return;
+        }
         engine.setPlayerShipExternal(was);
         lastHostShip = was;
-        Dbg.info(WingmanHostPlugin.class, "Wingman: a script handed the host a fighter not from the host's ship; the host stays in their own ship");
+        if (enemy) {
+            if (hostShipWarnings++ < 5) Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the host was handed " + what
+                    + "; they stay in their own ship" + where(by));
+        } else {
+            Dbg.info(WingmanHostPlugin.class, "Wingman: a script handed the host " + what + "; the host stays in their own ship");
+        }
+    }
+
+    private int hostShipWarnings;
+
+    /** Where the agent saw a script hand the player a ship: the first lines outside Wingman's agent, for the log. */
+    private static String where(Throwable by) {
+        if (by == null) return " (no script seen doing it)";
+        StringBuilder sb = new StringBuilder(", done by:");
+        int n = 0;
+        for (StackTraceElement e : by.getStackTrace()) {
+            if (e.getClassName().startsWith("wingman.agent.")) continue;
+            sb.append("\n    at ").append(e);
+            if (++n >= 10) break;
+        }
+        return sb.toString();
     }
 
     /** This fighter is from that ship (its carrier, or a hangar module of it). */

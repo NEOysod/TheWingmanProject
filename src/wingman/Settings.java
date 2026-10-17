@@ -131,6 +131,8 @@ final class Settings {
 
         ITEMS.add(new Item(3, "debugLog", "Detailed log for bug reports", BOTH, true, YES_NO,
                 "On: co-op diagnostics are written to starsector.log. Turn it on (on both PCs) before reproducing a problem."));
+        ITEMS.add(new Item(3, "hostTethering", "Host tethering", HOST, true, YES_NO,
+                "On: if a mod's script moves you into an enemy ship, you are put straight back in your own, and the log names the script. Dev mode's own takeovers are left alone."));
     }
 
     private Settings() {}

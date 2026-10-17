@@ -1362,6 +1362,7 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 | `campaignLobby` | true | host | no | Open the session on the campaign map: friends connect and pick ships before a battle (6.5) |
 | `friendRefit` | true | host | yes | Friends may refit the ship they picked while the host is docked at a market (6.8) |
 | `friendRefitReopen` | true | host | yes | After a friend's refit accepted under the refit screen is done, that screen opens again on the ship (6.8) |
+| `hostTethering` | false | host | yes | If a script moves the host's controls into an enemy ship, the host is put back in their own and the log names the script (dev mode excepted) |
 | `playerList` | true | host | yes | A small list of connected players and their picks, top right of the campaign map (not over a dialog or a core screen) |
 | `modCheck` | content | host | no | `content` (utility mods may differ), `all`, `off` |
 | `autoJoin` | true | joiner | no | Join the host's battle by itself |

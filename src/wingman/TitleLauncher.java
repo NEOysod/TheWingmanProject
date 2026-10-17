@@ -25,6 +25,20 @@ import com.fs.state.AppState;
 final class TitleLauncher {
     private TitleLauncher() {}
 
+    /** Set when the join mission was started from here: back on the title screen, the game shows its missions list. */
+    static volatile boolean launched;
+
+    /**
+     * The title screen's main menu instead of its missions list (the game opens that list on coming back from a
+     * mission, over the co-op screens), as the list's own Back does. False if not on the title screen.
+     */
+    static boolean backToMenu() {
+        AppState state = AppDriver.getInstance().getCurrentState();
+        if (!(state instanceof TitleScreenState)) return false;
+        ((TitleScreenState) state).backToMenu();
+        return true;
+    }
+
     /** Returns null if the mission is now starting, otherwise why it could not be started. */
     static String start(String missionId) {
         AppState state = AppDriver.getInstance().getCurrentState();
@@ -36,6 +50,7 @@ final class TitleLauncher {
             // Preparing the mission runs its definition script (which asks the host about its battlefield);
             // accepting it makes the title screen switch to the battle on its next frame.
             ((TitleScreenState) state).missionAccepted(new L(spec));
+            launched = true;
             return null;
         }
         return "the mission '" + missionId + "' was not found";
