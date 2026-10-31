@@ -80,7 +80,7 @@ public final class Panel {
 
         public Doc note(String n) { note = n == null ? "" : n; return this; }
         public Doc keys(String k) { keys = k == null ? "" : k; return this; }
-        Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
+        public Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
 
         /** A section heading. */
         public Doc section(String name) { blocks.add(new Block(Block.SECTION, name, null, TEXT)); return this; }
@@ -116,7 +116,7 @@ public final class Panel {
          * A row of buttons for the mouse, each doing what a key does: {label, key code, colour}, the first the main
          * one. Only shown where clicks are acted on (Panel.mouse); elsewhere the key hints say the same.
          */
-        Doc buttons(Object[]... b) {
+        public Doc buttons(Object[]... b) {
             Block bl = new Block(Block.BUTTONS, "", null, TEXT);
             for (Object[] o : b) if (o != null) bl.buttons.add(o);
             if (!bl.buttons.isEmpty()) blocks.add(bl);
@@ -180,7 +180,7 @@ public final class Panel {
     }
 
     /** In the middle of the screen, but no higher than 'maxTop' (below a screen's header): the co-op screen's windows. */
-    void renderCentred(float boxWidth, float maxTop, Doc d) {
+    public void renderCentred(float boxWidth, float maxTop, Doc d) {
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
         boxWidth = Math.min(boxWidth, sw - 16f);
         draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh * 0.6f, maxTop);

@@ -69,8 +69,9 @@
     # fleet and pick the ship they want to fly in the next battle. false: only once a battle starts.
     "campaignLobby": true,
 
-    # true: while you are docked at a market, friends get a Refit button for the ship they picked, and can send
-    # you a refit of it. Nothing changes in your campaign unless you accept it. false: no Refit button.
+    # true: friends may request refits of ships other than your flagship while you are docked at a market.
+    # Review with Ctrl+Shift+R. PLAYERS lets each connected player skip confirmation; host checks still apply.
+    # Permissions clear on reconnect or campaign load. false: no Refit button.
     "friendRefit": true,
 
     # Host tethering. true: if a mod's script moves the host's controls into an enemy ship, the host is put back in

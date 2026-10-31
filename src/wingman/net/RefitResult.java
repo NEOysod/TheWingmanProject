@@ -3,11 +3,11 @@ package wingman.net;
 import java.io.IOException;
 
 /**
- * Friend refit (Msg.REFIT_RESULT, host -> joiner): what became of a refit request. ACCEPTED: done in the host's
- * campaign; REFUSED: the host couldn't do it (the text says why).
+ * Friend refit (Msg.REFIT_RESULT, host -> joiner): RECEIVED waits for the host; ACCEPTED is done in the host's
+ * campaign; DENIED is the host's decision; REFUSED failed validation; WITHDRAWN can no longer be done.
  */
 public final class RefitResult {
-    public static final int ACCEPTED = 0, REFUSED = 1;
+    public static final int RECEIVED = 0, ACCEPTED = 1, DENIED = 2, REFUSED = 3, WITHDRAWN = 4;
     public static final int MAX_TEXT = 1000;
 
     public int status;
@@ -30,7 +30,7 @@ public final class RefitResult {
         In in = Msg.reader(data);
         RefitResult r = new RefitResult();
         r.status = in.readByte();
-        if (r.status < ACCEPTED || r.status > REFUSED) throw new IOException("unknown refit result");
+        if (r.status < RECEIVED || r.status > WITHDRAWN) throw new IOException("unknown refit result");
         String t = in.readUTF();
         if (t.length() > MAX_TEXT) throw new IOException("text too long");
         // one line each, printable characters only

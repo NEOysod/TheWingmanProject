@@ -10,7 +10,7 @@ import java.util.List;
  * in, where it comes from (the host's cargo, storage, or a submarket to buy it from) and where the one taken out
  * goes (cargo, storage, or a submarket to sell it to). Hull mods added and removed, those to build in (S-mods),
  * vents and capacitors; and the cost the joiner was shown, so the host can see if anything changed meanwhile.
- * The host checks all of it again and does it if every check passes (see wingman.host.FriendRefit).
+ * The host checks all of it again and requests approval unless that player may skip confirmation.
  */
 public final class RefitRequest {
     /** Where an item comes from or goes to, besides a submarket (by its id). */

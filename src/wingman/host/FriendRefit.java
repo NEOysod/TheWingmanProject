@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -56,17 +57,19 @@ import wingman.WingmanConfig;
  * When one opens their refit screen (Msg.REFIT_ASK), the host checks they may, then sends what the screen shows
  * (Msg.REFIT_DATA), built only from the host's campaign; again whenever it changes, until they close it.
  *
- * A request (Msg.REFIT_REQUEST) is checked against the host's campaign and, if it passes every check, done at
- * once: Wingman never opens or closes a screen of the host's for it, and the host has nothing to approve. Runs on
- * the game thread, from CampaignLobby.
+ * A request (Msg.REFIT_REQUEST) is checked against the host's campaign and waits for host approval unless that
+ * player has permission to refit without confirmation. No host screen is opened or closed. Runs on the game
+ * thread, from CampaignLobby.
  */
 public final class FriendRefit {
     private FriendRefit() {}
 
-    /** Players with the refit screen open: player id -> member id. */
-    private static final Map<Integer, String> open = new HashMap<Integer, String>();
+    /** Players with the refit screen open and the member each is refitting. */
+    private static final Map<HostSession.Player, String> open = new HashMap<HostSession.Player, String>();
     /** What each of them was last sent, to send again only on a change. */
-    private static final Map<Integer, byte[]> lastSent = new HashMap<Integer, byte[]>();
+    private static final Map<HostSession.Player, byte[]> lastSent = new HashMap<HostSession.Player, byte[]>();
+    /** Waiting requests by connection id, oldest first. */
+    static final LinkedHashMap<Integer, Pending> pending = new LinkedHashMap<Integer, Pending>();
     private static long lastChecked;
     private static boolean broken;
 
@@ -92,6 +95,18 @@ public final class FriendRefit {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    static boolean docked() { return dockedMarket() != null; }
+
+    static boolean bypass(HostSession.Player p) {
+        return live(HostSession.active(), p) && p.refitWithoutConfirmation;
+    }
+
+    static void setBypass(HostSession.Player p, boolean enabled) {
+        if (!live(HostSession.active(), p)) return;
+        p.refitWithoutConfirmation = enabled;
+        lastChecked = 0;
     }
 
     private static CoreUITradeMode tradeMode(SectorEntityToken target) {
@@ -145,55 +160,85 @@ public final class FriendRefit {
         if (broken) return;
         try {
             for (HostSession.Player p : s.getPlayers()) {
+                if (!live(s, p)) continue;
                 byte[] rq = p.refitRequest;
                 if (rq != null) { p.refitRequest = null; receive(p, rq, cfg); }
                 String ask = p.refitAsk;
                 if (ask == null) continue;
                 p.refitAsk = null;
-                if (ask.isEmpty()) { open.remove(p.id); lastSent.remove(p.id); continue; }
+                if (ask.isEmpty()) { open.remove(p); lastSent.remove(p); continue; }
                 String why = refusalToPlan(ask, cfg);
                 if (why != null) {
                     p.conn.send(Msg.NOTICE, Msg.utf("Can't refit: " + why + "."));
-                    open.remove(p.id);
+                    open.remove(p);
+                    lastSent.remove(p);
                     continue;
                 }
-                open.put(p.id, ask);
-                lastSent.remove(p.id);
+                open.put(p, ask);
+                lastSent.remove(p);
                 lastChecked = 0; // send it now
             }
-            if (open.isEmpty()) return;
+            if (open.isEmpty() && pending.isEmpty()) return;
             long now = System.currentTimeMillis();
-            if (now - lastChecked < 1000) return; // changes (a purchase, the cargo, the credits) show within a second
-            lastChecked = now;
-            for (Iterator<Map.Entry<Integer, String>> it = open.entrySet().iterator(); it.hasNext();) {
-                Map.Entry<Integer, String> e = it.next();
-                HostSession.Player p = playerById(s, e.getKey());
-                if (p == null) { it.remove(); lastSent.remove(e.getKey()); continue; }
+            boolean refresh = now - lastChecked >= 1000;
+            if (refresh) lastChecked = now;
+            if (refresh || !cfg.friendRefit) keepPending(s, cfg, refresh);
+            if (open.isEmpty() || !refresh) return;
+            for (Iterator<Map.Entry<HostSession.Player, String>> it = open.entrySet().iterator(); it.hasNext();) {
+                Map.Entry<HostSession.Player, String> e = it.next();
+                HostSession.Player p = e.getKey();
+                if (!live(s, p)) { it.remove(); lastSent.remove(p); continue; }
                 String why = refusalToPlan(e.getValue(), cfg);
                 if (why != null) { // the pick changed, or the ship can't be refitted: the joiner's screen closes on the roster
                     it.remove();
-                    lastSent.remove(p.id);
+                    lastSent.remove(p);
                     continue;
                 }
                 byte[] data = build(member(e.getValue()), dockedMarket()).encode(); // away from a market: no market, no storage
-                if (Arrays.equals(data, lastSent.get(p.id))) continue;
-                lastSent.put(p.id, data);
+                if (Arrays.equals(data, lastSent.get(p))) continue;
+                lastSent.put(p, data);
                 p.conn.send(Msg.REFIT_DATA, data);
             }
         } catch (Throwable t) {
             broken = true;
             open.clear();
             lastSent.clear();
+            for (Pending pd : pending.values()) send(pd.player, new RefitResult(RefitResult.REFUSED, "The host couldn't check your refit."));
+            pending.clear();
             Global.getLogger(FriendRefit.class).error("Wingman: friend refits stopped working and are switched off until the game is restarted", t);
         }
     }
 
-    /** The host went into a battle: no refit screen stays open. */
+    /** The host went into a battle: no refit screen or request stays open. */
     static void closeAll() {
         ExoticaRefit.clear();
         wingman.BionicsRefit.clear();
+        clearRequests("The host went into a battle.");
+    }
+
+    /** A loaded campaign starts with no requests or connection permissions from the previous campaign. */
+    public static void resetForCampaignLoad() {
+        HostSession s = HostSession.active();
+        if (s != null) for (HostSession.Player p : s.getPlayers()) p.refitWithoutConfirmation = false;
+        clearRequests("The host loaded a campaign.");
+        broken = false;
+    }
+
+    private static void clearRequests(String reason) {
+        HostSession s = HostSession.active();
+        if (s != null) for (HostSession.Player p : s.getPlayers()) {
+            Pending pd = pending.get(p.id);
+            if (p.refitRequest != null && (pd == null || pd.player != p)) {
+                send(p, new RefitResult(RefitResult.WITHDRAWN, reason));
+            }
+            p.refitRequest = null;
+            p.refitAsk = null;
+        }
+        for (Pending pd : pending.values()) send(pd.player, new RefitResult(RefitResult.WITHDRAWN, reason));
+        pending.clear();
         open.clear();
         lastSent.clear();
+        lastChecked = 0;
     }
 
     /** For ExoticaRefit: why this player can't plan a refit of that member now (docking is checked by the caller), or null. */
@@ -208,6 +253,11 @@ public final class FriendRefit {
     private static HostSession.Player playerById(HostSession s, int id) {
         for (HostSession.Player p : s.getPlayers()) if (p.id == id) return p;
         return null;
+    }
+
+    private static boolean live(HostSession s, HostSession.Player p) {
+        return s != null && p != null && !p.replaced && p.conn != null && !p.conn.isClosed()
+                && playerById(s, p.id) == p;
     }
 
     // ---- what the joiner's refit screen shows ----
@@ -459,13 +509,14 @@ public final class FriendRefit {
         return st;
     }
 
-    // ---- refit requests: received, checked, done ----
+    // ---- refit requests: received, checked, accepted or denied ----
 
-    /** One request as the host works it out: whose, for which ship, the plan, and what the checks found. */
-    private static final class Work {
+    /** A request waiting for the host, with its most recently checked plan. */
+    static final class Pending {
         HostSession.Player player;
         RefitRequest request;
         String ship = "";
+        long at;
         RefitPlan plan;
         List<String> problems = new ArrayList<String>();
         /** The ordnance points of the new loadout as the game counts them on a copy of the ship, and the most it has. */
@@ -478,39 +529,151 @@ public final class FriendRefit {
 
     private static void receive(HostSession.Player p, byte[] data, WingmanConfig cfg) {
         RefitRequest r;
-        try { r = RefitRequest.decode(data); } catch (java.io.IOException e) { return; } // garbled: nothing to answer
-        String why = refusal(r.memberId, cfg);
-        if (why != null) {
-            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + why);
-            send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + "."));
+        try { r = RefitRequest.decode(data); }
+        catch (java.io.IOException e) { return; } // garbled: nothing to answer
+        catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: a refit from " + p.name + " could not be read", t);
+            send(p, new RefitResult(RefitResult.REFUSED, "The host couldn't read that refit."));
             return;
         }
+        boolean replaced = pending.remove(p.id) != null;
+        Pending pd = new Pending();
+        pd.player = p;
+        pd.request = r;
+        pd.at = System.currentTimeMillis();
         try {
-            Work w = new Work();
-            w.player = p;
-            w.request = r;
+            String why = refusal(r.memberId, cfg);
+            if (why != null) {
+                Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + why);
+                send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + "."));
+                return;
+            }
             FleetMemberAPI m = member(r.memberId);
-            w.ship = CampaignLobby.label(m);
-            check(w, m);
-            if (w.plan.isEmpty()) {
-                Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: it changes nothing");
+            pd.ship = CampaignLobby.label(m);
+            check(pd, m);
+            if (!live(HostSession.active(), p) || p.refitRequest != null || pending.containsKey(p.id)) return;
+            if (pd.plan.isEmpty()) {
                 send(p, new RefitResult(RefitResult.REFUSED, "Nothing changes in that refit."));
                 return;
             }
-            if (!w.problems.isEmpty()) { // a request that fails a check is refused with the reason
-                Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + join(w.problems).replace('\n', ' '));
-                send(p, new RefitResult(RefitResult.REFUSED, join(w.problems)));
+            if (!pd.problems.isEmpty()) {
+                send(p, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
                 return;
             }
-            apply(w);
+            pending.put(p.id, pd);
+            if (bypass(p)) {
+                String waiting = accept(pd);
+                if (waiting != null && pending.get(p.id) == pd) {
+                    send(p, new RefitResult(RefitResult.RECEIVED, "Your refit is waiting. " + waiting));
+                }
+                return;
+            }
+            send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit"
+                    + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
+            CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+            lastChecked = 0;
         } catch (Throwable t) {
-            Global.getLogger(FriendRefit.class).warn("Wingman: a refit from " + p.name + " failed", t);
-            send(p, new RefitResult(RefitResult.REFUSED, "The host couldn't do that refit: " + t));
+            failed(pd, t);
+        }
+    }
+
+    private static void keepPending(HostSession s, WingmanConfig cfg, boolean refresh) {
+        for (Pending pd : new ArrayList<Pending>(pending.values())) {
+            if (pending.get(pd.player.id) != pd) continue;
+            if (!live(s, pd.player)) { pending.remove(pd.player.id, pd); continue; }
+            if (pd.player.refitRequest != null) continue;
+            try {
+                if (!cfg.friendRefit || refresh || pd.player.refitWithoutConfirmation) {
+                    String why = refusalToPlan(pd.request.memberId, cfg);
+                    if (why != null) {
+                        if (pending.remove(pd.player.id, pd)) {
+                            send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
+                        }
+                        continue;
+                    }
+                    if (!docked()) continue;
+                    if (pd.player.refitWithoutConfirmation) accept(pd);
+                    else check(pd, member(pd.request.memberId));
+                }
+            } catch (Throwable t) {
+                failed(pd, t);
+            }
+        }
+    }
+
+    private static void failed(Pending pd, Throwable t) {
+        Pending current = pending.get(pd.player.id);
+        if (current != null && current != pd) return;
+        pending.remove(pd.player.id, pd);
+        Global.getLogger(FriendRefit.class).warn("Wingman: a refit from " + pd.player.name + " failed", t);
+        send(pd.player, new RefitResult(RefitResult.REFUSED, "The host couldn't do that refit."));
+    }
+
+    static void deny(Pending pd) {
+        if (pd == null || pd.player == null || pending.get(pd.player.id) != pd) return;
+        if (!live(HostSession.active(), pd.player)) { pending.remove(pd.player.id, pd); return; }
+        if (pd.player.refitRequest != null) return;
+        if (pending.remove(pd.player.id, pd)) {
+            send(pd.player, new RefitResult(RefitResult.DENIED, "The host denied your refit of " + pd.ship + "."));
+        }
+    }
+
+    static String accept(Pending pd) {
+        if (pd == null || pd.player == null || pending.get(pd.player.id) != pd) return "That request is no longer waiting.";
+        if (!live(HostSession.active(), pd.player)) {
+            pending.remove(pd.player.id, pd);
+            return "That player is no longer connected.";
+        }
+        if (pd.player.refitRequest != null) return "A newer refit request is waiting to be checked.";
+        try {
+            String why = refusalToPlan(pd.request.memberId, WingmanConfig.load());
+            if (why != null) {
+                if (pending.remove(pd.player.id, pd)) {
+                    send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
+                }
+                return "It can't be done any more: " + why + ".";
+            }
+            MarketAPI market = dockedMarket();
+            if (market == null) return "Dock at a market to accept it: the refit waits until then.";
+            FleetMemberAPI m = member(pd.request.memberId);
+            check(pd, m);
+            if (pending.get(pd.player.id) != pd || !live(HostSession.active(), pd.player) || pd.player.refitRequest != null) {
+                return "That request or connection is no longer current.";
+            }
+            if (pd.plan.isEmpty()) {
+                if (pending.remove(pd.player.id, pd)) {
+                    send(pd.player, new RefitResult(RefitResult.REFUSED, "Nothing changes in that refit."));
+                }
+                return "Nothing changes in that refit.";
+            }
+            if (!pd.problems.isEmpty()) {
+                if (pending.remove(pd.player.id, pd)) send(pd.player, new RefitResult(RefitResult.REFUSED, join(pd.problems)));
+                return "It no longer passes the checks: " + pd.problems.get(0);
+            }
+            why = refusalToPlan(pd.request.memberId, WingmanConfig.load());
+            if (why != null) {
+                if (pending.remove(pd.player.id, pd)) {
+                    send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
+                }
+                return "It can't be done any more: " + why + ".";
+            }
+            if (pending.get(pd.player.id) != pd || !live(HostSession.active(), pd.player) || pd.player.refitRequest != null) {
+                return "That request or connection is no longer current.";
+            }
+            if (market != dockedMarket() || member(pd.request.memberId) != m) {
+                return "The market or ship changed: review the refit again.";
+            }
+            if (!pending.remove(pd.player.id, pd)) return "That request is no longer waiting.";
+            apply(pd);
+            return null;
+        } catch (Throwable t) {
+            failed(pd, t);
+            return "The host couldn't do that refit.";
         }
     }
 
     /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
-    private static void check(Work pd, FleetMemberAPI m) {
+    private static void check(Pending pd, FleetMemberAPI m) {
         MarketAPI market = dockedMarket();
         RefitData d = build(m, market);
         pd.plan = new RefitPlan(d, pd.request, new RefitNames(d));
@@ -574,7 +737,7 @@ public final class FriendRefit {
     }
 
     /** The request's loadout put on a variant (a copy for the checks, the new one when it is done). */
-    private static void applyTo(ShipVariantAPI v, Work pd) {
+    private static void applyTo(ShipVariantAPI v, Pending pd) {
         RefitRequest r = pd.request;
         for (RefitRequest.Change c : r.changes) {
             if (pd.plan.sameAsBefore(c)) continue;
@@ -620,8 +783,8 @@ public final class FriendRefit {
         return slot != null && !slot.isDecorative() && !slot.isSystemSlot() && !slot.isStationModule();
     }
 
-    /** A request that passed every check (receive), done as the game's refit and market screens would do it. */
-    private static void apply(Work pd) {
+    /** A request that passed every check, done as the game's refit and market screens would do it. */
+    private static void apply(Pending pd) {
         MarketAPI market = dockedMarket();
         FleetMemberAPI m = member(pd.request.memberId);
         RefitPlan plan = pd.plan;
@@ -686,7 +849,7 @@ public final class FriendRefit {
             try { ListenerUtil.reportPlayerMarketTransaction(t); } catch (Throwable x) { /* that report is missed */ }
         }
         CampaignLobby.forgetLoadout(m.getId());
-        lastSent.remove(pd.player.id); // the joiner's refit screen gets the new loadout at once
+        lastSent.remove(pd.player); // the joiner's refit screen gets the new loadout at once
         lastChecked = 0;
         int net = plan.net();
         send(pd.player, new RefitResult(RefitResult.ACCEPTED, "Your refit of " + pd.ship + " is done."));
@@ -720,6 +883,70 @@ public final class FriendRefit {
         StringBuilder sb = new StringBuilder();
         for (String s : l) sb.append(sb.length() == 0 ? "" : "\n").append(s);
         return sb.toString();
+    }
+    /** The host's view of the changes, with the game's item and hull mod names. */
+    static List<String> describe(Pending pd) {
+        List<String> out = new ArrayList<String>();
+        RefitPlan plan = pd.plan;
+        RefitData d = plan.d;
+        RefitNames names = new RefitNames(d);
+        for (RefitRequest.Change c : pd.request.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String old = plan.before(c), now = plan.after(c);
+            String place;
+            if (c.wing) {
+                int bay;
+                try { bay = Integer.parseInt(c.place) + 1; } catch (NumberFormatException e) { bay = 0; }
+                place = "Bay " + (bay > 0 ? String.valueOf(bay) : c.place);
+            } else {
+                int slash = c.place.indexOf('/');
+                place = slash < 0 ? "Slot " + c.place : "Module " + c.place.substring(0, slash) + ", slot " + c.place.substring(slash + 1);
+                RefitData.Slot slot = d.slot(c.place);
+                if (slot != null && !slot.size.isEmpty() && !slot.type.isEmpty()) {
+                    place += " (" + slot.size.toLowerCase() + " " + slot.type.toLowerCase().replace('_', ' ') + ")";
+                }
+            }
+            RefitData.Market from = d.market(c.from);
+            String in = now == null ? "empty" : names.item(now) + " (" + (from != null
+                    ? "bought at " + names.source(c.from) + ", " + Math.round(d.buyPrice(from, now)) + " cr"
+                    : "from " + names.source(c.from)) + ")";
+            String to = c.to.isEmpty() ? RefitRequest.CARGO : c.to;
+            RefitData.Market destination = d.market(to);
+            String outTo = old == null ? "" : "; " + names.item(old) + (destination != null
+                    ? " sold at " + names.source(to) + ", " + Math.round(d.sellPrice(destination, old)) + " cr"
+                    : " to " + names.source(to));
+            out.add(place + ": " + in + outTo);
+        }
+        for (String id : pd.request.removeMods) out.add("Hull mod off: " + names.mod(id));
+        for (String id : pd.request.addMods) out.add("Hull mod on: " + names.mod(id));
+        for (String id : pd.request.buildIn) out.add("Built in (S-mod, 1 story point): " + names.mod(id));
+        if (pd.request.vents != d.vents) out.add("Flux vents: " + d.vents + " -> " + pd.request.vents);
+        if (pd.request.caps != d.caps) out.add("Flux capacitors: " + d.caps + " -> " + pd.request.caps);
+        if (plan.groupsChanged()) {
+            List<RefitData.Group> groups = plan.groupsAfter();
+            Set<String> ungrouped = new LinkedHashSet<String>(plan.armedSlots());
+            if (groups.isEmpty()) out.add("Weapon groups: none selected.");
+            for (int i = 0; i < groups.size(); i++) {
+                RefitData.Group group = groups.get(i);
+                out.add("Weapon group " + (i + 1) + ": " + (group.alternating ? "alternating" : "linked")
+                        + ", autofire " + (group.autofire ? "on" : "off") + ".");
+                for (String slot : group.slots) {
+                    ungrouped.remove(slot);
+                    out.add("  " + groupSlot(pd, names, slot));
+                }
+            }
+            if (!ungrouped.isEmpty()) {
+                out.add("Ungrouped weapons get groups assigned by the game:");
+                for (String slot : ungrouped) out.add("  " + groupSlot(pd, names, slot));
+            }
+        }
+        return out;
+    }
+
+    private static String groupSlot(Pending pd, RefitNames names, String slot) {
+        RefitRequest.Change change = pd.request.change(slot, false);
+        String weapon = change == null ? pd.plan.d.weaponIn(slot) : change.item;
+        return "Slot " + slot + (weapon == null || weapon.isEmpty() ? "" : ": " + names.item(RefitData.key(RefitData.WEAPON, weapon)));
     }
 
 }

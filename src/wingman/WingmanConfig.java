@@ -41,7 +41,7 @@ public final class WingmanConfig {
     public boolean predictOwnShip = true;
     /** Host: open the co-op session on the campaign map, so friends can connect and pick ships before a battle. */
     public boolean campaignLobby = true;
-    /** Host: friends may refit the ship they picked while the host is docked at a market (each refit it checks is done). */
+    /** Host: friends may request refits while docked; the host decides which players may skip confirmation. */
     public boolean friendRefit = true;
     /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */
     public boolean hostTethering = false;

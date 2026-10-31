@@ -52,7 +52,7 @@ public final class Settings {
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
-                "On: while you are docked at a market, friends get a Refit button for the ship they picked. A refit that passes the checks is done at once, at your cost (cargo, credits, story points); no screen is opened or closed for you."));
+                "On: friends may refit ships other than your flagship while you are docked at a market. Review requests with Ctrl+Shift+R, or let individual players skip confirmation there. Host checks and costs (cargo, credits, story points) still apply; no host screen is opened or closed."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,

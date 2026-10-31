@@ -40,8 +40,10 @@ each fly a ship from the host's fleet, side by side, in real time.
 - **CO-OP is a screen of its own:** the connection window, how-to, mods and settings no longer sit behind the
   game's title menu on small screens. A header has **MAIN MENU** and a red **DISCONNECT**; the lobby has them too.
 - The game's missions list no longer pops up over the lobby when a joiner leaves a battle themselves.
-- A friend's refit is done at once when the host's checks pass: there is no approval step, and Wingman never
-  opens or closes a screen of the host's. The market dialog no longer goes empty afterwards.
+- **Friend refit approval:** requests wait for the host to accept or deny them. Open **FRIEND REFITS** with
+  **Ctrl+Shift+R** to review changes and costs, or use **PLAYERS** to let selected players skip confirmation.
+  Host validation still applies. Permissions last for the current connection and clear on reconnect or campaign
+  load. Wingman never opens or closes the host's screens.
 - **Host tethering** (host setting, off by default, Troubleshooting page): if a mod's script moves the host into an
   enemy ship, the host is put back in their own and the log names the script. Dev mode is left alone.
 - **PatchLib is now required** (every PC). Wingman's "player ship" hooks are built into the mod on top of it, so
@@ -51,7 +53,7 @@ each fly a ship from the host's fleet, side by side, in real time.
   otherwise described by its hull id alone, so both ends disagreed on whether it counted as a fighter. Before
   this, the battle check saw one ship more here and one fighter fewer than the host, and asked for a full
   refresh every twenty seconds for the rest of the battle — a refresh that could not repair it.
-- Protocol 65 requires the host and every joiner to update together.
+- Protocol 66 requires the host and every joiner to update together.
 
 ## New in 0.9.1-beta
 

@@ -50,6 +50,8 @@ public final class HostSession {
         public String refitAsk;
         /** Friend refit: the latest refit request from this player (Msg.REFIT_REQUEST, undecoded), waiting for the game thread. */
         public byte[] refitRequest;
+        /** Host permission for this connection only; never inherited by a reconnect or saved campaign. */
+        public boolean refitWithoutConfirmation;
         /** Officer skill requests, decoded and queued by pump() on the game thread; strictly bounded. */
         public final java.util.ArrayDeque<OfficerSkillRequest> officerSkillRequests = new java.util.ArrayDeque<OfficerSkillRequest>();
         long officerSkillWindow;

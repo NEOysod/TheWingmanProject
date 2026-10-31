@@ -118,7 +118,7 @@ public final class RefitScreen {
             if (req != null) Drafts.forget(req.memberId);
             req = null;
             data = null;
-        } else statusColor = Panel.BAD;
+        } else statusColor = r.status == RefitResult.RECEIVED ? Panel.WARN : Panel.BAD;
         status = r.text;
     }
 
@@ -1833,7 +1833,7 @@ public final class RefitScreen {
         bx = button(bx, y, 110f, h, "BACK", Panel.TEXT, true, B_BACK) + 16f;
         String say = !status.isEmpty() ? status.replace('\n', ' ')
                 : !docked() ? "Planning: your plan is kept. Send it once the host docks at a market."
-                : plan.isEmpty() ? "Change something, then send it. The host checks it and does it if it passes; nothing changes until then."
+                : plan.isEmpty() ? "Change something, then send it. The host approves it unless you may skip confirmation."
                 : !plan.allProblems().isEmpty() ? "Fix what is in red first." : "Ready to send.";
         ui.text(say, ui.body, !status.isEmpty() ? statusColor : ready ? Panel.GOOD : Panel.DIM, bx, y + h - 6f, x + w - bx);
     }

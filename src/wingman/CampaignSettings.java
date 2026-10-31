@@ -21,15 +21,20 @@ import wingman.host.Hosting;
  * open for friends (see CampaignLobby) takes it up when the page closes. Registered on each game load as a
  * transient listener: nothing of it goes into the save.
  */
-final class CampaignSettings implements CampaignInputListener, CampaignUIRenderingListener {
+public final class CampaignSettings implements CampaignInputListener, CampaignUIRenderingListener {
     private final Settings.Menu menu = new Settings.Menu();
     private final Panel panel = new Panel();
     { panel.mouse = true; } // clicks on it are acted on
     private boolean broken, wasPaused;
+    private static CampaignSettings active;
+
+    public static boolean isOpen() { return active != null && active.menu.open; }
 
     static void install() {
         try {
-            Global.getSector().getListenerManager().addListener(new CampaignSettings(), true);
+            CampaignSettings page = new CampaignSettings();
+            Global.getSector().getListenerManager().addListener(page, true);
+            active = page;
         } catch (Throwable t) {
             Global.getLogger(CampaignSettings.class).warn("Wingman: the settings page can't be opened on the campaign map (use the title screen or a battle)", t);
         }

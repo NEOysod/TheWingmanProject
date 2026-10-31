@@ -417,7 +417,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                             refitData = null;
                             c.send(Msg.REFIT_ASK, Msg.utf(refitMember));
                         }
-                        if (refitMember.isEmpty() || r.status == wingman.net.RefitResult.ACCEPTED) {
+                        if (refitMember.isEmpty() || r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED) {
                             note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED ? Panel.GOOD : Panel.WARN);
                         }
                     } catch (java.io.IOException e) { /* skipped */ }
