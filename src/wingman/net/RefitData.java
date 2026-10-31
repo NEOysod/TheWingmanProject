@@ -43,6 +43,24 @@ public final class RefitData {
         public List<String> cantBuy = new ArrayList<String>(), cantSell = new ArrayList<String>();
     }
 
+    /** A weapon group as the ship's variant has it: its slots in order, linked or alternating, autofire by default. */
+    public static final class Group {
+        public boolean alternating, autofire;
+        public List<String> slots = new ArrayList<String>();
+        public Group() {}
+        public Group(boolean alternating, boolean autofire) { this.alternating = alternating; this.autofire = autofire; }
+        public Group copy() { Group g = new Group(alternating, autofire); g.slots.addAll(slots); return g; }
+        @Override public boolean equals(Object o) {
+            if (!(o instanceof Group)) return false;
+            Group g = (Group) o;
+            return alternating == g.alternating && autofire == g.autofire && slots.equals(g.slots);
+        }
+        @Override public int hashCode() { return slots.hashCode() * 4 + (alternating ? 2 : 0) + (autofire ? 1 : 0); }
+    }
+
+    /** The most groups the codec carries; the game's own limit (RefitPlan.MAX_GROUPS) is checked apart. */
+    public static final int MAX_GROUPS_WIRE = 20;
+
     // ---- the ship ----
     public String market = "", memberId = "", hullId = "", hullSize = "";
     /** Ordnance points the ship has and uses, with the host's skills. */
@@ -73,6 +91,11 @@ public final class RefitData {
     public Map<String, Integer> modCosts = new LinkedHashMap<String, Integer>();
     /** Hull mods that can't be built in (tagged no_build_in). */
     public List<String> noBuildIn = new ArrayList<String>();
+    /** The ship's weapon groups; hasGroups is false when the host's build didn't send them (an older Wingman). */
+    public boolean hasGroups;
+    public List<Group> groups = new ArrayList<Group>();
+    /** The hull in each station module slot (display only; sent after the groups). */
+    public List<String> moduleSlots = new ArrayList<String>(), moduleHulls = new ArrayList<String>();
 
     public static String key(int kind, String id) { return (kind == WING ? "f:" : "w:") + id; }
 
@@ -118,6 +141,30 @@ public final class RefitData {
             out.writeUTF(cap(it.id, 100));
             out.writeVarInt(Math.max(0, Math.min(MAX_COUNT, it.count)));
         }
+    }
+
+    /** Weapon groups, appended after the older fields so a peer that doesn't know them ignores them. */
+    static void writeGroups(Out o, List<Group> l) throws IOException {
+        int n = Math.min(l.size(), MAX_GROUPS_WIRE);
+        o.writeVarInt(n);
+        for (int i = 0; i < n; i++) {
+            Group g = l.get(i);
+            o.writeByte((g.alternating ? 1 : 0) | (g.autofire ? 2 : 0));
+            writeStrings(o, g.slots, MAX_SLOTS, 100);
+        }
+    }
+
+    static List<Group> readGroups(In in) throws IOException {
+        int n = count(in, MAX_GROUPS_WIRE, "weapon groups");
+        List<Group> l = new ArrayList<Group>(n);
+        for (int i = 0; i < n; i++) {
+            int f = in.readByte();
+            if ((f & ~3) != 0) throw new IOException("unknown weapon group flags");
+            Group g = new Group((f & 1) != 0, (f & 2) != 0);
+            readStrings(in, g.slots, MAX_SLOTS, 100, "grouped weapons");
+            l.add(g);
+        }
+        return l;
     }
 
     public byte[] encode() {
@@ -167,6 +214,12 @@ public final class RefitData {
             writeInts(o, opCosts, MAX_VALUES);
             writeInts(o, modCosts, MAX_MODS);
             writeStrings(o, noBuildIn, MAX_MODS, 100);
+            if (hasGroups) {
+                writeGroups(o, groups);
+                int nmod = Math.min(Math.min(moduleSlots.size(), moduleHulls.size()), MAX_SLOTS);
+                o.writeVarInt(nmod);
+                for (int k = 0; k < nmod; k++) { o.writeUTF(cap(moduleSlots.get(k), 100)); o.writeUTF(cap(moduleHulls.get(k), 100)); }
+            }
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -256,6 +309,11 @@ public final class RefitData {
         readInts(in, d.opCosts, MAX_VALUES);
         readInts(in, d.modCosts, MAX_MODS);
         readStrings(in, d.noBuildIn, MAX_MODS, 100, "hull mods");
+        if (in.remaining() > 0) { d.groups = readGroups(in); d.hasGroups = true; }
+        if (in.remaining() > 0) { // modules, after the groups, for the same reason
+            int nmod = count(in, MAX_SLOTS, "modules");
+            for (int i = 0; i < nmod; i++) { d.moduleSlots.add(id(in, 100)); d.moduleHulls.add(id(in, 100)); }
+        }
         return d;
     }
 
@@ -277,6 +335,17 @@ public final class RefitData {
         int i = fitSlots.indexOf(slot);
         return i < 0 ? null : fitWeapons.get(i);
     }
+
+    /** A module's weapon slot is "module slot/slot"; this is the hull the place is on: the module's, else the ship's (null if unknown). */
+    public String hullOf(String place) {
+        int bar = place.indexOf('/');
+        if (bar < 0) return hullId;
+        int k = moduleSlots.indexOf(place.substring(0, bar));
+        return k < 0 || k >= moduleHulls.size() ? null : moduleHulls.get(k);
+    }
+
+    /** The slot's id on its own hull. */
+    public static String local(String place) { return place.substring(place.indexOf('/') + 1); }
 
     public static int count(List<Item> l, String key) {
         int n = 0;

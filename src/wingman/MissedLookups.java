@@ -10,7 +10,7 @@ import wingman.net.CampaignCopy;
 
 /**
  * The campaign questions mods' battle scripts asked on this (joiner's) PC that the stand-in campaign couldn't
- * answer: memory keys and the sector's saved data. Listed by the agent's hooks (only with the agent), written
+ * answer: memory keys and the sector's saved data. Listed by Wingman's hooks (only with PatchLib), written
  * to the log when the battle is left, split into what the host has but couldn't send (not plain data) and
  * what wasn't in the copy at all. It tells what a mod list needs copied; it changes nothing.
  */
@@ -26,7 +26,7 @@ final class MissedLookups {
             AgentGate.recordLookups(false);
             AgentGate.recordedThisBattle = false;
             Map<String, Integer> misses = AgentGate.takeMisses();
-            if (misses == null) return; // no agent: nothing was listed
+            if (misses == null) return; // no hooks: nothing was listed
             if (!recorded) {
                 Global.getLogger(MissedLookups.class).info("Wingman campaign lookups: not recorded in this battle (no stand-in campaign: the host's battle wasn't a campaign one)");
                 return;

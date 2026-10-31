@@ -3,11 +3,11 @@ package wingman;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipAPI;
 
-import wingman.agent.Bridge;
-import wingman.agent.Hooks;
+import wingman.patch.Bridge;
+import wingman.patch.Hooks;
 
 /**
- * Wingman's agent on a joiner's PC (see AgentLink for the host's side). Here the ships other people fly (the
+ * Wingman's hooks on a joiner's PC (see AgentLink for the host's side). Here the ships other people fly (the
  * host's and the other joiners', marked {@code wingman_remote}) are the acting ships: a mod's script running
  * for one of them sees it as "the player's ship", as it is on its pilot's screen, and aims where that pilot
  * points. It can't move anyone: who flies what is the host's to decide. Only ever loaded through AgentGate.
@@ -24,7 +24,7 @@ final class JoinerAgentLink implements Bridge {
 
     public boolean moveRemote(Object from, Object to) {
         if (movesIgnored++ < 5) {
-            Global.getLogger(JoinerAgentLink.class).info("Wingman agent: a script here tried to hand " + nameOf(from)
+            Global.getLogger(JoinerAgentLink.class).info("Wingman hooks: a script here tried to hand " + nameOf(from)
                     + "'s ship over to another; not done here (the host's game does it for them)");
         }
         return false;

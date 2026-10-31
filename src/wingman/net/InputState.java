@@ -32,7 +32,7 @@ public final class InputState {
     public int sysOrders;
     /**
      * Other keys the player is holding that mods' scripts for their ship ask about (a hullmod's ability on a
-     * hotkey, say), as key codes; at most MAX_KEYS. See Hooks.isKeyDown in the agent.
+     * hotkey, say), as key codes; at most MAX_KEYS. See Patches.Keys in wingman.patch.
      */
     public int[] keys = NO_KEYS;
     public static final int MAX_KEYS = 8;

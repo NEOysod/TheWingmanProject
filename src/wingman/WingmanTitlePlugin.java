@@ -46,6 +46,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private long autoJoinAt;
     private boolean autoJoinSkip;
     private String withHost = "";
+    /** The host's campaign date and its latest notifications (Msg.NEWS), shown in the lobby. */
+    private String campaignDate = "";
+    private final java.util.List<String> news = new java.util.ArrayList<String>();
+    private static final int MAX_NEWS = 5;
+    /** The host's campaign map (Msg.MAP) and when it came, for the lobby's CAMPAIGN window. */
+    private wingman.net.CampaignMap campaignMap;
+    private long campaignMapAt;
 
     private final Panel panel = new Panel();
     { panel.mouse = true; } // clicks on it are acted on
@@ -86,6 +93,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private static final int LOBBY_ROWS = 9;
     /** The lobby as a screen of its own (the game's menu moved aside); the corner box if that can't be done. */
     private final LobbyScreen lobby = new LobbyScreen();
+    /** Roster snapshot used by the open skill menu; never an authoritative officer. */
+    private wingman.net.Roster.Member skillTarget;
     /** The co-op pages as a screen of their own (header with MAIN MENU / DISCONNECT), with the game's menu moved aside. */
     private final CoopScreen screen = new CoopScreen();
     /** Whether a co-op screen covered the title screen last frame (its clicks are ours alone). */
@@ -138,6 +147,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void init(CombatEngineAPI engine) {
+        closeOfficerSkills();
         TitleMenu.forget(); // a fresh title screen shows its own menu
         if (TitleLauncher.launched) { TitleLauncher.launched = false; missionListFrames = 1; } // back from the join mission
     }
@@ -191,10 +201,18 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
-        if (broken || !onTitle()) return;
+        if (broken || !onTitle()) { closeOfficerSkills(); return; }
+        OfficerSkillMenu.advance(amount);
+        if (!OfficerSkillMenu.isOpen()) skillTarget = null;
+        String skillError = OfficerSkillMenu.takeError();
+        if (skillError != null) note(skillError, Panel.WARN);
         CampaignStandIn.removeIfLeft(); // back on the title screen however the battle was left
         LunaCopy.restoreIfLeft();
+        ExoticaRefit.register();
         wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
+        ExoticaRefit.frame(amount);
+        String exoticaNote = ExoticaRefit.takeNote();
+        if (exoticaNote != null) note(exoticaNote, ExoticaRefit.noteIsGood() ? Panel.GOOD : Panel.WARN);
         ObjectiveMirror.restoreIfLeft();
         if (missionListFrames > 0 && ++missionListFrames >= 3) { // (the list is shown as the title screen sets itself up)
             missionListFrames = 0;
@@ -252,7 +270,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 }
                 if (state == ClientLink.State.CONNECTED) { form.status = "Connected to " + connectedTo + "."; form.statusColor = Panel.GOOD; }
                 if (state != ClientLink.State.CONNECTED) {
-                    welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null;
+                    welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null; campaignDate = ""; news.clear(); campaignMap = null;
+                    closeOfficerSkills();
+                    ExoticaRefit.close(false);
                     lobby.refit.saveDraft(); refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
                 }
                 lastState = state;
@@ -297,6 +317,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 } else if (p.type == Msg.BATTLE_INFO) {
                     BattleInfo b = BattleInfo.decode(p.data);
                     JoinSetup.remember(b); // the join mission builds its map from this
+                    closeOfficerSkills();
+                    ExoticaRefit.close(false);
                     closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
                     hostLine = "The host is in a battle right now (map " + Math.round(b.width) + " x " + Math.round(b.height) + ").";
                     if (cfg == null) cfg = WingmanConfig.load();
@@ -314,6 +336,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     leftOnPurpose = false;
                 } else if (p.type == Msg.ROSTER) { // the host's fleet and who picked what (pre-battle lobby)
                     roster = wingman.net.Roster.decode(p.data);
+                    if (OfficerSkillMenu.isOpen() && !skillTargetCurrent()) {
+                        closeOfficerSkills();
+                        note("The linked officer changed, so the skill menu closed. Open it again for the current choices.", Panel.WARN);
+                    }
                     welcomed = true;
                     if (cfg == null) cfg = WingmanConfig.load();
                     wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg.playerName));
@@ -331,6 +357,20 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         open = true;
                         if (mine != null) lobbyAt = roster.members.indexOf(mine);
                     }
+                } else if (p.type == Msg.NEWS) { // the host's campaign date, and what its campaign has told it lately
+                    try {
+                        wingman.net.News n = wingman.net.News.decode(p.data);
+                        campaignDate = n.date;
+                        for (String item : n.items) {
+                            news.add(item);
+                            if (news.size() > MAX_NEWS) news.remove(0);
+                        }
+                    } catch (java.io.IOException e) { /* a garbled one is skipped: the next one carries the date again */ }
+                } else if (p.type == Msg.MAP) { // what the host's campaign map shows
+                    try {
+                        campaignMap = wingman.net.CampaignMap.decode(p.data);
+                        campaignMapAt = System.currentTimeMillis();
+                    } catch (java.io.IOException e) { /* a garbled one is skipped: another follows in half a second */ }
                 } else if (p.type == Msg.NOTICE) { // the host's answer to a pick (or a refit) it can't grant
                     lobbyNote = Msg.readUtf(p.data);
                     lobbyNoteColor = Panel.WARN;
@@ -387,6 +427,20 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 events = all;
                 clicked.clear();
             }
+            if (OfficerSkillMenu.isOpen()) {
+                OfficerSkillMenu.input(events);
+                // Even the event that closes the modal must not reach the lobby underneath.
+                for (InputEventAPI e : events) if (!e.isConsumed()) e.consume();
+                wasDown = wasClickDown = wasLobbyDown = Mouse.isButtonDown(0);
+                return;
+            }
+            if (ExoticaRefit.isOpen()) { // Exotica's menu takes everything; Escape closes it
+                for (InputEventAPI e : events) {
+                    if (!e.isConsumed() && e.isKeyboardEvent() && e.isKeyDownEvent() && e.getEventValue() == 1) { ExoticaRefit.close(true); e.consume(); break; }
+                }
+                ExoticaRefit.input(events);
+                return;
+            }
             float mx0 = Global.getSettings().getMouseX(), my0 = Global.getSettings().getMouseY();
             boolean over = overButton() || overLobbyButton() || (shown != SHOWN_NONE && panel.contains(mx0, my0))
                     || (open && lobbyOpen && TitleMenu.isHidden() && ClientLink.get().getState() == ClientLink.State.CONNECTED)
@@ -436,6 +490,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (lobbyOpen && open && ClientLink.get().getState() == ClientLink.State.CONNECTED) { // the lobby takes every key while it is up
                     if (e.isKeyDownEvent()) lobbyKey(e.getEventValue(), e.getEventChar(), e.isCtrlDown(), e.isShiftDown());
                     e.consume();
+                    if (OfficerSkillMenu.isOpen()) {
+                        for (InputEventAPI pending : events) if (!pending.isConsumed()) pending.consume();
+                        wasDown = wasClickDown = wasLobbyDown = Mouse.isButtonDown(0);
+                        return;
+                    }
                     continue;
                 }
                 if (!open || !e.isKeyDownEvent()) continue;
@@ -523,7 +582,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
-    /** Keys on the lobby page: Up/Down choose, F (or Enter on the map) pick, Delete no pick, Enter join, Esc back. */
+    /** Lobby keys: Up/Down choose, F/Enter pick, K officer skill, Delete unpick, Enter join battle, Esc back. */
     private void lobbyKey(int key, char ch, boolean ctrl, boolean shift) {
         int n = roster == null ? 0 : roster.members.size();
         int page = TitleMenu.isHidden() ? lobby.rows : LOBBY_ROWS;
@@ -531,6 +590,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             refitAction(lobby.refit.key(key, ch, ctrl, shift));
             return;
         }
+        if (key == org.lwjgl.input.Keyboard.KEY_K && lobby.page == LobbyScreen.FLEET) { openOfficerSkills(); return; }
         if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
         if (key == 59) { helpPage = 0; return; }                                       // F1
@@ -557,6 +617,75 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     private void note(String text, java.awt.Color color) { lobbyNote = text; lobbyNoteColor = color; }
 
+    private void closeOfficerSkills() {
+        OfficerSkillMenu.close();
+        skillTarget = null;
+    }
+
+    private boolean skillTargetCurrent() {
+        if (skillTarget == null || roster == null || roster.hostState != 0) return false;
+        String me = OfficerPlayerBinding.identity(cfg == null ? "" : cfg.playerName);
+        for (wingman.net.Roster.Member member : roster.members) {
+            if (member.id.equals(skillTarget.id) && member.officerId.equals(skillTarget.officerId)
+                    && member.skillRevision == skillTarget.skillRevision
+                    && !me.isEmpty() && me.equals(OfficerPlayerBinding.identity(member.follows))) return true;
+        }
+        return false;
+    }
+
+    /** Open only the selected card's linked officer; the host still authorizes every submitted choice. */
+    private void openOfficerSkills() {
+        if (roster == null || roster.hostState != 0 || roster.members.isEmpty()) return;
+        String me = OfficerPlayerBinding.identity(cfg == null ? "" : cfg.playerName);
+        final wingman.net.Roster.Member member = roster.members.get(Math.max(0, Math.min(roster.members.size() - 1, lobbyAt)));
+        if (me.isEmpty() || !me.equals(OfficerPlayerBinding.identity(member.follows))
+                || member.officerId.isEmpty() || member.skillChoices.isEmpty()) return;
+        if (ClientLink.get().getState() != ClientLink.State.CONNECTED || OfficerSkillMenu.isOpen()) return;
+        try {
+            skillTarget = member;
+            boolean opened = OfficerSkillMenu.open(skillPresentation(member), member.skillChoices, new OfficerSkillMenu.Callback() {
+                public void selected(String skillId) {
+                    if (ClientLink.get().getState() != ClientLink.State.CONNECTED || !skillTargetCurrent()
+                            || !member.skillChoices.contains(skillId)) {
+                        note("That officer's choices changed. Open the skill menu again.", Panel.WARN);
+                        return;
+                    }
+                    ClientLink.get().sendOfficerSkillPick(member.id, member.officerId, member.skillRevision, skillId);
+                    note("Skill choice sent to the host.", Panel.DIM);
+                    skillTarget = null;
+                }
+            });
+            if (opened) sound();
+            else {
+                skillTarget = null;
+                String error = OfficerSkillMenu.takeError();
+                note(error == null ? "The native officer skill menu could not be opened." : error, Panel.WARN);
+            }
+        } catch (Throwable t) {
+            closeOfficerSkills();
+            Global.getLogger(WingmanTitlePlugin.class).warn("Wingman: could not open the native officer skill menu", t);
+            note("The native officer skill menu could not be opened (see the log).", Panel.WARN);
+        }
+    }
+
+    /** A detached display copy: the native skill menu must never edit a real campaign officer here. */
+    private static com.fs.starfarer.api.characters.PersonAPI skillPresentation(wingman.net.Roster.Member member) {
+        com.fs.starfarer.api.characters.PersonAPI person = Global.getFactory().createPerson();
+        person.setId(member.officerId);
+        person.setName(new com.fs.starfarer.api.characters.FullName(member.officer, "",
+                com.fs.starfarer.api.characters.FullName.Gender.ANY));
+        if (!member.portrait.isEmpty()) person.setPortraitSprite(member.portrait);
+        if (!member.personality.isEmpty()) person.setPersonality(member.personality);
+        person.getStats().setLevel(member.officerLevel);
+        for (String skill : member.skills) {
+            int split = skill.lastIndexOf(':');
+            if (split <= 0) throw new IllegalArgumentException("Invalid officer skill in the host's roster");
+            person.getStats().setSkillLevel(skill.substring(0, split), Float.parseFloat(skill.substring(split + 1)));
+        }
+        person.addTag(OfficerPlayerBinding.TAG_PREFIX + OfficerPlayerBinding.identity(member.follows));
+        return person;
+    }
+
     /** Friend refit: open the refit screen on the ship we picked, and ask the host for what it shows. */
     private void openRefit() {
         String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
@@ -578,6 +707,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     /** What the refit screen asked for: close it, or send the refit to the host. */
     private void refitAction(int action) {
         if (action == RefitScreen.CLOSE) closeRefit(null);
+        else if (action == RefitScreen.EXOTICA) { if (refitData != null && !refitMember.isEmpty()) ExoticaRefit.ask(refitMember); }
         else if (action == RefitScreen.SEND) {
             Conn c = ClientLink.get().getConn();
             if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
@@ -588,6 +718,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     /** Close the refit screen (telling the host), with a note why if it wasn't the player's doing. */
     private void closeRefit(String why) {
         if (refitMember.isEmpty()) return;
+        ExoticaRefit.close(true);
         lobby.refit.saveDraft();
         refitMember = "";
         refitData = null;
@@ -630,6 +761,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             v.hostLine = "Connected. The host is not in a battle yet.";
         }
         v.players = withHost.isEmpty() ? "" : "In this game: " + withHost;
+        v.date = campaignDate;
+        v.news = new java.util.ArrayList<String>(news);
+        v.map = campaignMap;
+        v.mapAt = campaignMapAt;
         v.note = lobbyNote;
         v.noteColor = lobbyNoteColor;
         v.refitMarket = roster == null ? "" : roster.refitMarket;
@@ -693,6 +828,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
      * mission from the Missions screen, which always works.
      */
     private void join() {
+        closeOfficerSkills();
         String problem;
         try {
             problem = TitleLauncher.start("wingman_join");
@@ -728,6 +864,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     /** MAIN MENU: every co-op window closed, the game's own title screen back. The connection stays. */
     private void toMainMenu() {
+        closeOfficerSkills();
         if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
         if (helpPage >= 0) closeHelp();
         reportPage = -1;
@@ -740,6 +877,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     /** DISCONNECT: leave the host (or stop connecting); the connection page stays up to connect again. */
     private void disconnect() {
+        closeOfficerSkills();
         if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
         ClientLink.get().disconnect();
         Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: disconnected from the host");
@@ -777,6 +915,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             lastRowClickAt = now;
             lobbyAt = value;
             if (twice) lobbyKey(33, (char) 0, false, false); // a double click picks it
+        } else if (kind == LobbyScreen.SELECT) {
+            lobbyAt = value; // the cursor goes to the player's own ship
+        } else if (kind == LobbyScreen.SCROLL) {
+            float[] t = lobby.scrollTrack;
+            if (t != null && roster != null && !roster.members.isEmpty()) { // the top of the track is the first ship
+                float f = 1f - (Global.getSettings().getMouseY() - t[1]) / t[3];
+                lobbyAt = Math.max(0, Math.min(roster.members.size() - 1, Math.round(f * (roster.members.size() - 1))));
+            }
         } else if (kind == LobbyScreen.TAB) {
             if (value == lobby.page) return;
             if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
@@ -884,6 +1030,17 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         if (broken || !onTitle()) return;
         try {
             ClientLink.State state = ClientLink.get().getState();
+            if (OfficerSkillMenu.isOpen()) {
+                LobbyScreen.View v = lobbyView();
+                v.reserveRight = CoopScreen.buttonsWidth(true) + 14f;
+                lobby.render(v);
+                screen.buttons(Global.getSettings().getScreenWidth() - CoopScreen.margin(),
+                        Global.getSettings().getScreenHeight() - CoopScreen.margin() + 2f, true);
+                OfficerSkillMenu.render();
+                // Raw mouse polling is also used by the lobby; retain its edge while a modal owns input.
+                wasDown = wasClickDown = wasLobbyDown = Mouse.isButtonDown(0);
+                return;
+            }
             boolean over = overButton();
             boolean down = Mouse.isButtonDown(0);
             if (down && !wasDown && over && !screenUp && helpPage < 0 && reportPage < 0 && !settings.open) {
@@ -949,15 +1106,30 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             }
             if (full) {
                 float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
+                float[] skills = lobby.skillButton;
                 float[] lh = click ? lobby.hitAt(mx, my) : null;
                 if (lh != null) lobbyClick(lh);
+                else if (click && skills != null && lobby.page == LobbyScreen.FLEET
+                        && LobbyScreen.inside(skills[0], skills[1], skills[2], skills[3])) openOfficerSkills();
                 else if (click && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
-                else if (click && lobby.page == LobbyScreen.REFIT) refitAction(lobby.refit.click(mx, my));
+                else if (click && lobby.page == LobbyScreen.REFIT && !ExoticaRefit.isOpen()) refitAction(lobby.refit.click(mx, my));
                 LobbyScreen.View v = lobbyView();
                 v.reserveRight = CoopScreen.buttonsWidth(disconnectShown) + 14f;
                 lobby.render(v);
+                if (ExoticaRefit.isOpen()) {
+                    float[] r = wingman.compat.ModCompat.exoticaRect();
+                    float dx = r[0] + r[2] / 2f - 60f, dy = r[1] - 38f, dw = 120f, dh = 30f;
+                    // Exotica's menu draws no backdrop of its own (in the campaign its dialog does): the lobby is dimmed
+                    // and a window put under the menu and its DONE button so its text reads.
+                    Style.fill(0f, 0f, Global.getSettings().getScreenWidth(), Global.getSettings().getScreenHeight(), Style.alpha(Color.black, 160));
+                    Style.frame(r[0] - 8f, dy - 8f, r[2] + 16f, r[1] + r[3] - dy + 16f, Style.WINDOW, Style.EDGE, 10f);
+                    ExoticaRefit.render();
+                    Style.button(dx, dy, dw, dh, "DONE", Panel.TEXT, true, LobbyScreen.inside(dx, dy, dw, dh));
+                    if (click && LobbyScreen.inside(dx, dy, dw, dh)) ExoticaRefit.close(true);
+                }
                 float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
                 screen.buttons(sw - CoopScreen.margin(), sh - CoopScreen.margin() + 2f, disconnectShown);
+                OfficerSkillMenu.render();
             } else if (screenUp) { // the backdrop and header under the window drawn below
                 headerBottom = screen.frame(screenTitle(), screenLine(state), state == ClientLink.State.CONNECTED ? Panel.GOOD : Panel.DIM, disconnectShown);
             }

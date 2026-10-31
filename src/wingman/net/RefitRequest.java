@@ -35,6 +35,8 @@ public final class RefitRequest {
     public int vents, caps;
     /** What the joiner was shown: credits to pay (negative: to receive) and story points to spend. */
     public int expectCredits, expectStoryPoints;
+    /** The weapon groups wanted, in order; null leaves them as they are. */
+    public List<RefitData.Group> groups;
 
     /** The change for a slot or bay, or null. */
     public Change change(String place, boolean wing) {
@@ -85,6 +87,8 @@ public final class RefitRequest {
             o.writeVarInt(Math.max(0, Math.min(1000, caps)));
             o.writeInt(expectCredits);
             o.writeVarInt(Math.max(0, Math.min(1000, expectStoryPoints)));
+            o.writeBoolean(groups != null); // appended: an older host stops reading before it
+            if (groups != null) RefitData.writeGroups(o, groups);
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -116,6 +120,7 @@ public final class RefitRequest {
         r.expectCredits = in.readInt();
         r.expectStoryPoints = in.readVarInt();
         if (r.expectStoryPoints < 0 || r.expectStoryPoints > 1000) throw new IOException("impossible story points");
+        if (in.remaining() > 0 && in.readBoolean()) r.groups = RefitData.readGroups(in);
         return r;
     }
 }

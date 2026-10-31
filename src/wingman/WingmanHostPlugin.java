@@ -168,6 +168,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     public void advance(float amount, List<InputEventAPI> events) {
         if (disabled || engine == null) return;
         try {
+            if (refitSim) { keepLobbyAlive(); return; }
             if (!started) {
                 if (!start()) return;
             }
@@ -188,6 +189,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 }
             } catch (Throwable ignored) { /* nothing more to be done */ }
         }
+    }
+
+    /** This is the simulator started from the campaign's refit screen: no battle is offered to joiners. */
+    private boolean refitSim;
+
+    /** Handshakes and departures keep going while the host is in the refit simulator; nothing of it is sent. */
+    private void keepLobbyAlive() {
+        HostSession s = HostSession.active();
+        if (s == null) return;
+        for (String line : s.pump()) Ui.say(engine, "Co-op: " + line);
     }
 
     private boolean wasPaused, wasInCommandMap;
@@ -218,6 +229,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private boolean start() throws Exception {
         if (Global.getCurrentState() != GameState.COMBAT) { disabled = true; return false; } // title screen battle
         if (engine.getCustomData().containsKey(CLIENT_FLAG)) { disabled = true; return false; } // we are the joiner
+        // The simulator from the refit screen is the host's own try-out, not a battle to join: joiners stay in the
+        // campaign lobby, and the session is only kept moving until the host is back on the campaign map.
+        if (engine.isInCampaignSim()) { refitSim = true; return false; }
         cfg = WingmanConfig.load();
         if (!cfg.hostEnabled) { disabled = true; return false; }
         try {
@@ -402,6 +416,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         prof.mark(5);
 
         // Anyone who just joined (or restarted their side) gets the full picture.
+        List<HostSession.Player> syncedPlayers = new ArrayList<HostSession.Player>();
         for (HostSession.Player p : session.getPlayers()) {
             if (!p.needsSync) continue;
             p.conn.send(Msg.RESET, Msg.EMPTY);
@@ -433,17 +448,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             byte[] objectives = orders.objectivesMessage(engine);
             if (objectives != null) p.conn.send(Msg.OBJECTIVES, objectives);
-            p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, p.shipNetId));
             p.needsSync = false;
+            syncedPlayers.add(p);
             fullNext = true;
             environment.resendAsteroids();
         }
 
-        guardHostShip();
-        checkPilotedShips();
-        seatReserved();
-        handleClaims();
-        markPilots(); // at once, so scripts run for a ship that just changed hands (runSubsystems, the agent) see who flies it
+        settleAssignments(syncedPlayers);
+        markPilots(); // at once, so scripts run for a ship that just changed hands (runSubsystems, the hooks) see who flies it
         runSubsystems();
         keepPilots();
         watchLandings();
@@ -536,6 +548,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         prof.mark(9);
         prof.end();
+    }
+
+    private void settleAssignments(List<HostSession.Player> syncedPlayers) {
+        guardHostShip();
+        checkPilotedShips();
+        seatReserved();
+        handleClaims();
+        for (HostSession.Player p : syncedPlayers) {
+            if (session.getPlayers().contains(p)) p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, p.shipNetId));
+        }
     }
 
     /** Updates a second right now: the configured rate, or less while a link is struggling. */
@@ -827,7 +849,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             footer = "Waiting for players...  Ctrl+Enter: start anyway     Ctrl+Shift+2...: remove that player";
         }
-        panel.render("READY CHECK", lines, colors, footer);
+        panel.renderLow("READY CHECK", lines, colors, footer);
     }
 
     private static boolean eligible(ShipAPI s) {
@@ -959,7 +981,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             Msg.W w = new Msg.W();
             try {
                 w.out.writeInt(e.getKey());
-                w.out.writeByte(!dead ? Msg.DESPAWN_REMOVED : wreck || s.isFighter() ? Msg.DESPAWN_DESTROYED : Msg.DESPAWN_NO_WRECK);
+                w.out.writeByte(!dead ? Msg.DESPAWN_REMOVED
+                        : wreck ? Msg.DESPAWN_DESTROYED : Msg.DESPAWN_NO_WRECK);
             } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
             session.broadcast(Msg.DESPAWN, w.done());
             byte[] description = spawnMsgs.remove(e.getKey());
@@ -2006,13 +2029,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
 
     private int hostShipWarnings;
 
-    /** Where the agent saw a script hand the player a ship: the first lines outside Wingman's agent, for the log. */
+    /** Where the hooks saw a script hand the player a ship: the first lines outside Wingman's hooks, for the log. */
     private static String where(Throwable by) {
         if (by == null) return " (no script seen doing it)";
         StringBuilder sb = new StringBuilder(", done by:");
         int n = 0;
         for (StackTraceElement e : by.getStackTrace()) {
-            if (e.getClassName().startsWith("wingman.agent.")) continue;
+            String c = e.getClassName();
+            if (c.startsWith("wingman.patch.") || c.startsWith("patchlib.") || c.startsWith("java.lang.invoke.")) continue;
             sb.append("\n    at ").append(e);
             if (++n >= 10) break;
         }
@@ -2047,7 +2071,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 final boolean[] firedBox = new boolean[1];
                 final ShipAPI ship = s;
                 final String which = (String) press[1];
-                // As part of the joiner's ship's frame: with Wingman's agent, a script it starts sees that ship as
+                // As part of the joiner's ship's frame: with Wingman's hooks, a script it starts sees that ship as
                 // the player's, and a hand-over of "the player" moves the joiner, not the host.
                 AgentGate.runAs(s, new Runnable() { public void run() { firedBox[0] = Subsystems.fire(ship, which); } });
                 boolean fired = firedBox[0];

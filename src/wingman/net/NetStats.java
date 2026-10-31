@@ -81,6 +81,8 @@ public final class NetStats {
             case Msg.INPUTS: return "controls (steady)";
             case Msg.REPORT: return "after-action report";
             case Msg.AFTERMATH: return "aftermath";
+            case Msg.NEWS: return "campaign news";
+            case Msg.MAP: return "campaign map";
             case Msg.CHECK: return "sync checks";
             default: return "type " + type;
         }

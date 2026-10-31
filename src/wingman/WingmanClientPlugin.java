@@ -83,6 +83,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float systemOff, cloakOff, phaseOff;
         float goneAt;            // when the host said it was gone (kept a little longer as the launcher of its last missiles) // how long our copy's systems have been in a different stage from the host's
         int transferState = -1; // -1 unknown, 0 allowed, 1 blocked
+        boolean ventWarned;      // a vent on this copy has thrown before (see apply); logged once
         DamageState.Ship damage; // latest armor / EMP state from the host
         ShipSpawn info;          // how to build this ship again if the local game loses it
         HullGuard guard;
@@ -152,6 +153,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int ownId = -1;
     private int claimSeq;
     private ShipAPI lastPlayerShip;
+    private int assignmentSeq = -1;
+    private static final class PendingSeat {
+        final int id, seq;
+        boolean movedByScript, failureLogged;
+        PendingSeat(int id, int seq, boolean movedByScript) {
+            this.id = id; this.seq = seq; this.movedByScript = movedByScript;
+        }
+    }
+    private PendingSeat pendingSeat;
     private int hostFlagship = -1;
     private long lastInputNanos, lastSnapshotAt;
     private boolean stallWarned, welcomed, hintShown;
@@ -179,7 +189,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private boolean retreatOffered;
     /** What Enter does on the alert that is showing: 0 dismiss it, 1 leave the battle, 2 leave and rejoin. */
     private int alertAction;
-    private int checkMisses, wreckMisses, resyncs, reboardId = -1, capDrops;
+    private int checkMisses, wreckMisses, resyncs, capDrops;
     private boolean wreckResyncUsed;
     /** Getting back in after the link to the host dropped: see step(). */
     private boolean reconnecting;
@@ -258,6 +268,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             step(amount);
             noteHitch(frameStart, frameGap, System.nanoTime() - frameStart);
         } catch (Throwable t) {
+            clearAuthorization("client stopped");
             Global.getLogger(WingmanClientPlugin.class).error("Wingman client error, co-op stopped", t);
             AgentGate.stop();
             Ui.say(engine, "Co-op: client error, stopped (see starsector.log): " + t);
@@ -408,6 +419,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         rejoinShip = ownId;
                         rejoinHull = mine.info.hullId;
                     }
+                    clearAuthorization("disconnect");
                     engine.setPaused(true);
                     lobby = null;
                     Ui.say(engine, "Co-op: connection to the host lost (" + link.getError() + "). Trying to reconnect...");
@@ -462,19 +474,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             for (Integer id : new ArrayList<Integer>(heldModules.keySet())) giveUpModule(id);
         }
         Conn conn = link.getConn();
-        Conn.Packet p;
-        while ((p = conn.poll()) != null) {
-            try {
-                handle(p);
-            } catch (Exception e) {
-                // Guard rail: one message that can't be read or applied is skipped, not fatal. A steady stream
-                // of them means something is really wrong, and then co-op stops with the usual notice.
-                if (++messageErrors <= 5) {
-                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: skipped a message of type " + p.type + " (" + p.data.length + " bytes)", e);
-                }
-                if (messageErrors > 40) throw e;
-            }
-        }
+        receiveMessages(conn);
 
         // A long freeze on this PC can overflow the queue of messages from the host, and the ones thrown away
         // may have mattered (a ship appearing, a ship going). Don't wait to notice the damage: ask again now.
@@ -490,6 +490,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         int lostMessages = conn.takeDropped();
         if (lostMessages > 0) requestResync("this PC fell behind and " + lostMessages + " messages from the host were lost", 5000);
+        applyPendingSeat();
 
         prof.mark(0);
         followHostTime();
@@ -540,6 +541,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (Dbg.on) targeting(own); // diagnostics only
         rescueLostShips();
+        applyPendingSeat();
         if (nowNanos - lastDamageNanos > 500000000L) { // re-assert twice a second in case the local game drifted
             lastDamageNanos = nowNanos;
             for (Puppet pp : puppets.values()) if (pp.damage != null) applyDamage(pp, false);
@@ -641,17 +643,32 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 && own.ship.getLocation().y < -engine.getMapHeight() / 2f + 600f;
     }
 
-    /**
-     * Ask the host for the whole battle again, and sit back down in our ship when it arrives. Limited to a few
-     * times a battle and not more often than minGapMs, so a fault that a refresh doesn't cure can't loop.
-     */
+    private void receiveMessages(Conn conn) throws Exception {
+        // Native Transfer Command may already have changed the seat before this callback.
+        watchPlayerShip(conn);
+        Conn.Packet p;
+        while ((p = conn.poll()) != null) {
+            try {
+                handle(p);
+                watchPlayerShip(conn); // reconnect selections submit fresh intent before another reply
+            } catch (Exception e) {
+                // Preserve the existing bounded malformed-message guard.
+                if (++messageErrors <= 5) {
+                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: skipped a message of type " + p.type + " (" + p.data.length + " bytes)", e);
+                }
+                if (messageErrors > 40) throw e;
+            }
+        }
+    }
+
+    /** Ask the host for the whole battle again, within existing per-battle and minimum-gap limits. */
     private void requestResync(String why, long minGapMs) {
         long nowMs = System.currentTimeMillis();
         if (resyncs >= 5 || nowMs - lastResyncAt < minGapMs) return;
         resyncs++;
         lastResyncAt = nowMs;
-        reboardId = ownId;
-        Global.getLogger(WingmanClientPlugin.class).warn("Wingman guard: " + why + "; asking the host for everything again (" + resyncs + " of 5)");
+        Global.getLogger(WingmanClientPlugin.class).warn("Wingman guard: " + why + "; asking the host for everything again (" + resyncs
+                + " of 5, ship " + ownId + ", claim " + claimSeq + ")");
         Ui.say(engine, "Co-op: refreshing your copy of the battle from the host.");
         link.getConn().send(Msg.SYNC_REQ, Msg.EMPTY);
     }
@@ -676,6 +693,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      */
     private void leaveBattle(boolean rejoin) {
         leaving = true;
+        clearAuthorization("leave battle");
         leaveAtMillis = 0;
         watch.objectivesSurvived();
         watch.battleEnded();
@@ -727,14 +745,89 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    private void clearAuthorization(String reason) {
+        cancelPendingSeat(reason);
+        ownId = -1;
+        assignmentSeq = -1;
+        claimedId = -1;
+    }
+
+    private void cancelPendingSeat(String reason) {
+        PendingSeat pending = pendingSeat;
+        if (pending != null) {
+            Global.getLogger(WingmanClientPlugin.class).info("Wingman control: canceled pending seat (" + reason + ", ship " + pending.id
+                    + ", claim " + pending.seq + ")");
+            pendingSeat = null;
+        }
+    }
+
     private void claim(Conn conn, int netId) {
+        cancelPendingSeat("new control intent");
         claimSeq++;
+        watching = netId < 0;
         conn.send(Msg.CLAIM, Msg.twoInts(claimSeq, netId));
     }
 
+    /** Local presentation seating never asks the host to change ownership. */
+    private boolean seatWithoutClaim(ShipAPI ship, String reason) {
+        if (ship == null) return false;
+        ShipAPI before = engine.getPlayerShip();
+        if (before != ship) engine.setPlayerShipExternal(ship);
+        ShipAPI seated = engine.getPlayerShip();
+        if (seated != ship) return false;
+        if (before != seated || lastPlayerShip != seated) {
+            for (Puppet pp : puppets.values()) if (pp.ship != seated) pp.ship.setShipAI(new PuppetAI());
+            if (placeholder != null && placeholder != seated) placeholder.setShipAI(new PuppetAI());
+            Global.getLogger(WingmanClientPlugin.class).info("Wingman control: seated (" + reason + ", ship "
+                    + ownId + ", claim " + claimSeq + ")");
+        }
+        lastPlayerShip = seated;
+        return true;
+    }
+
+    private boolean usable(Puppet pp) {
+        return pp != null && pp.ship != null && pp.ship.isAlive() && !pp.ship.isHulk() && engine.isEntityInPlay(pp.ship);
+    }
+
+    private void applyPendingSeat() {
+        PendingSeat pending = pendingSeat;
+        if (pending == null) return;
+        if (pending.seq != claimSeq || pending.seq != assignmentSeq || pending.id != ownId
+                || leaving || hostEnded || disabled || halted || watching) {
+            cancelPendingSeat("authorization superseded");
+            return;
+        }
+        Puppet target = puppets.get(pending.id);
+        if (skippedIds.containsKey(pending.id) || (target != null && !usable(target) && target.rebuilds >= 3)) {
+            cancelPendingSeat("assigned replica unavailable");
+            seatWithoutClaim(placeholder, "assigned replica unavailable");
+            return;
+        }
+        if (!usable(target)) {
+            seatWithoutClaim(placeholder, "waiting for assigned replica");
+            return;
+        }
+        if (seatWithoutClaim(target.ship, pending.movedByScript ? "host script handoff" : "authoritative restore")) {
+            pendingSeat = null;
+        } else if (!pending.failureLogged) {
+            pending.failureLogged = true;
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman control: seat not ready (ship " + pending.id
+                    + ", claim " + pending.seq + "); waiting for a safe callback");
+        }
+    }
+
+    private void chooseSpectator(Conn conn) {
+        if (!watching) claim(conn, -1);
+        claimedId = -1;
+        rejoinShip = -1;
+        rememberTried = true;
+        seatWithoutClaim(placeholder, "explicit spectator selection");
+        watching = true;
+    }
+
     /**
-     * Ship selection is the game's own transfer-command order. Whenever the ship under our control changes
-     * (we boarded a puppet, or left one), tell the host which ship we now want; it answers with ASSIGN.
+     * Ship selection is the game's own transfer-command order. Whenever local intent changes the ship, the host
+     * decides whether to accept it; script-driven linked fighter transfers retain the existing rule.
      */
     private float fighterSince = -100f;
     private int fighterAutopilotLines, droneGoneLines;
@@ -764,12 +857,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (ps == lastPlayerShip) return;
         ShipAPI was = lastPlayerShip;
         lastPlayerShip = ps;
-        // The game hands the ship we left to its own AI; puppets must stay inert.
         for (Puppet pp : puppets.values()) if (pp.ship != ps) pp.ship.setShipAI(new PuppetAI());
-        if (ps != placeholder) placeholder.setShipAI(new PuppetAI());
+        if (placeholder != null && ps != placeholder) placeholder.setShipAI(new PuppetAI());
+        // Placeholder/null is a presentation fallback. Explicit release is owned by chooseSpectator.
+        // A newer claim must be decided before old authorization can restore anything.
+        if (ps == placeholder || ps == null) {
+            if (!watching && ownId >= 0 && assignmentSeq == claimSeq) {
+                if (pendingSeat == null) pendingSeat = new PendingSeat(ownId, claimSeq, false);
+                applyPendingSeat();
+            }
+            return;
+        }
         Puppet now = ps == null ? null : byShip.get(ps);
-        // Taken out of a fighter a script handed us, back into the ship we flew, within a few seconds: note why it
-        // might have happened (a carrier script ends the hand-over when the carrier's system stops), for the log.
         Puppet left = was == null ? null : byShip.get(was);
         if (left != null && left.fighter && now != null && !now.fighter && clock - fighterSince < 5f && fighterBounces++ < 5) {
             String sys = "none";
@@ -782,7 +881,6 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + Math.round((clock - fighterSince) * 1000f) + " ms (fighter alive " + was.isAlive() + "; carrier system: " + sys + ")");
         }
         if (now != null && now.fighter) fighterSince = clock;
-        // A fighter only when a mod's script handed us one from the ship we flew (UAF's Isenoria does).
         boolean ok = now != null && (!now.fighter || WingmanHostPlugin.linked(ps, was));
         claim(conn, ok ? now.netId : -1);
         claimedId = ok && !now.fighter ? now.netId : -1;
@@ -1075,6 +1173,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.REJECT:
                 Ui.say(engine, "Co-op: the host refused the connection. " + Msg.readUtf(p.data));
                 rejected = true;
+                clearAuthorization("connection refused");
                 alert("CONNECTION REFUSED", Msg.readUtf(p.data));
                 alertLines.add("Fix the difference, then restart the game and this mission.");
                 break;
@@ -1224,6 +1323,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             case Msg.RESET:
                 hostPaused = false;
+                Global.getLogger(WingmanClientPlugin.class).info("Wingman control: refresh RESET (previous ship " + ownId + ", claim " + claimSeq + ")");
+                clearAuthorization("superseding reset");
                 Subsystems.reset();
                 toPlaceholder();
                 for (Puppet pp : puppets.values()) engine.removeEntity(pp.ship);
@@ -1268,7 +1369,6 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 localMissiles.clear();
                 missiles.clear();
                 byMissile.clear();
-                ownId = -1;
                 hostFlagship = -1;
                 missing.clear();
                 skippedShips = 0;
@@ -1283,7 +1383,6 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 localShips.clear();
                 freshlyBuilt.clear();
                 iAmReady = false;
-                watching = false;
                 changingShip = false;
                 sentBuilt = -1;
                 lobby = null;
@@ -1311,6 +1410,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.DESPAWN: {
                 In in = Msg.reader(p.data);
                 int id = in.readInt();
+                if (id == ownId) clearAuthorization("assigned ship despawned");
+                else if (pendingSeat != null && pendingSeat.id == id) cancelPendingSeat("assigned ship despawned");
                 byte how = in.readByte();
                 Boolean neverBuilt = skippedIds.remove(id);
                 Puppet pp = puppets.remove(id);
@@ -1384,50 +1485,42 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 int seq = in.readInt();
                 int id = in.readInt();
                 boolean movedByScript = in.remaining() > 0 && in.readByte() == 1;
-                if (id != ownId && id >= 0) {
-                    Ui.say(engine, "Co-op: you have the helm.");
-                    if (!helmHintsShown) {
-                        helmHintsShown = true;
-                        Ui.say(engine, "Co-op: Transfer Command again to change ship. U hands the ship to the host's AI and back.");
-                        Ui.say(engine, "Co-op: to leave with your ship, give it the Retreat order, or fly to the bottom edge and press Enter.");
-                    }
-                }
-                // The host moved us to another ship of its own accord (back to our carrier when the fighter we
-                // flew from it is done): sit down in it, if we are still in that fighter or have nothing to fly.
-                // Only an answer that has seen our latest request: a late answer to an older one (we asked for the
-                // carrier, then for a fighter, and the carrier's answer comes now) must not pull us back.
-                if (seq == claimSeq && id >= 0 && id != ownId && puppets.containsKey(id)) {
-                    ShipAPI now = engine.getPlayerShip();
-                    Puppet there = puppets.get(id);
-                    // Or a mod's script on the host moved us (Isenoria's override passing control to a fighter, run
-                    // there for our ship): follow it.
-                    if (there.ship != null && there.ship != now && (movedByScript || now == null || now == placeholder || now.isFighter() || !now.isAlive())) {
-                        engine.setPlayerShipExternal(there.ship); // (and the usual change of ship follows, see watchPlayerShip)
-                    }
-                }
+                // ASSIGN echoes the last request the host adjudicated. Reject anything else before touching any
+                // ownership, local seat, selection, pending work, or user-visible state.
+                if (seq != claimSeq || leaving || hostEnded || halted || disabled || rejected) break;
+                boolean changedOwner = id != ownId;
+                if (id != ownId || assignmentSeq != seq) cancelPendingSeat("new authoritative assignment");
                 ownId = id;
-                if (seq == claimSeq) claimedId = -1; // answered: the ship is ours now, or not
-                if (id >= 0) { pickId = id; rememberShip(puppets.get(id)); }
-                // Back after a dropped connection, and the battle has been loaded again: sit down in the ship we
-                // were flying, if it is still there. The game then sees us change ship, and the host is asked
-                // for it in the usual way (and may say no, if someone else took it meanwhile).
-                if (rejoinShip >= 0 && id < 0) {
-                    Puppet back = puppets.get(rejoinShip);
-                    if (back != null && !back.fighter && back.owner == 0 && back.info != null && back.info.hullId.equals(rejoinHull)
-                            && engine.getPlayerShip() == placeholder) {
-                        engine.setPlayerShipExternal(back.ship);
+                assignmentSeq = seq;
+                claimedId = -1;
+                watching = id < 0;
+                if (id >= 0) {
+                    rejoinShip = -1; // this connection already has an authoritative ship
+                    pickId = id;
+                    rememberShip(puppets.get(id));
+                    if (changedOwner) {
+                        Ui.say(engine, "Co-op: you have the helm.");
+                        if (!helmHintsShown) {
+                            helmHintsShown = true;
+                            Ui.say(engine, "Co-op: Transfer Command again to change ship. U hands the ship to the host's AI and back.");
+                            Ui.say(engine, "Co-op: to leave with your ship, give it the Retreat order, or fly to the bottom edge and press Enter.");
+                        }
                     }
-                    rejoinShip = -1;
+                    if (pendingSeat == null) pendingSeat = new PendingSeat(id, seq, movedByScript);
+                    else pendingSeat.movedByScript |= movedByScript;
+                    applyPendingSeat();
+                } else {
+                    cancelPendingSeat("host no-ship assignment");
+                    ShipAPI rejoin = null;
+                    if (rejoinShip >= 0) {
+                        Puppet back = puppets.get(rejoinShip);
+                        if (back != null && !back.fighter && back.owner == 0 && back.info != null && back.info.hullId.equals(rejoinHull)
+                                && engine.getPlayerShip() == placeholder) rejoin = back.ship;
+                        rejoinShip = -1;
+                    }
+                    if (rejoin == null) seatWithoutClaim(placeholder, "host no-ship assignment");
+                    else engine.setPlayerShipExternal(rejoin); // watcher submits a fresh claim for this connection
                 }
-                // After a refresh of the whole battle, sit back down in the ship we were flying.
-                if (reboardId >= 0 && id == reboardId && puppets.containsKey(id) && engine.getPlayerShip() == placeholder) {
-                    engine.setPlayerShipExternal(puppets.get(id).ship);
-                    lastPlayerShip = puppets.get(id).ship;
-                }
-                reboardId = -1;
-                // If the host has seen our latest request and still says the ship we sit in isn't ours, step out.
-                Puppet in2 = byShip.get(engine.getPlayerShip());
-                if (seq == claimSeq && in2 != null && in2.netId != ownId) toPlaceholder();
                 break;
             }
             case Msg.MISSILE_SPAWN:
@@ -1516,6 +1609,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 hostPaused = false;
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman: the host says its battle is over");
                 hostEnded = true;
+                clearAuthorization("battle ended");
                 saveRememberedShip();
                 JoinSetup.battleOver();
                 if (leaveAtMillis == 0) {
@@ -1732,7 +1826,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (rememberTried || cfg == null || !cfg.rememberShip || lobby == null) return;
         if (!(builtShips() + skippedShips >= lobby.expected && lobby.expected > 0)) return;
         rememberTried = true;
-        if (ownId >= 0 || rejoinShip >= 0 || reboardId >= 0 || engine.getPlayerShip() != placeholder) return;
+        if (ownId >= 0 || rejoinShip >= 0 || pendingSeat != null || engine.getPlayerShip() != placeholder) return;
         if (lobbyPickHere() != null) return; // picked in the lobby before the battle: the host seats us in that one
         try {
             if (rememberedShip == null) {
@@ -1796,7 +1890,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (lobby == null || !lobby.readyCheck) { enterPressed = false; return; }
         int built = builtShips();
         boolean synced = built + skippedShips >= lobby.expected && lobby.expected > 0;
-        if (ownId >= 0) watching = false;
+        if (ownId >= 0 && assignmentSeq == claimSeq) watching = false;
         boolean chosen = stage() == 2;
         if (enterPressed && chosen) iAmReady = synced && !iAmReady;
         if (!synced || !chosen) iAmReady = false;
@@ -1917,8 +2011,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 continue;
             }
             if (!popup && choosing && key == 17) { // W: go without a ship, watching
-                if (ownId >= 0) toPlaceholder();
-                watching = true;
+                chooseSpectator(link.getConn());
                 changingShip = false;
                 pickNote = "";
                 e.consume();
@@ -2197,7 +2290,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         return best;
     }
 
-    // ---- other people's ships: where they point, their subsystems, Wingman's agent ----
+    // ---- other people's ships: where they point, their subsystems, Wingman's hooks ----
 
     /** Where the host and the other joiners point, by the ship they fly (from the host's updates). */
     private final Map<Integer, float[]> aims = new HashMap<Integer, float[]>();
@@ -2253,7 +2346,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         AgentGate.runAs(ship, new Runnable() { public void run() { fired[0] = Subsystems.fire(ship, cls); } });
         ShipAPI after = engine.getPlayerShip();
         if (after != before && before != null) {
-            // It handed "the player" another ship (Isenoria's override, run here without the agent): that is the
+            // It handed "the player" another ship (Isenoria's override, run here without the hooks): that is the
             // other pilot's business. We stay where we are, and the switch-back it gave that ship goes again.
             engine.setPlayerShipExternal(before);
             lastPlayerShip = before;
@@ -2266,7 +2359,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** Co-op is following the host in the battle being played (for Wingman's agent, see JoinerAgentLink). */
     boolean agentLive() { return ready && !disabled && !halted && !leaving && engine == Global.getCombatEngine(); }
 
-    /** Where the person flying this ship points, or null (for Wingman's agent). */
+    /** Where the person flying this ship points, or null (for Wingman's hooks). */
     float[] aimOf(ShipAPI s) {
         Puppet pp = s == null ? null : byShip.get(s);
         return pp == null ? null : aims.get(pp.netId);
@@ -2387,7 +2480,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             String footer = !synced ? "Choose a ship once the battle has loaded."
                     : "Up/Down: choose     Enter or F: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
-            panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer);
+            panel.renderLow("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer);
             return;
         }
         // Stage 2: the ready check.
@@ -2411,15 +2504,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } else {
             footer = "You are ready. Waiting for the host to start.  Enter: not ready" + back;
         }
-        panel.render("2 / 2   READY CHECK", lines, colors, footer);
+        panel.renderLow("2 / 2   READY CHECK", lines, colors, footer);
     }
 
     /** The host's battle is paused (as of the last update): shown in large letters, since only the host can unpause. */
     private boolean hostPaused;
 
-    /** Put the player back in the invisible stand-in ship. */
+    /** Put the player back in the invisible stand-in without implying host release intent. */
     private void toPlaceholder() {
-        if (engine.getPlayerShip() != placeholder) engine.setPlayerShipExternal(placeholder);
+        seatWithoutClaim(placeholder, "placeholder presentation");
     }
 
     /** Modules whose ship has not been described yet (the host always describes the modules first). */
@@ -3973,13 +4066,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     /**
      * Guard rail: a ship the host still has must exist here, alive. If the local game has destroyed or dropped
-     * one anyway (some script, an explosion that slipped through), it is built again from the host's
-     * description and, if it was ours, we are put back at its helm. Checked twice a second.
+     * one anyway (some script, an explosion that slipped through), it is rebuilt on the first safe callback.
      */
     private void rescueLostShips() {
-        if (hostEnded) return; // the battle is over and being left: ships the game clears away now stay gone
+        if (hostEnded || leaving || disabled || halted) return;
         long now = System.currentTimeMillis();
-        if (now - lastRescueMillis < 500) return;
+        Puppet own = puppets.get(ownId);
+        boolean urgent = assignmentSeq == claimSeq && !watching && own != null && !usable(own) && own.rebuilds < 3;
+        if (!urgent && now - lastRescueMillis < 500) return;
         lastRescueMillis = now;
         List<Puppet> lost = null;
         for (Puppet pp : puppets.values()) {
@@ -3992,7 +4086,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (lost == null) return;
         for (Puppet old : lost) {
             if (old.rebuilds >= 3) continue; // something keeps killing it; don't fight forever
-            boolean wasOurs = old.netId == ownId && (engine.getPlayerShip() == old.ship || engine.getPlayerShip() == placeholder);
+            boolean wasOurs = old.netId == ownId && assignmentSeq == claimSeq && !watching
+                    && (engine.getPlayerShip() == old.ship || engine.getPlayerShip() == placeholder);
             puppets.remove(old.netId);
             byShip.remove(old.ship);
             if (engine.getPlayerShip() == old.ship) toPlaceholder();
@@ -4016,8 +4111,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             fresh.damage = old.damage;
             if (fresh.damage != null) applyDamage(fresh, true);
             if (wasOurs) {
-                engine.setPlayerShipExternal(fresh.ship);
-                lastPlayerShip = fresh.ship; // same ship as far as the host is concerned: no new claim needed
+                pendingSeat = new PendingSeat(ownId, claimSeq, false);
+                applyPendingSeat();
             }
         }
     }
@@ -4607,8 +4702,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
         if (!own) {
             boolean venting = (t.flags & Snapshot.F_VENTING) != 0;
-            if (venting && !flux.isVenting() && !flux.isOverloaded()) flux.ventFlux();
-            else if (!venting && flux.isVenting()) flux.stopVenting();
+            if (venting && !flux.isVenting() && !flux.isOverloaded()) {
+                // A ship spawned this frame is only queued in the engine: its venting animation is made when the engine
+                // takes it in, a frame later, and venting before that throws a NullPointerException. Try again next frame.
+                try {
+                    flux.ventFlux();
+                } catch (Throwable th) {
+                    if (!pp.ventWarned) {
+                        pp.ventWarned = true;
+                        Global.getLogger(WingmanClientPlugin.class).warn("Wingman: could not start venting on a copy yet; will retry", th);
+                    }
+                }
+            } else if (!venting && flux.isVenting()) flux.stopVenting();
         }
 
         // On the ship we fly, the shield and the weapon group in our hand answer to our own controls so they
@@ -4937,10 +5042,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     /**
      * Keys held right now that mods' scripts here have asked about (a hullmod's ability on a hotkey, say; see
-     * the agent's Hooks.isKeyDown), at most InputState.MAX_KEYS. Sent with our controls: on the host the same
+     * wingman.patch.Patches.Keys), at most InputState.MAX_KEYS. Sent with our controls: on the host the same
      * scripts run for our ship and hear these. None while we have no ship, or with the game window in the
      * background. Mods' LunaLib keys count as asked about even before their script has asked (or without the
-     * agent here).
+     * hooks here).
      */
     private int[] heldModKeys(Puppet own) {
         if (own == null || autopilot) return NO_KEYS;

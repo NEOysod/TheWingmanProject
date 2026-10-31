@@ -30,6 +30,8 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import com.fs.starfarer.api.impl.campaign.ids.Submarkets;
 import com.fs.starfarer.api.loading.HullModSpecAPI;
 import com.fs.starfarer.api.loading.VariantSource;
+import com.fs.starfarer.api.loading.WeaponGroupSpec;
+import com.fs.starfarer.api.loading.WeaponGroupType;
 import com.fs.starfarer.api.loading.WeaponSlotAPI;
 import com.fs.starfarer.api.loading.WeaponSpecAPI;
 import com.fs.starfarer.api.combat.ShipHullSpecAPI;
@@ -37,6 +39,7 @@ import com.fs.starfarer.api.impl.campaign.ids.Tags;
 import com.fs.starfarer.api.util.Misc;
 
 import wingman.api.WingmanAPI;
+import wingman.compat.ModCompat;
 import wingman.net.HostSession;
 import wingman.net.Msg;
 import wingman.net.RefitData;
@@ -189,11 +192,21 @@ final class FriendRefit {
 
     /** The host went into a battle: no refit screen stays open, and no request waits. */
     static void closeAll() {
+        ExoticaRefit.clear();
         open.clear();
         lastSent.clear();
         for (Pending p : pending.values()) send(p.player, new RefitResult(RefitResult.WITHDRAWN, "The host went into a battle."));
         pending.clear();
     }
+
+    /** For ExoticaRefit: why this player can't plan a refit of that member now (docking is checked by the caller), or null. */
+    static String refusalFor(HostSession.Player p, String memberId, WingmanConfig cfg) { return refusalToPlan(p, memberId, cfg); }
+
+    /** For ExoticaRefit: a ship of the host's fleet by its id, or null. */
+    static FleetMemberAPI memberFor(String id) { return member(id); }
+
+    /** For ExoticaRefit: a connected player by id, or null. */
+    static HostSession.Player playerFor(HostSession s, int id) { return playerById(s, id); }
 
     private static HostSession.Player playerById(HostSession s, int id) {
         for (HostSession.Player p : s.getPlayers()) if (p.id == id) return p;
@@ -226,12 +239,34 @@ final class FriendRefit {
             if (id == null) continue;
             try {
                 WeaponSlotAPI ws = v.getSlot(slot);
-                if (ws != null && (ws.isBuiltIn() || ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) continue;
+                if (ws != null && (ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) continue; // built-ins stay: a hull mod may have put them there
             } catch (Throwable t) { /* listed */ }
             d.fitSlots.add(slot);
             d.fitWeapons.add(id);
             keys.add(RefitData.key(RefitData.WEAPON, id));
         }
+        try {
+            for (String slot : v.getModuleSlots()) {
+                ShipVariantAPI mv = v.getModuleVariant(slot);
+                if (mv == null) continue;
+                d.moduleSlots.add(slot);
+                d.moduleHulls.add(mv.getHullSpec().getHullId());
+                for (String ms : mv.getFittedWeaponSlots()) { // what a module holds can be changed too, as "module/slot"
+                    String mw = mv.getWeaponId(ms);
+                    WeaponSlotAPI mws = mv.getSlot(ms);
+                    if (mw == null || mws == null || mws.isBuiltIn() || mws.isDecorative() || mws.isSystemSlot() || mws.isHidden() || mws.isStationModule()) continue;
+                    d.fitSlots.add(slot + "/" + ms);
+                    d.fitWeapons.add(mw);
+                    keys.add(RefitData.key(RefitData.WEAPON, mw));
+                }
+            }
+        } catch (Throwable t) { /* none shown */ }
+        for (WeaponGroupSpec g : v.getWeaponGroups()) {
+            RefitData.Group rg = new RefitData.Group(g.getType() == WeaponGroupType.ALTERNATING, g.isAutofireOnByDefault());
+            rg.slots.addAll(g.getSlots());
+            d.groups.add(rg);
+        }
+        d.hasGroups = true;
         int bays = 0;
         try { bays = m.getNumFlightDecks(); } catch (Throwable t) { /* none */ }
         for (int i = 0; i < bays && i < RefitData.MAX_BAYS; i++) {
@@ -413,8 +448,6 @@ final class FriendRefit {
         /** Then: the market docked at, and the dialog that was up (its closing closes its core screen too). */
         MarketAPI acceptedAt;
         InteractionDialogAPI dialogAtAccept;
-        /** Frames since Wingman closed that screen itself (-1: it didn't); the refit is done the frame after. */
-        int framesSinceClosed = -1;
     }
 
     /** Where a request is done: the market docked at, else the one a refit accepted under a core screen was accepted at. */
@@ -427,33 +460,18 @@ final class FriendRefit {
 
     /**
      * The host accepts with the fleet, cargo or refit screen open. That screen keeps its own copy of the ship, which
-     * would undo a change made under it, so the refit is done as soon as it closes (applyWaiting).
+     * would undo a change made under it, so the refit is done once the host closes it (applyWaiting). Wingman never
+     * closes or opens a screen of the host's for it.
      */
     static void acceptOnClose(Pending pd) {
         pd.acceptOnClose = true;
         pd.acceptedAt = dockedMarket();
         pd.dialogAtAccept = Global.getSector().getCampaignUI().getCurrentInteractionDialog();
-        // The screen is closed now (its copy of the ship goes with it); the refit is done the next frame, and the
-        // refit screen opens again on the ship. Without a dialog to close it through, it waits for the host to.
-        try {
-            if (pd.dialogAtAccept != null) {
-                pd.dialogAtAccept.getVisualPanel().closeCoreUI();
-                pd.framesSinceClosed = 0;
-                watch(pd.dialogAtAccept);
-            }
-        } catch (Throwable t) {
-            pd.framesSinceClosed = -1;
-            Global.getLogger(FriendRefit.class).warn("Wingman: couldn't close the refit screen for a friend's refit; it is done when the host closes it", t);
-        }
-        send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + "."));
+        send(pd.player, new RefitResult(RefitResult.RECEIVED, "The host accepted your refit of " + pd.ship + "; it is done once they close their screen."));
     }
 
-    /**
-     * Each frame: refits accepted under a core screen are done once it has closed. Then, if the host wishes, the
-     * refit screen opens again on the (last) ship refitted, from the market's dialog as the game's own rules open it.
-     */
+    /** Each frame: refits accepted under a core screen are done once it has closed. */
     static void applyWaiting() {
-        keepOptions();
         if (broken || pending.isEmpty()) return;
         try {
             com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
@@ -469,81 +487,27 @@ final class FriendRefit {
                     break;
                 }
             }
-            FleetMemberAPI last = null;
-            boolean reopenable = false;
             for (Pending pd : new ArrayList<Pending>(pending.values())) {
                 if (!pd.acceptOnClose) continue;
-                // The screen has closed: Wingman closed it (a frame ago), there is no core tab, or the dialog it was opened
-                // over is gone (taking its screen with it).
-                if (pd.framesSinceClosed >= 0) pd.framesSinceClosed++;
-                boolean closed = pd.framesSinceClosed >= 2 || ui.getCurrentCoreTab() == null || (pd.dialogAtAccept != null && dialog != pd.dialogAtAccept);
+                // The screen has closed: there is no core tab, or the dialog it was opened over is gone (taking its screen with it).
+                boolean closed = ui.getCurrentCoreTab() == null || (pd.dialogAtAccept != null && dialog != pd.dialogAtAccept);
                 if (!closed) continue;
-                reopenable = dialog != null && dialog == pd.dialogAtAccept;
                 String why = accept(pd);
                 if (why != null) CampaignLobby.say("Co-op: the refit for " + pd.player.name + " couldn't be done: " + why);
-                else last = member(pd.request.memberId);
             }
-            if (last != null && reopenable && WingmanConfig.load().friendRefitReopen) reopen(last);
-            else if (last != null) Dbg.info(FriendRefit.class, "Wingman: refit screen not opened again (" + (!reopenable ? "the dialog changed" : "setting off") + ")");
         } catch (Throwable t) {
             Global.getLogger(FriendRefit.class).warn("Wingman: a friend's refit accepted under the refit screen failed", t);
         }
     }
 
-    /** The market dialog Wingman closed a screen of (or opened one in), watched until its options are back. */
-    private static InteractionDialogAPI watched;
-    private static int watchedFrames;
-
-    private static void watch(InteractionDialogAPI d) {
-        watched = d;
-        watchedFrames = 0;
-    }
-
     /**
-     * After Wingman closes the host's refit screen, or opens it again, the market dialog must get its options back,
-     * as when the host closes it by hand. Some ways out don't (the screen closed from code, a reopen the game turned
-     * down, a refit that failed so nothing reopened): the dialog was left with no options and nothing to click, as
-     * if it had vanished. Once no screen is up, a dialog with no options gets the market's options again.
+     * A refit that only takes off another mod's loadout selectors (ModCompat.switchNote): that mod's own free switch,
+     * which costs nothing and takes nothing from the host. It is done without the host's approval.
      */
-    private static void keepOptions() {
-        InteractionDialogAPI d = watched;
-        if (d == null) return;
-        try {
-            com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
-            if (ui == null || ui.getCurrentInteractionDialog() != d) { watched = null; return; } // closed or replaced: not ours to fix
-            if (ui.getCurrentCoreTab() != null) return; // a screen is up: its own closing brings them back
-            if (++watchedFrames < 3) return; // the game's own listener gets the first frames
-            watched = null;
-            if (d.getOptionPanel().hasOptions()) return;
-            if (!(d.getPlugin() instanceof com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl)) {
-                Global.getLogger(FriendRefit.class).warn("Wingman: the market dialog was left without options after a friend's refit, and it isn't one Wingman can refill");
-                return;
-            }
-            Map<String, com.fs.starfarer.api.campaign.rules.MemoryAPI> memory =
-                    ((com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl) d.getPlugin()).getMemoryMap();
-            com.fs.starfarer.api.impl.campaign.rulecmd.FireAll.fire(null, d, memory, "PopulateOptions");
-            Global.getLogger(FriendRefit.class).info("Wingman: the market dialog's options were put back after a friend's refit");
-        } catch (Throwable t) {
-            watched = null;
-            Global.getLogger(FriendRefit.class).warn("Wingman: could not put the market dialog's options back after a friend's refit", t);
-        }
-    }
-
-    /** The refit screen again, on that ship, opened by the market's dialog (as its OpenCoreTab rule does). */
-    private static void reopen(FleetMemberAPI m) {
-        final InteractionDialogAPI dialog = Global.getSector().getCampaignUI().getCurrentInteractionDialog();
-        if (dialog == null || !(dialog.getPlugin() instanceof com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl)) return;
-        final Map<String, com.fs.starfarer.api.campaign.rules.MemoryAPI> memory =
-                ((com.fs.starfarer.api.impl.campaign.RuleBasedInteractionDialogPluginImpl) dialog.getPlugin()).getMemoryMap();
-        dialog.getOptionPanel().clearOptions();
-        watch(dialog); // if the game doesn't open it, the options come back (keepOptions)
-        dialog.getVisualPanel().showCore(com.fs.starfarer.api.campaign.CoreUITabId.REFIT, dialog.getInteractionTarget(), m,
-                tradeMode(dialog.getInteractionTarget()), new com.fs.starfarer.api.campaign.CoreInteractionListener() {
-                    public void coreUIDismissed() {
-                        // as the game's own OpenCoreTab: the dialog's options come back
-                        com.fs.starfarer.api.impl.campaign.rulecmd.FireAll.fire(null, dialog, memory, "PopulateOptions");
-                    }
-                });
+    static boolean loadoutSwitch(RefitPlan p) {
+        if (!p.onlyTakesModsOff()) return false;
+        for (String id : p.r.removeMods) if (ModCompat.switchNote(id) == null) return false;
+        return true;
     }
 
     /** True while the host is docked where a refit can be done. */
@@ -584,25 +548,40 @@ final class FriendRefit {
         }
         boolean replaced = pending.remove(p.id) != null;
         pending.put(p.id, pd);
-        send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
-        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+        lastChecked = 0; // an automatic acceptance is looked at next frame
+        boolean auto = cfg.friendRefitAuto || loadoutSwitch(pd.plan);
+        send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "")
+                + (auto ? " and it is done once the host is docked." : " and will accept or deny it.")));
+        if (!auto) CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
     }
 
     /** Each second: requests that can't be done any more are withdrawn; the others are checked again. */
     private static void keepPending(HostSession s, WingmanConfig cfg) {
-        for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
-            Pending pd = it.next();
-            if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
+        for (Pending pd : new ArrayList<Pending>(pending.values())) {
+            if (playerById(s, pd.player.id) != pd.player) { pending.remove(pd.player.id); continue; }
             // Away from a market a request waits (it is checked again at the next one); it is withdrawn only when the
             // ship can't be refitted at all any more.
             String why = refusalToPlan(pd.player, pd.request.memberId, cfg);
             if (why != null) {
-                it.remove();
+                pending.remove(pd.player.id);
                 send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
                 continue;
             }
             check(pd, member(pd.request.memberId));
+            if ((cfg.friendRefitAuto || loadoutSwitch(pd.plan)) && !pd.acceptOnClose && pd.problems.isEmpty() && docked()) autoAccept(pd);
         }
+    }
+
+    /**
+     * The host's acceptance, given beforehand (setting friendRefitAuto, or a loadout switch). A core screen (refit, fleet, cargo) keeps its own
+     * copy of the ship, which would undo the change, so the refit waits for the host to close it: Wingman never closes
+     * or opens a screen of the host's for it.
+     */
+    private static void autoAccept(Pending pd) {
+        com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
+        if (ui == null || ui.getCurrentCoreTab() != null) return;
+        String why = accept(pd); // tells the host and the joiner
+        if (why != null) CampaignLobby.say("Co-op: the refit for " + pd.player.name + " couldn't be done: " + why);
     }
 
     /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
@@ -628,7 +607,11 @@ final class FriendRefit {
                 continue;
             }
             WeaponSlotAPI slot = null;
-            try { slot = v.getSlot(c.place); } catch (Throwable t) { /* none */ }
+            try {
+                int bar = c.place.indexOf('/');
+                ShipVariantAPI sv = bar >= 0 ? v.getModuleVariant(c.place.substring(0, bar)) : v;
+                slot = sv.getSlot(c.place.substring(bar + 1));
+            } catch (Throwable t) { /* none */ }
             if (slot == null || !slot.isWeaponSlot() || slot.isBuiltIn() || slot.isDecorative() || slot.isSystemSlot() || slot.isHidden() || slot.isStationModule()) {
                 problems.add("Slot " + c.place + " can't take a weapon.");
                 continue;
@@ -638,6 +621,9 @@ final class FriendRefit {
             try { spec = Global.getSettings().getWeaponSpec(c.item); } catch (Throwable t) { problems.add("Unknown weapon " + c.item + "."); continue; }
             if (!slot.weaponFits(spec)) problems.add(spec.getWeaponName() + " doesn't fit slot " + c.place + " (" + slot.getSlotSize().name().toLowerCase() + " "
                     + slot.getWeaponType().name().toLowerCase() + ").");
+        }
+        if (r.groups != null) for (RefitData.Group g : r.groups) for (String id : g.slots) {
+            if (!groupable(v, id)) { problems.add("Slot " + id + " can't be in a weapon group."); break; }
         }
         for (String id : r.addMods) {
             try {
@@ -652,7 +638,7 @@ final class FriendRefit {
             applyTo(test, pd);
             MutableCharacterStatsAPI stats = Global.getSector().getPlayerStats();
             pd.op = test.computeOPCost(stats);
-            pd.opMax = hull.getOrdnancePoints(stats);
+            pd.opMax = test.getHullSpec().getOrdnancePoints(stats); // its hull: a loadout switch may change it
             if (pd.op > pd.opMax) problems.add("Ordnance points: " + pd.op + " used, " + pd.opMax + " available.");
         } catch (Throwable t) {
             pd.op = pd.plan.opUsed;
@@ -669,15 +655,44 @@ final class FriendRefit {
             if (pd.plan.sameAsBefore(c)) continue;
             if (c.wing) v.setWingId(Integer.parseInt(c.place), c.item.isEmpty() ? null : c.item);
             else {
-                v.clearSlot(c.place);
-                if (!c.item.isEmpty()) v.addWeapon(c.place, c.item);
+                int bar = c.place.indexOf('/');
+                ShipVariantAPI target = v;
+                if (bar >= 0) { // a module: a copy of its own, so the ship's stays as it is until the new variant is set
+                    target = v.getModuleVariant(c.place.substring(0, bar)).clone();
+                    v.setModuleVariant(c.place.substring(0, bar), target);
+                }
+                String slot = c.place.substring(bar + 1);
+                target.clearSlot(slot);
+                if (!c.item.isEmpty()) target.addWeapon(slot, c.item);
             }
         }
         for (String id : r.removeMods) v.removeMod(id);
         for (String id : r.addMods) v.addMod(id);
+        ModCompat.afterHullmods(v); // other mods' loadout switches (a Diable Virtuous selector taken off, say)
         for (String id : r.buildIn) v.addPermaMod(id, true);
         v.setNumFluxVents(r.vents);
         v.setNumFluxCapacitors(r.caps);
+        if (r.groups != null) {
+            // Only slots that hold a weapon now; the game puts any weapon left out into a group of its own (accept).
+            Set<String> armed = new LinkedHashSet<String>();
+            for (RefitData.Group g : r.groups) for (String id : g.slots) if (groupable(v, id) && v.getWeaponId(id) != null) armed.add(id);
+            List<RefitData.Group> groups = RefitPlan.normalize(r.groups, armed);
+            v.getWeaponGroups().clear();
+            for (int i = 0; i < groups.size() && i < RefitPlan.MAX_GROUPS; i++) {
+                RefitData.Group g = groups.get(i);
+                WeaponGroupSpec spec = new WeaponGroupSpec(g.alternating ? WeaponGroupType.ALTERNATING : WeaponGroupType.LINKED);
+                spec.setAutofireOnByDefault(g.autofire);
+                for (String id : g.slots) spec.addSlot(id);
+                v.addWeaponGroup(spec);
+            }
+        }
+    }
+
+    /** A slot a weapon group may hold: any with a real weapon, built-ins too, as the game's own refit screen allows. */
+    private static boolean groupable(ShipVariantAPI v, String id) {
+        WeaponSlotAPI slot = null;
+        try { slot = v.getSlot(id); } catch (Throwable t) { /* none */ }
+        return slot != null && !slot.isDecorative() && !slot.isSystemSlot() && !slot.isStationModule();
     }
 
     /** The host denies a request. */
@@ -817,7 +832,7 @@ final class FriendRefit {
         for (RefitRequest.Change c : pd.request.changes) {
             if (plan.sameAsBefore(c)) continue;
             String old = plan.before(c), now = plan.after(c);
-            String place = c.wing ? "Bay " + (Integer.parseInt(c.place) + 1) : "Slot " + c.place + slotKind(hull, c.place);
+            String place = c.wing ? "Bay " + (Integer.parseInt(c.place) + 1) : "Slot " + c.place + slotKind(plan.d, c.place);
             String in = now == null ? "empty" : n.item(now) + " (" + (plan.d.market(c.from) != null ? "bought at " + n.source(c.from) + ", "
                     + Math.round(plan.d.buyPrice(plan.d.market(c.from), now)) + " cr" : "from " + n.source(c.from)) + ")";
             String outTo = old == null ? "" : ";  " + n.item(old) + (plan.d.market(c.to) != null ? " sold at " + n.source(c.to) + ", "
@@ -829,12 +844,32 @@ final class FriendRefit {
         for (String id : pd.request.buildIn) out.add("Built in (S-mod, 1 story point):  " + n.mod(id));
         if (pd.request.vents != plan.d.vents) out.add("Flux vents:  " + plan.d.vents + " -> " + pd.request.vents);
         if (pd.request.caps != plan.d.caps) out.add("Flux capacitors:  " + plan.d.caps + " -> " + pd.request.caps);
+        if (plan.groupsChanged()) {
+            List<RefitData.Group> groups = plan.groupsAfter();
+            for (int i = 0; i < groups.size(); i++) {
+                RefitData.Group g = groups.get(i);
+                StringBuilder sb = new StringBuilder();
+                for (String slot : g.slots) sb.append(sb.length() == 0 ? "" : ", ").append(groupedWeapon(plan, slot, n));
+                out.add("Weapon group " + (i + 1) + (g.alternating ? " (alternating" : " (linked") + (g.autofire ? ", autofire):  " : "):  ") + sb);
+            }
+        }
         return out;
     }
 
-    private static String slotKind(ShipHullSpecAPI hull, String slotId) {
+    /** The weapon a slot will hold after the plan, by name. */
+    private static String groupedWeapon(RefitPlan plan, String slot, Names n) {
+        RefitRequest.Change c = plan.r.change(slot, false);
+        String id = c != null ? c.item : plan.d.weaponIn(slot);
+        if (id == null) {
+            FleetMemberAPI m = member(plan.d.memberId);
+            try { id = m == null ? null : m.getVariant().getWeaponId(slot); } catch (Throwable t) { /* the slot */ }
+        }
+        return id == null || id.isEmpty() ? slot : n.item(RefitData.key(RefitData.WEAPON, id));
+    }
+
+    private static String slotKind(RefitData d, String place) {
         try {
-            WeaponSlotAPI s = hull.getWeaponSlotAPI(slotId);
+            WeaponSlotAPI s = Global.getSettings().getHullSpec(d.hullOf(place)).getWeaponSlotAPI(RefitData.local(place));
             return " (" + s.getSlotSize().name().toLowerCase() + " " + s.getWeaponType().name().toLowerCase().replace('_', ' ') + ")";
         } catch (Throwable t) {
             return "";

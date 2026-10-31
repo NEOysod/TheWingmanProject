@@ -33,7 +33,7 @@ public final class HostSession {
         /** Set when the player transferred command; the plugin decides whether the ship is free. */
         public boolean hasClaim;
         public int claim = -1, claimSeq;
-        /** The claim was made by a mod's script on the host (Wingman's agent), not by the player. */
+        /** The claim was made by a mod's script on the host (Wingman's hooks), not by the player. */
         public boolean claimByScript;
         /** MagicLib subsystems this player switched on, waiting for the game thread: ship net id, subsystem class. */
         public final java.util.List<Object[]> subsystemPresses = new java.util.ArrayList<Object[]>();
@@ -50,6 +50,12 @@ public final class HostSession {
         public String refitAsk;
         /** Friend refit: the latest refit request from this player (Msg.REFIT_REQUEST, undecoded), waiting for the game thread. */
         public byte[] refitRequest;
+        /** Officer skill requests, decoded and queued by pump() on the game thread; strictly bounded. */
+        public final java.util.ArrayDeque<OfficerSkillRequest> officerSkillRequests = new java.util.ArrayDeque<OfficerSkillRequest>();
+        long officerSkillWindow;
+        int officerSkillsInWindow;
+        /** Fingerprint of the last accepted choice; blocks duplicate/replayed requests. */
+        public String lastAcceptedOfficerSkill = "";
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -140,6 +146,7 @@ public final class HostSession {
         battlesEnded++;
         for (Player p : players) {
             p.conn.send(Msg.BATTLE_END, Msg.EMPTY);
+            discardOfficerSkillRequests(p, "Officer skill request expired at a battle transition.");
             p.shipNetId = -1;
             p.ship = null;
             p.savedAI = null; // nothing of the finished battle is kept (an AI holds its ship, and the ship its battle)
@@ -153,6 +160,11 @@ public final class HostSession {
         if (s == null || !s.battleOpen) return;
         s.pump(); // keeps handshakes and departures moving while nobody else is driving the session
         s.endBattle();
+    }
+
+    private static void discardOfficerSkillRequests(Player player, String reason) {
+        if (!player.officerSkillRequests.isEmpty()) player.conn.send(Msg.NOTICE, Msg.utf(reason));
+        player.officerSkillRequests.clear();
     }
 
     /** A link with nothing heard on it for this long (keep-alives are sent every second) is treated as dead. */
@@ -185,6 +197,7 @@ public final class HostSession {
     }
 
     public boolean steadyControls() { return steadyControls; }
+    public boolean isBattleOpen() { return battleOpen; }
 
     /** The open session on this PC, or null (for other mods, through wingman.api.WingmanAPI). */
     public static synchronized HostSession active() { return active; }
@@ -322,6 +335,7 @@ public final class HostSession {
         battleOpen = true;
         for (Player p : players) {
             p.conn.send(Msg.RESET, Msg.EMPTY);
+            discardOfficerSkillRequests(p, "Officer skill request expired at a battle transition.");
             p.needsSync = true;
             p.shipNetId = -1;
             p.ship = null;
@@ -558,6 +572,13 @@ public final class HostSession {
                     }
                     else if (p.type == Msg.REFIT_REQUEST) {
                         if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
+                    }
+                    else if (p.type == Msg.SKILL_PICK) {
+                        long now = System.currentTimeMillis();
+                        if (now - pl.officerSkillWindow > 1000) { pl.officerSkillWindow = now; pl.officerSkillsInWindow = 0; }
+                        if (++pl.officerSkillsInWindow <= 4 && pl.officerSkillRequests.size() < 4 && p.data.length <= 1024) {
+                            pl.officerSkillRequests.addLast(OfficerSkillRequest.decode(p.data));
+                        }
                     }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();

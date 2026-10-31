@@ -1,0 +1,2 @@
+id,name,order,tier,reqPoints,reqPointsPerExtraSkill,description,author,combat officer,admiral,admin,tags,icon,
+wingman_officer_potential,Officer Potential,10002,0,0,0,An officer whose potential matches the commander's own.,,TRUE,,,npc_only,graphics/icons/skills/officer_training.png,

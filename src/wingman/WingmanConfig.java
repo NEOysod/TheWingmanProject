@@ -43,8 +43,8 @@ public final class WingmanConfig {
     public boolean campaignLobby = true;
     /** Host: friends may refit the ship they picked while the host is docked at a market (the host accepts each refit). */
     public boolean friendRefit = true;
-    /** Host: after a friend's refit accepted under the refit screen is done, that screen opens again on the ship. */
-    public boolean friendRefitReopen = true;
+    /** Host: a friend's valid refit is done at once, without the host accepting it. */
+    public boolean friendRefitAuto = true;
     /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */
     public boolean hostTethering = false;
     /** Joiner: while connected on the title screen, go into the host's battles as they begin, without being asked. */
@@ -84,6 +84,8 @@ public final class WingmanConfig {
     public boolean campaignStandIn = true;
     /** Host: a list of the players, top right, in battle. */
     public boolean playerList = true;
+    /** Host: joiners see the host's campaign map (what the host's sensors show) in their lobby. */
+    public boolean shareCampaignMap = true;
     /** Host: opening the command map (Tab) doesn't pause the battle while friends are in it. */
     public boolean keepRunningInCommandMap = true;
     /** Joiner: mods' LunaLib settings follow the host's for the battle (keys excepted; see LunaCopy). */
@@ -159,7 +161,7 @@ public final class WingmanConfig {
             c.autoJoin = j.optBoolean("autoJoin", c.autoJoin);
             c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
             c.friendRefit = j.optBoolean("friendRefit", c.friendRefit);
-            c.friendRefitReopen = j.optBoolean("friendRefitReopen", c.friendRefitReopen);
+            c.friendRefitAuto = j.optBoolean("friendRefitAuto", c.friendRefitAuto);
             c.hostTethering = j.optBoolean("hostTethering", c.hostTethering);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
@@ -180,6 +182,7 @@ public final class WingmanConfig {
             c.syncScriptMemory = j.optBoolean("syncScriptMemory", c.syncScriptMemory);
             c.campaignStandIn = j.optBoolean("campaignStandIn", c.campaignStandIn);
             c.playerList = j.optBoolean("playerList", c.playerList);
+            c.shareCampaignMap = j.optBoolean("shareCampaignMap", c.shareCampaignMap);
             c.keepRunningInCommandMap = j.optBoolean("keepRunningInCommandMap", c.keepRunningInCommandMap);
             c.hostModSettings = j.optBoolean("hostModSettings", c.hostModSettings);
             c.shipMastery = j.optBoolean("shipMastery", c.shipMastery);
@@ -220,7 +223,7 @@ public final class WingmanConfig {
         if ("autoJoin".equals(key)) return String.valueOf(autoJoin);
         if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
         if ("friendRefit".equals(key)) return String.valueOf(friendRefit);
-        if ("friendRefitReopen".equals(key)) return String.valueOf(friendRefitReopen);
+        if ("friendRefitAuto".equals(key)) return String.valueOf(friendRefitAuto);
         if ("hostTethering".equals(key)) return String.valueOf(hostTethering);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
@@ -237,6 +240,7 @@ public final class WingmanConfig {
         if ("syncScriptMemory".equals(key)) return String.valueOf(syncScriptMemory);
         if ("campaignStandIn".equals(key)) return String.valueOf(campaignStandIn);
         if ("playerList".equals(key)) return String.valueOf(playerList);
+        if ("shareCampaignMap".equals(key)) return String.valueOf(shareCampaignMap);
         if ("keepRunningInCommandMap".equals(key)) return String.valueOf(keepRunningInCommandMap);
         if ("hostModSettings".equals(key)) return String.valueOf(hostModSettings);
         if ("shipMastery".equals(key)) return String.valueOf(shipMastery);
@@ -277,7 +281,7 @@ public final class WingmanConfig {
             else if ("autoJoin".equals(key)) autoJoin = yes(value);
             else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
             else if ("friendRefit".equals(key)) friendRefit = yes(value);
-            else if ("friendRefitReopen".equals(key)) friendRefitReopen = yes(value);
+            else if ("friendRefitAuto".equals(key)) friendRefitAuto = yes(value);
             else if ("hostTethering".equals(key)) hostTethering = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);
@@ -294,6 +298,7 @@ public final class WingmanConfig {
             else if ("syncScriptMemory".equals(key)) syncScriptMemory = yes(value);
             else if ("campaignStandIn".equals(key)) campaignStandIn = yes(value);
             else if ("playerList".equals(key)) playerList = yes(value);
+            else if ("shareCampaignMap".equals(key)) shareCampaignMap = yes(value);
             else if ("keepRunningInCommandMap".equals(key)) keepRunningInCommandMap = yes(value);
             else if ("hostModSettings".equals(key)) hostModSettings = yes(value);
             else if ("shipMastery".equals(key)) shipMastery = yes(value);

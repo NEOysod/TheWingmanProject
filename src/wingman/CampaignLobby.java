@@ -14,6 +14,7 @@ import com.fs.starfarer.api.GameState;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.characters.OfficerDataAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
@@ -36,8 +37,8 @@ final class CampaignLobby implements EveryFrameScript {
     private static final Color NOTE = new Color(120, 210, 255);
     private WingmanConfig cfg;
     private boolean broken, opened, openFailed;
-    private long lastSent, cfgAt, lastBuilt;
-    private String lastSentKey = "";
+    private long lastSent, cfgAt, lastBuilt, lastMap;
+    private String lastSentKey = "", lastDate = "";
 
     public boolean isDone() { return false; }
     public boolean runWhilePaused() { return true; }
@@ -62,11 +63,16 @@ final class CampaignLobby implements EveryFrameScript {
             }
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
+            OfficerPlayerBinding.follow(Global.getSector().getPlayerFleet(), s.getPlayers(), cfg);
+            handleOfficerSkillPicks(s);
             FriendRefit.advance(s, cfg);
             FriendRefit.applyWaiting();
+            ExoticaRefit.advance(s, cfg);
             aftermath(s);
+            news(s, false);
             // The fleet as joiners see it: sent when it (or who picked what) changes, and every few seconds anyway.
             if (s.getPlayers().isEmpty()) return;
+            if (cfg.shareCampaignMap && now - lastMap >= 500) { lastMap = now; map(s); }
             if (now - lastBuilt < 1000) return; // the fleet is looked at once a second, not every frame
             lastBuilt = now;
             Roster r = build(s, cfg, 0);
@@ -76,10 +82,43 @@ final class CampaignLobby implements EveryFrameScript {
             lastSent = now;
             byte[] m = r.encode();
             for (HostSession.Player p : s.getPlayers()) p.conn.send(Msg.ROSTER, m);
+            news(s, true);
         } catch (Throwable t) {
             broken = true;
             Global.getLogger(CampaignLobby.class).error("Wingman: the campaign lobby stopped (friends can still join once a battle starts)", t);
         }
+    }
+
+    /** What the host's map shows (Msg.MAP), twice a second; a failure here only stops the map, not the lobby. */
+    private boolean mapBroken;
+    private void map(HostSession s) {
+        if (mapBroken) return;
+        try {
+            wingman.net.CampaignMap m = HostCampaignMap.build();
+            if (m == null) return;
+            byte[] data = m.encode();
+            for (HostSession.Player p : s.getPlayers()) p.conn.send(Msg.MAP, data);
+        } catch (Throwable t) {
+            mapBroken = true;
+            Global.getLogger(CampaignLobby.class).warn("Wingman: stopped sharing the campaign map with joiners", t);
+        }
+    }
+
+    /**
+     * The campaign date and the notifications that appeared since the last look (Msg.NEWS): sent at once when
+     * there are some or the day has changed, and with every fleet resend, so a friend who connects later has the date.
+     */
+    private void news(HostSession s, boolean resend) {
+        List<String> items = CampaignNews.drain(); // taken even with nobody here, so old ones don't pile up
+        if (s.getPlayers().isEmpty()) return;
+        String date = Global.getSector().getClock().getDateString();
+        if (items.isEmpty() && !resend && date.equals(lastDate)) return;
+        lastDate = date;
+        wingman.net.News n = new wingman.net.News();
+        n.date = date;
+        n.items = items.size() > wingman.net.News.MAX_ITEMS ? items.subList(items.size() - wingman.net.News.MAX_ITEMS, items.size()) : items;
+        byte[] m = n.encode();
+        for (HostSession.Player p : s.getPlayers()) p.conn.send(Msg.NEWS, m);
     }
 
     static void say(String text) {
@@ -201,13 +240,20 @@ final class CampaignLobby implements EveryFrameScript {
             PersonAPI cap = m.getCaptain();
             if (cap != null && !cap.isDefault() && cap.getName() != null) {
                 rm.officer = cap.getName().getFullName();
+                rm.officerId = cap.getId() == null ? "" : cap.getId();
                 try { rm.officerLevel = cap.getStats().getLevel(); } catch (Throwable t) { /* no level */ }
+                String bound = OfficerPlayerBinding.boundPlayer(cap);
+                if (bound != null && !bound.isEmpty()) {
+                    rm.follows = bound;
+                    for (Roster.Player rp : r.players) if (OfficerPlayerBinding.identity(rp.name).equals(bound)) rm.follows = rp.name;
+                }
             }
             if (m == flag) rm.flags |= Roster.FLAGSHIP;
             if (m.isMothballed()) rm.flags |= Roster.MOTHBALLED;
             String why = refusal(m, flag, cfg);
             if (why != null && m != flag && !m.isMothballed()) { rm.flags |= Roster.CANT_FLY; rm.note = why; }
             rm.pickedBy = pickerOf(s, m.getId());
+            populateSkillChoices(s, pf, m, cap, rm);
             loadout(m, rm);
             r.members.add(rm);
         }
@@ -225,7 +271,8 @@ final class CampaignLobby implements EveryFrameScript {
         long now = System.currentTimeMillis();
         if (now - loadoutsAt > 10000) { loadouts.clear(); loadoutsAt = now; } // refits show within ten seconds
         String[] known = loadouts.get(m.getId());
-        if (known != null) {
+        String captain = captainKey(m);
+        if (known != null && known[10].equals(captain)) { // a new captain aboard shows their portrait and skills at once
             rm.sprite = known[0]; rm.weapons = known[1]; rm.hullmods = known[2]; rm.personality = known[3]; rm.dmods = known[9];
             if (!known[4].isEmpty()) for (String mod : known[4].split("\n")) rm.modules.add(mod);
             rm.portrait = known[5];
@@ -237,7 +284,14 @@ final class CampaignLobby implements EveryFrameScript {
         readLoadout(m, rm);
         StringBuilder mods = new StringBuilder();
         for (String mod : rm.modules) mods.append(mods.length() == 0 ? "" : "\n").append(mod);
-        loadouts.put(m.getId(), new String[] { rm.sprite, rm.weapons, rm.hullmods, rm.personality, mods.toString(), rm.portrait, lines(rm.skills), lines(rm.gear), lines(rm.fits), rm.dmods });
+        loadouts.put(m.getId(), new String[] { rm.sprite, rm.weapons, rm.hullmods, rm.personality, mods.toString(), rm.portrait, lines(rm.skills), lines(rm.gear), lines(rm.fits), rm.dmods, captain });
+    }
+
+    private static String captainKey(FleetMemberAPI m) {
+        try {
+            PersonAPI cap = m.getCaptain();
+            return cap == null || cap.isDefault() ? "" : String.valueOf(cap.getId());
+        } catch (Throwable t) { return ""; }
     }
 
     private static String lines(List<String> l) {
@@ -345,11 +399,218 @@ final class CampaignLobby implements EveryFrameScript {
         } catch (Throwable t) { /* none */ }
     }
 
+    /** Share the actual host offers only for an unambiguous linked officer aboard this fleet member. */
+    private static void populateSkillChoices(HostSession session, CampaignFleetAPI fleet, FleetMemberAPI member,
+            PersonAPI person, Roster.Member rosterMember) {
+        if (fleet == null || person == null || person.isDefault() || person.isPlayer() || person.isAICore()
+                || com.fs.starfarer.api.util.Misc.isUnremovable(person) || empty(rosterMember.officerId)) return;
+        String linked = OfficerPlayerBinding.boundPlayer(person);
+        if (linked == null || linked.isEmpty() || !hasUniquePlayer(session, linked)) return;
+        int matches = 0, boundMatches = 0;
+        for (OfficerDataAPI data : fleet.getFleetData().getOfficersCopy()) {
+            PersonAPI officerPerson = data.getPerson();
+            if (officerPerson == person) matches++;
+            if (officerPerson != null && linked.equals(OfficerPlayerBinding.boundPlayer(officerPerson))) boundMatches++;
+        }
+        if (!uniqueOfficerBinding(boundMatches, matches, 1)) return;
+        int assignments = 0;
+        for (FleetMemberAPI candidate : fleet.getFleetData().getMembersListCopy()) if (candidate.getCaptain() == person) assignments++;
+        if (assignments != 1 || member.getCaptain() != person) return;
+        try {
+            OfficerDataAPI data = fleet.getFleetData().getOfficerData(person);
+            if (data == null || data.getPerson() != person) return;
+            boolean canLevel = data.canLevelUp();
+            boolean madePicks = data.isMadePicks();
+            if (shouldGenerateSkillPicks(canLevel, madePicks)) {
+                if (hostCoreTabOpen()) return; // do not mutate a cached native officer picker
+                data.makeSkillPicks();
+                madePicks = true;
+            }
+            List<String> picks = data.getSkillPicks();
+            if (!Roster.areSkillChoicesEncodable(picks)) return;
+            rosterMember.skillChoices.clear();
+            if (canLevel) for (String skill : picks) if (skill != null && !skill.isEmpty()) rosterMember.skillChoices.add(skill);
+            rosterMember.skillRevision = skillRevision(session.battlesEnded, person, canLevel, madePicks, rosterMember.skillChoices);
+        } catch (Throwable t) {
+            rosterMember.skillChoices.clear();
+            rosterMember.skillRevision = 0;
+        }
+    }
+
+    private static boolean hostCoreTabOpen() {
+        try {
+            com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector() == null ? null : Global.getSector().getCampaignUI();
+            return ui == null || ui.getCurrentCoreTab() != null;
+        } catch (Throwable t) { return true; } // fail closed while UI state is unknown
+    }
+
+    private static boolean isCurrentConnectedPlayer(HostSession session, HostSession.Player candidate) {
+        if (session == null || candidate == null || candidate.replaced || candidate.conn == null || candidate.conn.isClosed()) return false;
+        int matches = 0;
+        for (HostSession.Player player : session.getPlayers()) if (player == candidate) matches++;
+        return matches == 1;
+    }
+
+    /** Fail closed while the host's campaign UI may hold cached officer data; rejected requests are not replayed. */
+    private static void discardOfficerSkillRequests(HostSession session, String reason) {
+        for (HostSession.Player player : session.getPlayers()) {
+            if (player.officerSkillRequests.isEmpty()) continue;
+            player.officerSkillRequests.clear();
+            if (isCurrentConnectedPlayer(session, player)) player.conn.send(Msg.NOTICE, Msg.utf(reason));
+        }
+    }
+
+    private static boolean shouldGenerateSkillPicks(boolean canLevelUp, boolean madePicks) {
+        return canLevelUp && !madePicks;
+    }
+
+    private static boolean uniqueOfficerBinding(int linkedOfficers, int officerDataMatches, int fleetAssignments) {
+        return linkedOfficers == 1 && officerDataMatches == 1 && fleetAssignments == 1;
+    }
+
+    private static boolean mayProcessOfficerSkillRequests(boolean connected, boolean battleOpen, boolean coreTabOpen) {
+        return connected && !battleOpen && !coreTabOpen;
+    }
+
+    private static boolean acceptOfficerSkillRequest(String requester, String linkedPlayer, String memberId,
+            String requestedMemberId, String officerId, String requestedOfficerId, long requestedRevision,
+            long currentRevision, boolean canLevelUp, List<String> offered, String skillId, String lastAccepted) {
+        String player = OfficerPlayerBinding.identity(requester), linked = OfficerPlayerBinding.identity(linkedPlayer);
+        if (player.isEmpty() || linked.isEmpty() || !player.equals(linked)) return false;
+        if (empty(memberId) || empty(requestedMemberId) || !memberId.equals(requestedMemberId)) return false;
+        if (empty(officerId) || empty(requestedOfficerId) || !officerId.equals(requestedOfficerId)) return false;
+        if (!canLevelUp || requestedRevision != currentRevision || empty(skillId) || offered == null || !offered.contains(skillId)) return false;
+        return lastAccepted == null || !lastAccepted.equals(skillRequestFingerprint(memberId, officerId, requestedRevision, skillId));
+    }
+
+    private static String skillRequestFingerprint(String memberId, String officerId, long revision, String skillId) {
+        String member = String.valueOf(memberId), officer = String.valueOf(officerId), skill = String.valueOf(skillId);
+        return member.length() + ":" + member + officer.length() + ":" + officer + revision + ":" + skill;
+    }
+
+    private static boolean empty(String value) { return value == null || value.trim().isEmpty(); }
+
+    private static boolean hasUniquePlayer(HostSession session, String identity) {
+        int matches = 0;
+        for (HostSession.Player p : session.getPlayers()) if (OfficerPlayerBinding.identity(p.name).equals(identity)) matches++;
+        return matches == 1;
+    }
+
+    /** Revision binds a menu to the officer's exact current progression and vanilla offer set. */
+    private static long skillRevision(int battlesEnded, PersonAPI person, boolean canLevel, boolean madePicks, List<String> choices) {
+        long hash = 0xcbf29ce484222325L;
+        hash = revisionPart(hash, String.valueOf(battlesEnded));
+        hash = revisionPart(hash, String.valueOf(person.getId()));
+        hash = revisionPart(hash, String.valueOf(person.getStats().getLevel()));
+        hash = revisionPart(hash, String.valueOf(person.getStats().getXP()));
+        hash = revisionPart(hash, canLevel ? "1" : "0");
+        hash = revisionPart(hash, madePicks ? "1" : "0");
+        for (String skill : choices) hash = revisionPart(hash, skill);
+        return hash == 0 ? 1 : hash;
+    }
+
+    private static long revisionPart(long hash, String value) {
+        for (int i = 0; i < value.length(); i++) hash = (hash ^ value.charAt(i)) * 0x100000001b3L;
+        return (hash ^ 0xff) * 0x100000001b3L;
+    }
+
+    /** Apply bounded requests on the campaign/game thread; network data can select an offered skill, never set stats. */
+    static void handleOfficerSkillPicks(HostSession session) {
+        if (session == null) return;
+        if (Global.getCurrentState() != GameState.CAMPAIGN
+                || !mayProcessOfficerSkillRequests(true, session.isBattleOpen(), false)) {
+            discardOfficerSkillRequests(session, "Officer skill request expired when the battle started.");
+            return;
+        }
+        boolean coreTabOpen = hostCoreTabOpen();
+        if (!mayProcessOfficerSkillRequests(true, false, coreTabOpen)) {
+            discardOfficerSkillRequests(session, "Close the host's core screen before choosing an officer skill.");
+            return;
+        }
+        CampaignFleetAPI fleet;
+        try { fleet = Global.getSector() == null ? null : Global.getSector().getPlayerFleet(); }
+        catch (Throwable t) { discardOfficerSkillRequests(session, "Can't learn that skill now; reopen the officer skill menu."); return; }
+        if (fleet == null) { discardOfficerSkillRequests(session, "Can't learn that skill now; reopen the officer skill menu."); return; }
+        for (HostSession.Player player : session.getPlayers()) {
+            if (!mayProcessOfficerSkillRequests(isCurrentConnectedPlayer(session, player), false, false)) {
+                player.officerSkillRequests.clear();
+                continue;
+            }
+            while (!player.officerSkillRequests.isEmpty()) {
+                wingman.net.OfficerSkillRequest request = player.officerSkillRequests.removeFirst();
+                if (!isCurrentConnectedPlayer(session, player)) { player.officerSkillRequests.clear(); break; }
+                boolean accepted = applyOfficerSkillPick(session, player, request, fleet);
+                if (!isCurrentConnectedPlayer(session, player)) { player.officerSkillRequests.clear(); break; }
+                player.conn.send(Msg.NOTICE, Msg.utf(accepted ? "Officer skill learned." : "Can't learn that skill now; reopen the officer skill menu."));
+            }
+        }
+    }
+
+    static boolean applyOfficerSkillPick(HostSession session, HostSession.Player player,
+            wingman.net.OfficerSkillRequest request, CampaignFleetAPI fleet) {
+        if (session == null || player == null || request == null || fleet == null) return false;
+        try {
+            if (!isCurrentConnectedPlayer(session, player)
+                    || !hasUniquePlayer(session, OfficerPlayerBinding.identity(player.name))) return false;
+            FleetMemberAPI member = null;
+            int memberMatches = 0;
+            for (FleetMemberAPI candidate : fleet.getFleetData().getMembersListCopy()) {
+                if (request.memberId.equals(candidate.getId())) { member = candidate; memberMatches++; }
+            }
+            if (member == null || memberMatches != 1) return false;
+            PersonAPI person = member.getCaptain();
+            if (person == null || person.isDefault() || person.isPlayer() || person.isAICore()
+                    || com.fs.starfarer.api.util.Misc.isUnremovable(person)
+                    || !request.officerId.equals(person.getId())) return false;
+            String linked = OfficerPlayerBinding.boundPlayer(person);
+            if (linked == null || linked.isEmpty() || !linked.equals(OfficerPlayerBinding.identity(player.name))) return false;
+            int boundMatches = 0, officerMatches = 0;
+            for (OfficerDataAPI officer : fleet.getFleetData().getOfficersCopy()) {
+                PersonAPI officerPerson = officer.getPerson();
+                if (officerPerson == person) officerMatches++;
+                if (officerPerson != null && linked.equals(OfficerPlayerBinding.boundPlayer(officerPerson))) boundMatches++;
+            }
+            int assigned = 0;
+            for (FleetMemberAPI candidate : fleet.getFleetData().getMembersListCopy()) if (candidate.getCaptain() == person) assigned++;
+            if (!uniqueOfficerBinding(boundMatches, officerMatches, assigned)) return false;
+            OfficerDataAPI data = fleet.getFleetData().getOfficerData(person);
+            // Never create picks to satisfy a request. Only choices already created and advertised can be applied.
+            if (data == null || data.getPerson() != person || !data.isMadePicks()) return false;
+            boolean canLevel = data.canLevelUp();
+            List<String> offered = data.getSkillPicks();
+            if (!Roster.areSkillChoicesEncodable(offered)) return false;
+            long revision = skillRevision(session.battlesEnded, person, canLevel, true, offered);
+            String fingerprint = skillRequestFingerprint(request.memberId,
+                    request.officerId, request.skillRevision, request.skillId);
+            if (!acceptOfficerSkillRequest(player.name, linked, member.getId(), request.memberId,
+                    person.getId(), request.officerId, request.skillRevision, revision, canLevel, offered,
+                    request.skillId, player.lastAcceptedOfficerSkill)) return false;
+            if (!isCurrentConnectedPlayer(session, player)) return false;
+            // Save before invoking vanilla so even a callback that causes an exception cannot replay.
+            player.lastAcceptedOfficerSkill = fingerprint;
+            try {
+                data.levelUp(request.skillId);
+                return true;
+            } finally {
+                // Vanilla/mod callbacks can throw after mutating the officer; never leave cached roster data stale.
+                try { fleet.getFleetData().setSyncNeeded(); }
+                finally { forgetLoadout(member.getId()); }
+            }
+        } catch (Throwable t) {
+            Global.getLogger(CampaignLobby.class).warn("Wingman: rejected an officer skill selection from " + player.name, t);
+            return false;
+        }
+    }
+
     /** What the joiners would see, to send it again only when it changed. */
     private static String signature(Roster r) {
         StringBuilder sb = new StringBuilder(r.hostState + "|" + r.maxShipSize + "|" + r.refitMarket + "|");
         for (Roster.Player p : r.players) sb.append(p.name).append(',');
-        for (Roster.Member m : r.members) sb.append(m.id).append(':').append(m.cr).append(':').append(m.flags).append(':').append(m.pickedBy).append(';');
+        for (Roster.Member m : r.members) {
+            sb.append(m.id).append(':').append(m.cr).append(':').append(m.flags).append(':').append(m.pickedBy).append(':').append(m.officer).append(':').append(m.follows).append(':').append(m.officerId).append(':').append(m.skillRevision).append(':');
+            for (String choice : m.skillChoices) sb.append(choice).append(',');
+            sb.append(';');
+        }
         return sb.toString();
     }
 

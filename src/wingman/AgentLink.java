@@ -3,13 +3,13 @@ package wingman;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipAPI;
 
-import wingman.agent.Bridge;
-import wingman.agent.Hooks;
+import wingman.patch.Bridge;
+import wingman.patch.Hooks;
 import wingman.net.HostSession;
 
 /**
- * Wingman's side of its agent (see wingman.agent.Hooks in agent/src): what the hooks ask about joiners, answered
- * from the host's session. Only ever loaded through {@link AgentGate}, after it has seen that the agent is there.
+ * Wingman's side of its PatchLib hooks (see wingman.patch.Hooks): what the hooks ask about joiners, answered
+ * from the host's session. Only ever loaded through {@link AgentGate}, after it has seen that PatchLib is there.
  *
  * While a joiner's ship's frame runs on the host, a mod's script there sees that ship as "the player's ship".
  * When such a script hands "the player" another ship (UAF's Isenoria passing control to one of its fighters),
@@ -50,13 +50,13 @@ final class AgentLink implements Bridge {
         if (p == null || id == null) return false;
         String why = host.refusal(p, to, host.hostShip());
         if (why != null) {
-            if (movesRefused++ < 5) Global.getLogger(AgentLink.class).info("Wingman agent: a script tried to move " + p.name + " into another ship; not done: " + why);
+            if (movesRefused++ < 5) Global.getLogger(AgentLink.class).info("Wingman hooks: a script tried to move " + p.name + " into another ship; not done: " + why);
             return false;
         }
         p.claim = id.intValue();
         p.hasClaim = true;
         p.claimByScript = true;
-        if (movesLogged++ < 20) Global.getLogger(AgentLink.class).info("Wingman agent: a script on the host moves " + p.name + " from "
+        if (movesLogged++ < 20) Global.getLogger(AgentLink.class).info("Wingman hooks: a script on the host moves " + p.name + " from "
                 + from.getHullSpec().getHullId() + " into " + to.getHullSpec().getHullId());
         return true;
     }
@@ -83,7 +83,7 @@ final class AgentLink implements Bridge {
         if (p == null || System.currentTimeMillis() - p.input.receivedAt > 1000) return false;
         // Their key for the same setting, if they have bound it to another (LunaLib keys, see LunaCopy).
         if (!p.input.keyHeld(key) && !LunaCopy.heldByBinding(key, p.lunaKeys, p.input)) return false;
-        if (key != lastKeyHeard && keysHeard++ < 10) Global.getLogger(AgentLink.class).info("Wingman agent: " + p.name + " holds "
+        if (key != lastKeyHeard && keysHeard++ < 10) Global.getLogger(AgentLink.class).info("Wingman hooks: " + p.name + " holds "
                 + org.lwjgl.input.Keyboard.getKeyName(key) + " for a script on their ship");
         lastKeyHeard = key;
         return true;

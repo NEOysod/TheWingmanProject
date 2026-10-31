@@ -1,13 +1,7 @@
-# Build output (the released jar in jars/ IS committed, so the mod works straight from a download)
-/build/
+# Gradle caches and generated build output
+.gradle/
+build/
 
-# Editors and operating systems
-.idea/
-*.iml
-.vscode/
+# OS metadata
 .DS_Store
 Thumbs.db
-
-# Never commit the game's own files
-starfarer*.jar
-fs.*.jar

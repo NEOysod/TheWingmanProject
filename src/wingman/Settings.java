@@ -52,9 +52,9 @@ final class Settings {
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
-                "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
-        ITEMS.add(new Item(0, "friendRefitReopen", "Reopen the refit screen after a friend's refit", HOST, true, YES_NO,
-                "A friend's refit accepted in the refit screen is done when that screen closes. On: it then opens again on that ship, so you see the result."));
+                "On: while you are docked at a market, friends get a Refit button for the ship they picked. Their refits are done at once, or wait for you to accept or deny them (see below)."));
+        ITEMS.add(new Item(0, "friendRefitAuto", "Friends' refits need no approval", HOST, true, YES_NO,
+                "On: a friend's refit that passes the checks is done by itself once you are docked and have no fleet, cargo or refit screen open (no screen is opened or closed for you), at your cost (cargo, credits, story points). Off: you accept or deny each one (Ctrl+Shift+R)."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,
@@ -114,6 +114,8 @@ final class Settings {
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
         ITEMS.add(new Item(2, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
                 "A small list at the top right of the campaign map while friends are connected: each player in their colour, the ship they picked, and whose link has gone quiet."));
+        ITEMS.add(new Item(2, "shareCampaignMap", "Show friends your campaign map", HOST, true, YES_NO,
+                "Friends waiting in the lobby see where your fleet is: the whole star system you are in, or hyperspace near you, and the fleets your sensors see."));
         ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
                 "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
         ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,

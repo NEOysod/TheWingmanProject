@@ -23,8 +23,8 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * them made again on the host's campaign each second). A accepts, D denies, Left/Right go through the requests.
  *
  * Accepted with a fleet, cargo or refit screen open, a refit is done the moment that screen closes (those screens
- * keep their own copy of the ship, which would undo a change made under them), and the refit screen can open again
- * on that ship (host setting friendRefitReopen). Registered on each game load as a transient listener.
+ * keep their own copy of the ship, which would undo a change made under them); Wingman doesn't close or open it.
+ * Registered on each game load as a transient listener.
  */
 final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderingListener {
     private static final String SMALL = "graphics/fonts/orbitron12condensed.fnt";
@@ -99,7 +99,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         CampaignUIAPI ui = Global.getSector().getCampaignUI();
         if (ui != null && ui.getCurrentCoreTab() != null) { // this screen's copy of the ship would undo it: done once it closes
             FriendRefit.acceptOnClose(pd);
-            say("Accepted: the refit screen closes for a moment while it is done" + (WingmanConfig.load().friendRefitReopen ? ", then opens again on " + pd.ship + "." : "."), Panel.GOOD);
+            say("Accepted: " + pd.ship + " is refitted once you close this screen.", Panel.GOOD);
             return false;
         }
         String why = FriendRefit.accept(pd);

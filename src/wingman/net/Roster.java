@@ -13,7 +13,7 @@ public final class Roster {
     /** Most fleet members sent; a bigger fleet is cut (the biggest ships come first). */
     public static final int MAX_MEMBERS = 120;
     public static final int FLAGSHIP = 1, MOTHBALLED = 2, CANT_FLY = 4;
-    public static final int MAX_MODULES = 16, MAX_SKILLS = 40, MAX_GEAR = 40, MAX_FITS = 160;
+    public static final int MAX_MODULES = 16, MAX_SKILLS = 40, MAX_SKILL_CHOICES = 128, MAX_SKILL_ID_BYTES = 128, MAX_GEAR = 40, MAX_FITS = 160;
 
     public static final class Member {
         public String id = "", shipName = "", hullName = "", hullSize = "FRIGATE", designation = "", officer = "";
@@ -29,12 +29,18 @@ public final class Roster {
         /** The officer's portrait (a sprite path), and skills as "id:level" (level 2: elite). */
         public String portrait = "";
         public List<String> skills = new ArrayList<String>();
+        /** Host-authoritative officer identity and vanilla skill-picker choices for a linked player. */
+        public String officerId = "";
+        public List<String> skillChoices = new ArrayList<String>();
+        public long skillRevision;
         /** Weapons and wings for their pictures: "w|id|count" or "f|wingId|count", as fitted. */
         public List<String> gear = new ArrayList<String>();
         /** Weapons in their slots, for the picture: "i|slot|weaponId" (i: -1 the main hull, else the module's place in modules). */
         public List<String> fits = new ArrayList<String>();
         /** The ship's D-mods (damage it carries), names, comma-separated. */
         public String dmods = "";
+        /** The joining player this ship's officer is bound to and follows ("" if none). */
+        public String follows = "";
     }
 
     public static final class Player {
@@ -94,6 +100,15 @@ public final class Roster {
                 w.out.writeByte(Math.min(m.fits.size(), MAX_FITS));
                 for (int k = 0; k < m.fits.size() && k < MAX_FITS; k++) w.out.writeUTF(cap(m.fits.get(k), 200));
                 w.out.writeUTF(cap(m.dmods, 400));
+                w.out.writeUTF(cap(m.follows, 40));
+                w.out.writeUTF(cap(m.officerId, 128));
+                w.out.writeLong(m.skillRevision);
+                if (m.skillChoices.size() > MAX_SKILL_CHOICES) throw new IllegalArgumentException("too many officer skill choices");
+                w.out.writeByte(m.skillChoices.size());
+                for (String choice : m.skillChoices) {
+                    if (!isSkillChoiceEncodable(choice)) throw new IllegalArgumentException("invalid officer skill choice");
+                    w.out.writeUTF(choice);
+                }
             }
             w.out.writeUTF(cap(refitMarket, 80));
         } catch (IOException ex) { throw new IllegalStateException(ex); }
@@ -148,10 +163,43 @@ public final class Roster {
             if (nf > MAX_FITS) throw new IOException("too many weapons in slots");
             for (int k = 0; k < nf; k++) m.fits.add(in.readUTF());
             m.dmods = cleanLong(in.readUTF());
+            m.follows = HostSession.cleanName(in.readUTF());
+            m.officerId = in.readUTF();
+            m.skillRevision = in.readLong();
+            int nc = in.readByte() & 0xFF;
+            if (nc > MAX_SKILL_CHOICES) throw new IOException("too many officer skill choices");
+            for (int k = 0; k < nc; k++) {
+                String choice = in.readUTF();
+                if (!isSkillChoiceEncodable(choice)) throw new IOException("invalid officer skill choice");
+                m.skillChoices.add(choice);
+            }
             r.members.add(m);
         }
         r.refitMarket = clean(in.readUTF());
         return r;
+    }
+
+    /** Whether all host skill IDs fit the bounded roster representation without truncation. */
+    public static boolean areSkillChoicesEncodable(List<String> choices) {
+        if (choices == null || choices.size() > MAX_SKILL_CHOICES) return false;
+        for (String choice : choices) if (!isSkillChoiceEncodable(choice)) return false;
+        return true;
+    }
+
+    /** Whether one skill ID fits the bounded roster representation without truncation. */
+    public static boolean isSkillChoiceEncodable(String choice) {
+        return choice != null && !choice.trim().isEmpty() && modifiedUtfLength(choice) <= MAX_SKILL_ID_BYTES;
+    }
+
+    /** Modified UTF-8 encoded size as used by DataOutput.writeUTF. */
+    static int modifiedUtfLength(String value) {
+        int bytes = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            bytes += c >= 0x0001 && c <= 0x007f ? 1 : c <= 0x07ff ? 2 : 3;
+            if (bytes > MAX_SKILL_ID_BYTES) return bytes;
+        }
+        return bytes;
     }
 
     /** Text from the host shown on screen: printable characters only, one line. */

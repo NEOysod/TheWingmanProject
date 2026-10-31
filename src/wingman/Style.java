@@ -111,7 +111,7 @@ final class Style {
     // ---- shapes ----
 
     private static void begin() {
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_LINE_BIT);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -138,6 +138,84 @@ final class Style {
         GL11.glBegin(GL11.GL_LINE_LOOP);
         GL11.glVertex2f(x + 0.5f, y + 0.5f); GL11.glVertex2f(x + 0.5f, y + h - 0.5f); GL11.glVertex2f(x + w - 0.5f, y + h - 0.5f); GL11.glVertex2f(x + w - 0.5f, y + 0.5f);
         GL11.glEnd();
+        GL11.glPopAttrib();
+    }
+
+    private static final java.nio.IntBuffer SCISSOR = org.lwjgl.BufferUtils.createIntBuffer(16);
+
+    /** Until unclip(), nothing (shapes or text) draws outside the box (x, y, w, h), nor outside an earlier clip. */
+    static void clip(float x, float y, float w, float h) {
+        float scale = Global.getSettings().getScreenScaleMult();
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_SCISSOR_BIT);
+        int left = (int) Math.floor(x * scale), bottom = (int) Math.floor(y * scale);
+        int right = (int) Math.ceil((x + w) * scale), top = (int) Math.ceil((y + h) * scale);
+        if (GL11.glIsEnabled(GL11.GL_SCISSOR_TEST)) {
+            SCISSOR.clear();
+            GL11.glGetInteger(GL11.GL_SCISSOR_BOX, SCISSOR);
+            left = Math.max(left, SCISSOR.get(0)); bottom = Math.max(bottom, SCISSOR.get(1));
+            right = Math.min(right, SCISSOR.get(0) + SCISSOR.get(2));
+            top = Math.min(top, SCISSOR.get(1) + SCISSOR.get(3));
+        }
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(left, bottom, Math.max(0, right - left), Math.max(0, top - bottom));
+    }
+
+    static void unclip() { GL11.glPopAttrib(); }
+
+    /**
+     * A narrow triangle around (cx, cy) pointing along (dx, dy) (up when that is zero), its tip r from the middle:
+     * filled with fillColor and outlined with edge (either may be null).
+     */
+    static void arrow(float cx, float cy, float r, float dx, float dy, Color fillColor, Color edge) {
+        if (r <= 0f) return;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        float ux = len > 0f ? dx / len : 0f, uy = len > 0f ? dy / len : 1f; // along
+        float sx = -uy, sy = ux; // across
+        float[] p = { cx + ux * r, cy + uy * r,
+                cx - ux * r * 0.7f + sx * r * 0.7f, cy - uy * r * 0.7f + sy * r * 0.7f,
+                cx - ux * r * 0.7f - sx * r * 0.7f, cy - uy * r * 0.7f - sy * r * 0.7f };
+        begin();
+        if (fillColor != null) {
+            color(fillColor);
+            GL11.glBegin(GL11.GL_TRIANGLES);
+            for (int i = 0; i < 6; i += 2) GL11.glVertex2f(p[i], p[i + 1]);
+            GL11.glEnd();
+        }
+        if (edge != null) {
+            color(edge);
+            GL11.glLineWidth(1f);
+            GL11.glBegin(GL11.GL_LINE_LOOP);
+            for (int i = 0; i < 6; i += 2) GL11.glVertex2f(p[i], p[i + 1]);
+            GL11.glEnd();
+        }
+        GL11.glPopAttrib();
+    }
+
+    /** A circle around (cx, cy): filled with fillColor and ringed with edge (either may be null). */
+    static void disc(float cx, float cy, float r, Color fillColor, Color edge) {
+        if (r <= 0f) return;
+        int n = Math.max(10, Math.min(48, (int) (r * 0.8f)));
+        begin();
+        if (fillColor != null) {
+            color(fillColor);
+            GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+            GL11.glVertex2f(cx, cy);
+            for (int i = 0; i <= n; i++) {
+                double a = Math.PI * 2 * i / n;
+                GL11.glVertex2f(cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r);
+            }
+            GL11.glEnd();
+        }
+        if (edge != null) {
+            color(edge);
+            GL11.glLineWidth(1f);
+            GL11.glBegin(GL11.GL_LINE_LOOP);
+            for (int i = 0; i < n; i++) {
+                double a = Math.PI * 2 * i / n;
+                GL11.glVertex2f(cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r);
+            }
+            GL11.glEnd();
+        }
         GL11.glPopAttrib();
     }
 
@@ -205,11 +283,18 @@ final class Style {
     }
 
     /** A section heading: its name in small capitals and a thin rule to the right edge. Returns the y under it. */
-    static float section(String name, float x, float top, float w) {
+    static float section(String name, float x, float top, float w) { return section(name, null, x, top, w); }
+
+    /** A section heading with a dim note after its name (null: none). */
+    static float section(String name, String note, float x, float top, float w) {
         String s = name.toUpperCase();
         float h = lineHeight(SMALL_FONT);
         text(s, SMALL_FONT, alpha(ACCENT, 230), x, top, w);
         float tw = width(s, SMALL_FONT);
+        if (note != null && !note.isEmpty() && tw + 10f < w) {
+            text(note, SMALL_FONT, DIM, x + tw + 10f, top, w - tw - 10f);
+            tw += 10f + width(note, SMALL_FONT);
+        }
         if (tw + 10f < w) fill(x + tw + 10f, top - h / 2f, w - tw - 10f, 1f, RULE);
         return top - h - 6f;
     }
