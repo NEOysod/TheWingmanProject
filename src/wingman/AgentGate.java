@@ -2,13 +2,15 @@ package wingman;
 
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipAPI;
+import wingman.client.JoinerAgentLink;
+import wingman.client.WingmanClientPlugin;
 
 /**
  * The only class of Wingman's that may be loaded without PatchLib (the mod Wingman's hooks are written for, see
  * wingman.patch.Patches). It asks once whether PatchLib is there; only then is {@link AgentLink}, which uses the
  * hooks' classes, ever touched. Without it every call here does nothing, or just runs what it is given.
  */
-final class AgentGate {
+public final class AgentGate {
     private AgentGate() {}
 
     private static int state; // 0: not asked yet, 1: PatchLib is there, 2: it isn't
@@ -55,7 +57,7 @@ final class AgentGate {
     }
 
     /** At the start of a battle this PC joins: the hooks answer for the ships other people fly. */
-    static void startJoiner(WingmanClientPlugin joiner) {
+    public static void startJoiner(WingmanClientPlugin joiner) {
         if (!present()) {
             Global.getLogger(AgentGate.class).info(absence());
             return;
@@ -70,13 +72,13 @@ final class AgentGate {
     }
 
     /** Co-op stopped in this battle: the hooks give the real answers again. */
-    static void stop() {
+    public static void stop() {
         if (!present()) return;
         try { AgentLink.uninstall(); } catch (Throwable t) { failed = true; }
     }
 
     /** Run something as part of this ship's frame (a joiner's ability fired by Wingman itself). */
-    static void runAs(ShipAPI ship, Runnable r) {
+    public static void runAs(ShipAPI ship, Runnable r) {
         if (present()) {
             final boolean[] started = new boolean[1];
             final Runnable inner = r;
@@ -98,22 +100,22 @@ final class AgentGate {
      * until it is left; see MissedLookups). Without the hooks there is nothing to list.
      */
     /** Whether lookups were listed in this battle (the log says "not recorded" otherwise). */
-    static volatile boolean recordedThisBattle;
+    public static volatile boolean recordedThisBattle;
 
-    static void recordLookups(boolean on) {
+    public static void recordLookups(boolean on) {
         if (on) recordedThisBattle = true;
         if (!present()) return;
         try { AgentLink.recordLookups(on); } catch (Throwable t) { /* not available: no list */ }
     }
 
     /** The lookups listed since the last call (key -> times asked), or null without the hooks. */
-    static java.util.Map<String, Integer> takeMisses() {
+    public static java.util.Map<String, Integer> takeMisses() {
         if (!present()) return null;
         try { return AgentLink.takeMisses(); } catch (Throwable t) { return null; }
     }
 
     /** The keys mods' scripts here have asked about (see Hooks.isKeyDown), or null without the hooks. */
-    static long[] polledKeys() {
+    public static long[] polledKeys() {
         if (!present() || failed) return null;
         try { return AgentLink.polledKeys(); } catch (Throwable t) { return null; } // (not available: none)
     }
@@ -125,7 +127,7 @@ final class AgentGate {
     }
 
     /** One line for the log, or null without the hooks. */
-    static String report() {
+    public static String report() {
         if (!present()) return null;
         try { return AgentLink.report(); } catch (Throwable t) { return null; }
     }

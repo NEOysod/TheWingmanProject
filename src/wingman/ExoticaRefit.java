@@ -11,6 +11,8 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import wingman.api.WingmanAPI;
 import wingman.compat.Exotica;
 import wingman.net.HostSession;
+import wingman.host.CampaignLobby;
+import wingman.host.FriendRefit;
 
 /**
  * Exotica Technologies' menu in the friend refit: the messages between host and joiner (see wingman.compat.Exotica).
@@ -19,7 +21,7 @@ import wingman.net.HostSession;
  * bought. Host: answers an ask with the ship, and plays a joiner's purchases back through Exotica's own methods when the
  * host is at a market with no core screen open. The joiner only says what it wants: the host checks and charges.
  */
-final class ExoticaRefit {
+public final class ExoticaRefit {
     private ExoticaRefit() {}
 
     private static boolean registered;
@@ -90,7 +92,7 @@ final class ExoticaRefit {
         if (!Exotica.available()) { reply(playerId, id, false, "Exotica Technologies isn't usable on the host."); return; }
         MarketAPI market = FriendRefit.dockedMarket();
         if (market == null) { reply(playerId, id, false, "The host isn't docked at a market."); return; }
-        String why = FriendRefit.refusalFor(p, id, cfg);
+        String why = FriendRefit.refusalFor(id, cfg);
         if (why != null) { reply(playerId, id, false, why); return; }
         FleetMemberAPI m = FriendRefit.memberFor(id);
         if (m == null) { reply(playerId, id, false, "That ship isn't in the host's fleet."); return; }
@@ -115,10 +117,10 @@ final class ExoticaRefit {
         queue.add(new Entry(playerId, from, m.memberId, m.steps));
     }
 
-    static void clear() { queue.clear(); }
+    public static void clear() { queue.clear(); }
 
     /** Host, every frame: plays back waiting purchases when no core screen is open. */
-    static void advance(HostSession s, WingmanConfig cfg) {
+    public static void advance(HostSession s, WingmanConfig cfg) {
         lastCfg = cfg;
         if (queue.isEmpty()) return;
         try {
@@ -137,7 +139,7 @@ final class ExoticaRefit {
         if (p == null) return;
         MarketAPI market = FriendRefit.dockedMarket();
         if (market == null || !cfg.friendRefit) { reply(e.playerId, e.memberId, false, "The host isn't docked at a market."); return; }
-        String why = FriendRefit.refusalFor(p, e.memberId, cfg);
+        String why = FriendRefit.refusalFor(e.memberId, cfg);
         if (why != null) { reply(e.playerId, e.memberId, false, why); return; }
         FleetMemberAPI m = FriendRefit.memberFor(e.memberId);
         if (m == null) { reply(e.playerId, e.memberId, false, "That ship isn't in the host's fleet."); return; }

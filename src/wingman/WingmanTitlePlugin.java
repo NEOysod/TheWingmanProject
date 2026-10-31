@@ -19,6 +19,18 @@ import wingman.net.Conn;
 import wingman.net.HostSession;
 import wingman.net.In;
 import wingman.net.Msg;
+import wingman.client.AfterAction;
+import wingman.client.CampaignStandIn;
+import wingman.client.Compat;
+import wingman.client.CoopScreen;
+import wingman.client.JoinForm;
+import wingman.client.JoinSetup;
+import wingman.client.LobbyScreen;
+import wingman.client.ObjectiveMirror;
+import wingman.client.OfficerSkillMenu;
+import wingman.client.RefitScreen;
+import wingman.client.SystemWatch;
+import wingman.client.TitleMenu;
 
 /**
  * The "Co-op" button on the title screen, the panel it opens, and the how-to pages.
@@ -38,10 +50,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private static final String SEEN_FILE = "wingman_seen";
 
     /** Set by the join mission when it leaves a battle only to come straight back (wrong map size). */
-    static volatile boolean rejoinRequested;
-    static volatile long lastAutoRejoin;
+    public static volatile boolean rejoinRequested;
+    public static volatile long lastAutoRejoin;
     /** Set by the join mission as it leaves: the host's battle had ended / we left one that was still going. */
-    static volatile boolean hostBattleOver, leftOnPurpose;
+    public static volatile boolean hostBattleOver, leftOnPurpose;
     /** When to join the host's battle by ourselves (0: not counting down), and "not this battle". */
     private long autoJoinAt;
     private boolean autoJoinSkip;
@@ -192,7 +204,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private String connectedName;
 
     /** Our own keys for mods' LunaLib settings, for the host (see LunaCopy). */
-    static void sendLunaKeys(Conn c) {
+    public static void sendLunaKeys(Conn c) {
         try {
             byte[] keys = LunaCopy.encodeKeys();
             if (keys != null && c != null) c.send(Msg.LUNA_KEYS, keys);
@@ -209,10 +221,14 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         CampaignStandIn.removeIfLeft(); // back on the title screen however the battle was left
         LunaCopy.restoreIfLeft();
         ExoticaRefit.register();
+        BionicsRefit.register();
         wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
         ExoticaRefit.frame(amount);
         String exoticaNote = ExoticaRefit.takeNote();
         if (exoticaNote != null) note(exoticaNote, ExoticaRefit.noteIsGood() ? Panel.GOOD : Panel.WARN);
+        BionicsRefit.frame(amount);
+        String bionicsNote = BionicsRefit.takeNote();
+        if (bionicsNote != null) note(bionicsNote, BionicsRefit.noteIsGood() ? Panel.GOOD : Panel.WARN);
         ObjectiveMirror.restoreIfLeft();
         if (missionListFrames > 0 && ++missionListFrames >= 3) { // (the list is shown as the title screen sets itself up)
             missionListFrames = 0;
@@ -272,6 +288,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (state != ClientLink.State.CONNECTED) {
                     welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null; campaignDate = ""; news.clear(); campaignMap = null;
                     closeOfficerSkills();
+                    BionicsRefit.close(false);
                     ExoticaRefit.close(false);
                     lobby.refit.saveDraft(); refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
                 }
@@ -319,6 +336,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     JoinSetup.remember(b); // the join mission builds its map from this
                     closeOfficerSkills();
                     ExoticaRefit.close(false);
+                    boolean bionicsWasOpen = BionicsRefit.isOpen();
+                    BionicsRefit.close(false);
+                    if (bionicsWasOpen) note("Bionics: the host went into a battle, so the menu closed. Nothing was sent.", Panel.WARN);
                     closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
                     hostLine = "The host is in a battle right now (map " + Math.round(b.width) + " x " + Math.round(b.height) + ").";
                     if (cfg == null) cfg = WingmanConfig.load();
@@ -347,9 +367,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
                     for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
                     withHost = names.toString();
-                    if (!refitMember.isEmpty()) { // friend refit: the screen stays (docked or not) until a battle, or another pick
+                    if (!refitMember.isEmpty()) { // friend refit: the screen stays (docked or not) until a battle, or the ship going
                         if (roster.hostState == 1) closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
-                        else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed. Your plan for that ship is kept.");
+                        else {
+                            wingman.net.Roster.Member ship = null;
+                            for (wingman.net.Roster.Member rm : roster.members) if (rm.id.equals(refitMember)) { ship = rm; break; }
+                            if (ship == null) closeRefit("That ship left the host's fleet, so the refit screen closed. Your plan for it is kept.");
+                            else if ((ship.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED)) != 0) {
+                                closeRefit("That ship can't be refitted any more, so the refit screen closed. Your plan for it is kept.");
+                            }
+                        }
                     }
                     if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
                         lobbyShown = true;
@@ -391,7 +418,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                             c.send(Msg.REFIT_ASK, Msg.utf(refitMember));
                         }
                         if (refitMember.isEmpty() || r.status == wingman.net.RefitResult.ACCEPTED) {
-                            note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED ? Panel.GOOD : Panel.WARN);
+                            note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED ? Panel.GOOD : Panel.WARN);
                         }
                     } catch (java.io.IOException e) { /* skipped */ }
                 } else if (p.type == Msg.LOBBY) { // who else is there
@@ -434,6 +461,13 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 wasDown = wasClickDown = wasLobbyDown = Mouse.isButtonDown(0);
                 return;
             }
+            if (BionicsRefit.isOpen()) { // Bionic Alteration's workshop takes everything; Escape closes it
+                for (InputEventAPI e : events) {
+                    if (!e.isConsumed() && e.isKeyboardEvent() && e.isKeyDownEvent() && e.getEventValue() == 1) { BionicsRefit.close(true); e.consume(); break; }
+                }
+                BionicsRefit.input(events);
+                return;
+            }
             if (ExoticaRefit.isOpen()) { // Exotica's menu takes everything; Escape closes it
                 for (InputEventAPI e : events) {
                     if (!e.isConsumed() && e.isKeyboardEvent() && e.isKeyDownEvent() && e.getEventValue() == 1) { ExoticaRefit.close(true); e.consume(); break; }
@@ -450,7 +484,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 // A click on our button or windows must not also land on whatever the title screen has underneath.
                 if (e.isMouseEvent() && (e.isMouseDownEvent() || e.isMouseUpEvent()) && over) { e.consume(); continue; }
                 if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.FLEET && lobby.listBox != null && roster != null && !roster.members.isEmpty()
-                        && LobbyScreen.inside(lobby.listBox[0], lobby.listBox[1], lobby.listBox[2], lobby.listBox[3])) { // the wheel goes through the fleet
+                        && Style.inside(lobby.listBox[0], lobby.listBox[1], lobby.listBox[2], lobby.listBox[3])) { // the wheel goes through the fleet
                     int n = roster.members.size();
                     lobbyAt = Math.max(0, Math.min(n - 1, lobbyAt + (e.getEventValue() > 0 ? -1 : 1)));
                     e.consume();
@@ -591,7 +625,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             return;
         }
         if (key == org.lwjgl.input.Keyboard.KEY_K && lobby.page == LobbyScreen.FLEET) { openOfficerSkills(); return; }
-        if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
+        if (key == org.lwjgl.input.Keyboard.KEY_B && lobby.page == LobbyScreen.FLEET) { openBionics(); return; } // B: bionics
+        if (key == 19) { openRefit(); return; }                                         // R: refit the marked ship
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
         if (key == 59) { helpPage = 0; return; }                                       // F1
         if (key == 15) { lobby.page = lobby.page == LobbyScreen.FLEET ? LobbyScreen.REPORT : LobbyScreen.FLEET; return; } // Tab
@@ -668,6 +703,24 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    /**
+     * Bionic Alteration: open the mod's workshop on the linked captain of the marked ship (ours only). The host
+     * sends the captain and checks every change; nothing is opened or approved on the host's side.
+     */
+    private void openBionics() {
+        if (roster == null || roster.hostState != 0 || roster.members.isEmpty()) return;
+        if (cfg == null) cfg = WingmanConfig.load();
+        String me = OfficerPlayerBinding.identity(cfg == null ? "" : cfg.playerName);
+        wingman.net.Roster.Member member = roster.members.get(Math.max(0, Math.min(roster.members.size() - 1, lobbyAt)));
+        if (me.isEmpty() || !me.equals(OfficerPlayerBinding.identity(member.follows)) || member.officerId.isEmpty()) {
+            note("That captain isn't yours.", Panel.WARN);
+            return;
+        }
+        if (ExoticaRefit.isOpen()) return;
+        if (!wingman.compat.ModCompat.bionicsEnabled()) { note("Bionic Alteration isn't usable here.", Panel.WARN); return; }
+        BionicsRefit.ask(member.id, member.officerId);
+    }
+
     /** A detached display copy: the native skill menu must never edit a real campaign officer here. */
     private static com.fs.starfarer.api.characters.PersonAPI skillPresentation(wingman.net.Roster.Member member) {
         com.fs.starfarer.api.characters.PersonAPI person = Global.getFactory().createPerson();
@@ -688,17 +741,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     /** Friend refit: open the refit screen on the ship we picked, and ask the host for what it shows. */
     private void openRefit() {
-        String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
-        wingman.net.Roster.Member mine = roster == null ? null : roster.pickOf(me);
-        if (roster == null) { note("The host's fleet isn't here yet.", Panel.WARN); return; }
+        if (roster == null || roster.members.isEmpty()) { note("The host's fleet isn't here yet.", Panel.WARN); return; }
         if (roster.hostState == 1) { note("Refitting waits until the host's battle is over.", Panel.WARN); return; }
-        if (mine == null) { note("Pick a ship first: you can refit the ship you picked.", Panel.WARN); return; }
-        if ((mine.flags & (wingman.net.Roster.FLAGSHIP | wingman.net.Roster.MOTHBALLED)) != 0) { note("That ship can't be refitted.", Panel.WARN); return; }
+        wingman.net.Roster.Member ship = roster.members.get(Math.max(0, Math.min(roster.members.size() - 1, lobbyAt)));
+        if ((ship.flags & wingman.net.Roster.FLAGSHIP) != 0) { note("That is the host's own ship: it can't be refitted.", Panel.WARN); return; }
+        if ((ship.flags & wingman.net.Roster.MOTHBALLED) != 0) { note("That ship is mothballed.", Panel.WARN); return; }
         if (lobby.isBroken() || !TitleMenu.hide()) { note("The refit screen needs the full-screen lobby, which can't be shown here.", Panel.BAD); return; }
         Conn c = ClientLink.get().getConn();
         if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
-        c.send(Msg.REFIT_ASK, Msg.utf(mine.id));
-        refitMember = mine.id;
+        c.send(Msg.REFIT_ASK, Msg.utf(ship.id));
+        refitMember = ship.id;
         refitData = null;
         lobby.page = LobbyScreen.REFIT;
         note("", Panel.DIM);
@@ -916,7 +968,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             lobbyAt = value;
             if (twice) lobbyKey(33, (char) 0, false, false); // a double click picks it
         } else if (kind == LobbyScreen.SELECT) {
-            lobbyAt = value; // the cursor goes to the player's own ship
+            lobbyAt = value; // the cursor goes to the ship the officer is on
         } else if (kind == LobbyScreen.SCROLL) {
             float[] t = lobby.scrollTrack;
             if (t != null && roster != null && !roster.members.isEmpty()) { // the top of the track is the first ship
@@ -1097,6 +1149,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
             // The lobby as a screen of its own, with the game's menu moved aside (other pages draw over it).
             boolean full = screenUp && open && lobbyOpen && state == ClientLink.State.CONNECTED;
+            if (!full && BionicsRefit.isOpen()) { // the answer came after the lobby was left: an undrawn menu must not keep the input
+                BionicsRefit.close(false);
+                note("Bionics: the lobby was closed, so the menu was too. Nothing was sent.", Panel.WARN);
+            }
             if (!screenUp) { TitleMenu.show(); screen.clear(); }
             boolean click = down && !wasClickDown;
             float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
@@ -1105,14 +1161,18 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 click = false;
             }
             if (full) {
+                boolean underClick = click && !BionicsRefit.isOpen() && !ExoticaRefit.isOpen(); // a modal menu's clicks never reach the lobby under it
                 float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
                 float[] skills = lobby.skillButton;
-                float[] lh = click ? lobby.hitAt(mx, my) : null;
+                float[] bio = lobby.bionicButton;
+                float[] lh = underClick ? lobby.hitAt(mx, my) : null;
                 if (lh != null) lobbyClick(lh);
-                else if (click && skills != null && lobby.page == LobbyScreen.FLEET
-                        && LobbyScreen.inside(skills[0], skills[1], skills[2], skills[3])) openOfficerSkills();
-                else if (click && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
-                else if (click && lobby.page == LobbyScreen.REFIT && !ExoticaRefit.isOpen()) refitAction(lobby.refit.click(mx, my));
+                else if (underClick && bio != null && lobby.page == LobbyScreen.FLEET
+                        && Style.inside(bio[0], bio[1], bio[2], bio[3])) openBionics();
+                else if (underClick && skills != null && lobby.page == LobbyScreen.FLEET
+                        && Style.inside(skills[0], skills[1], skills[2], skills[3])) openOfficerSkills();
+                else if (underClick && b != null && lobby.page == LobbyScreen.FLEET && Style.inside(b[0], b[1], b[2], b[3])) openRefit();
+                else if (underClick && lobby.page == LobbyScreen.REFIT && !ExoticaRefit.isOpen()) refitAction(lobby.refit.click(mx, my));
                 LobbyScreen.View v = lobbyView();
                 v.reserveRight = CoopScreen.buttonsWidth(disconnectShown) + 14f;
                 lobby.render(v);
@@ -1124,8 +1184,19 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     Style.fill(0f, 0f, Global.getSettings().getScreenWidth(), Global.getSettings().getScreenHeight(), Style.alpha(Color.black, 160));
                     Style.frame(r[0] - 8f, dy - 8f, r[2] + 16f, r[1] + r[3] - dy + 16f, Style.WINDOW, Style.EDGE, 10f);
                     ExoticaRefit.render();
-                    Style.button(dx, dy, dw, dh, "DONE", Panel.TEXT, true, LobbyScreen.inside(dx, dy, dw, dh));
-                    if (click && LobbyScreen.inside(dx, dy, dw, dh)) ExoticaRefit.close(true);
+                    Style.button(dx, dy, dw, dh, "DONE", Panel.TEXT, true, Style.inside(dx, dy, dw, dh));
+                    if (click && Style.inside(dx, dy, dw, dh)) ExoticaRefit.close(true);
+                }
+                if (BionicsRefit.isOpen()) {
+                    float[] r = wingman.compat.ModCompat.bionicsRect();
+                    float dx = r[0] + r[2] / 2f - 60f, dy = r[1] - 38f, dw = 120f, dh = 30f;
+                    // The mod's workshop draws no backdrop of its own (in the campaign its dialog does): the lobby is
+                    // dimmed and a window put under it and its DONE button so its text reads.
+                    Style.fill(0f, 0f, Global.getSettings().getScreenWidth(), Global.getSettings().getScreenHeight(), Style.alpha(Color.black, 160));
+                    Style.frame(r[0] - 8f, dy - 8f, r[2] + 16f, r[1] + r[3] - dy + 16f, Style.WINDOW, Style.EDGE, 10f);
+                    BionicsRefit.render();
+                    Style.button(dx, dy, dw, dh, "DONE", Panel.TEXT, true, Style.inside(dx, dy, dw, dh));
+                    if (click && Style.inside(dx, dy, dw, dh)) BionicsRefit.close(true);
                 }
                 float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
                 screen.buttons(sw - CoopScreen.margin(), sh - CoopScreen.margin() + 2f, disconnectShown);

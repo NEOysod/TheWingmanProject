@@ -18,6 +18,9 @@ import wingman.net.Conn;
 import wingman.net.HostCombatFixture;
 import wingman.net.HostSession;
 import wingman.net.Msg;
+import wingman.client.HullGuard;
+import wingman.client.WingmanClientPlugin;
+import wingman.host.RemotePilotAI;
 
 /** Exercises actual host lifecycle/claim code and client skipped-replica consumption. */
 public final class CombatWreckLifecycleTest {
@@ -45,6 +48,7 @@ public final class CombatWreckLifecycleTest {
             assignment(false, false);
             assignment(true, false);
             assignment(false, true);
+            hullSizeChange();
             System.out.println("Combat host lifecycle: " + checks + " checks passed.");
         } finally { Global.setSettings(previous); }
     }
@@ -92,7 +96,7 @@ public final class CombatWreckLifecycleTest {
                     default: throw new AssertionError("Unexpected built-client call: " + m.getName());
                 }
             }));
-            Class<?> type = Class.forName("wingman.WingmanClientPlugin$Puppet");
+            Class<?> type = Class.forName("wingman.client.WingmanClientPlugin$Puppet");
             java.lang.reflect.Constructor<?> ctor = type.getDeclaredConstructor();
             ctor.setAccessible(true);
             Object puppet = ctor.newInstance();
@@ -121,6 +125,88 @@ public final class CombatWreckLifecycleTest {
             }
             check(((Integer) field(client, "resyncs")) == 0 && ((Integer) field(built, "resyncs")) == 0,
                     name + ": repeated actual CHECK packets trigger no cosmetic refresh");
+        }
+    }
+
+    /**
+     * A mod changes a hull's size during a battle (a mech taking off): the host says so, once, and the stored
+     * description late joiners get says the size the ship has now, not the one it was announced with.
+     */
+    private static void hullSizeChange() throws Exception {
+        ShipAPI.HullSize[] size = { ShipAPI.HullSize.FIGHTER };
+        ShipAPI ship = proxy(ShipAPI.class, (p, m, a) -> {
+            switch (m.getName()) {
+                case "isAlive": case "isStationModule": return true;
+                case "isHulk": case "isDrone": case "isAlly": case "isStation": case "isShuttlePod": return false;
+                case "isFighter": return size[0] == ShipAPI.HullSize.FIGHTER;
+                case "getHullSize": return size[0];
+                case "setHullSize": size[0] = (ShipAPI.HullSize) a[0]; return null;
+                case "getWing": return size[0] == ShipAPI.HullSize.FIGHTER ? proxy(com.fs.starfarer.api.combat.FighterWingAPI.class, (q, mm, aa) -> {
+                    throw new AssertionError("Unexpected wing call: " + mm.getName());
+                }) : null;
+                case "getOwner": return 0;
+                case "getName": return "mech";
+                case "getHullSpec": return null;
+                default: throw new AssertionError("Unexpected ship call: " + m.getName());
+            }
+        });
+        wingman.net.ShipSpawn described = new wingman.net.ShipSpawn();
+        described.netId = 42;
+        described.hullId = "mech";
+        described.hullSize = ShipAPI.HullSize.FIGHTER.ordinal();
+        try (HostCombatFixture fixture = new HostCombatFixture()) {
+            WingmanHostPlugin host = new WingmanHostPlugin();
+            set(host, "engine", engine(Collections.singletonList(ship)));
+            set(host, "session", fixture.session);
+            map(host, "ids").put(ship, 42);
+            map(host, "byId").put(42, ship);
+            map(host, "sides").put(42, 0);
+            map(host, "sizes").put(42, ShipAPI.HullSize.FIGHTER.ordinal());
+            map(host, "spawnMsgs").put(42, described.encode());
+
+            invoke(host, "trackShips", new Class<?>[0]);
+            check(fixture.drain().isEmpty(), "unchanged hull size: nothing sent");
+
+            size[0] = ShipAPI.HullSize.FRIGATE; // it took off
+            invoke(host, "trackShips", new Class<?>[0]);
+            List<Conn.Packet> packets = fixture.drain();
+            check(packets.size() == 1 && packets.get(0).type == Msg.HULL_SIZE, "hull size change: one message");
+            In in = Msg.reader(packets.get(0).data);
+            check(in.readInt() == 42 && in.readByte() == ShipAPI.HullSize.FRIGATE.ordinal(), "hull size change: which ship, what size");
+            check(wingman.net.ShipSpawn.decode((byte[]) map(host, "spawnMsgs").get(42)).hullSize == ShipAPI.HullSize.FRIGATE.ordinal(),
+                    "hull size change: the description a late joiner gets is updated");
+
+            invoke(host, "trackShips", new Class<?>[0]);
+            check(fixture.drain().isEmpty(), "hull size change: said once");
+
+            // The joiner applies it to its replica, and to the books of a ship it could not build.
+            WingmanClientPlugin client = new WingmanClientPlugin();
+            Class<?> type = Class.forName("wingman.client.WingmanClientPlugin$Puppet");
+            java.lang.reflect.Constructor<?> ctor = type.getDeclaredConstructor();
+            ctor.setAccessible(true);
+            Object puppet = ctor.newInstance();
+            set(puppet, "netId", 42);
+            set(puppet, "ship", ship);
+            set(puppet, "owner", 0);
+            map(client, "puppets").put(42, puppet);
+            invoke(client, "handle", new Class<?>[] { Conn.Packet.class }, packets.get(0));
+            check(ship.getHullSize() == ShipAPI.HullSize.FRIGATE, "joiner's replica takes the host's hull size");
+
+            WingmanClientPlugin skipped = new WingmanClientPlugin();
+            map(skipped, "skippedIds").put(43, false);
+            map(host, "byId").clear();
+            map(host, "ids").clear();
+            map(host, "sizes").clear();
+            map(host, "spawnMsgs").clear();
+            map(host, "ids").put(ship, 43);
+            map(host, "byId").put(43, ship);
+            map(host, "sizes").put(43, ShipAPI.HullSize.FRIGATE.ordinal());
+            size[0] = ShipAPI.HullSize.FIGHTER; // it landed: a fighter again
+            invoke(host, "trackShips", new Class<?>[0]);
+            List<Conn.Packet> second = fixture.drain();
+            check(second.size() == 1 && second.get(0).type == Msg.HULL_SIZE, "hull size change for a skipped ship: sent");
+            invoke(skipped, "handle", new Class<?>[] { Conn.Packet.class }, second.get(0));
+            check(Boolean.TRUE.equals(map(skipped, "skippedIds").get(43)), "skipped replica counted as the fighter it now is");
         }
     }
 

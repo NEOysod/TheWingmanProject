@@ -10,10 +10,10 @@ import com.fs.starfarer.api.combat.StatBonus;
  * the same, whatever its own hullmods, skills and scripts made of it. Stats that only matter to damage are left
  * out: damage is the host's alone.
  */
-final class ShipStats {
+public final class ShipStats {
     private ShipStats() {}
 
-    static final int COUNT = 57;
+    public static final int COUNT = 57;
     private static final String KEY = "wingman_host";
     /** A bonus is measured by what it makes of this base value. */
     private static final float BASE = 1000f;
@@ -88,7 +88,7 @@ final class ShipStats {
     }
 
     /** The stat's final value as it stands (host side). NaN if it can't be read. */
-    static float read(MutableShipStatsAPI s, int i) {
+    public static float read(MutableShipStatsAPI s, int i) {
         try {
             MutableStat m = plain(s, i);
             if (m != null) return m.getModifiedValue();
@@ -100,7 +100,7 @@ final class ShipStats {
     }
 
     /** True if two values of a stat are near enough not to bother. */
-    static boolean same(float a, float b) {
+    public static boolean same(float a, float b) {
         return Math.abs(a - b) <= Math.max(0.0005f, Math.abs(b) * 0.005f);
     }
 
@@ -109,7 +109,7 @@ final class ShipStats {
      * first, so that whatever this game's scripts have done to the stat since is what gets corrected.
      * Returns true if a correction was needed.
      */
-    static boolean force(MutableShipStatsAPI s, int i, float host) {
+    public static boolean force(MutableShipStatsAPI s, int i, float host) {
         if (host != host || Math.abs(host) > 1.0e7f) return false; // unknown, or nonsense
         try {
             MutableStat m = plain(s, i);
@@ -145,5 +145,5 @@ final class ShipStats {
             "shield soft-flux conversion", "phase cloak upkeep", "phase cloak activation cost", "system flux cost",
             "range cap", "range past the cap", "ballistic reload rate", "energy reload rate", "missile reload rate" };
 
-    static String name(int i) { return i >= 0 && i < NAMES.length ? NAMES[i] : "stat " + i; }
+    public static String name(int i) { return i >= 0 && i < NAMES.length ? NAMES[i] : "stat " + i; }
 }

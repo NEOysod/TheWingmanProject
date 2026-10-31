@@ -52,7 +52,7 @@ public final class Roster {
     /** 0: on the campaign map (or in a menu), 1: in a battle. */
     public int hostState;
     public String maxShipSize = "CAPITAL_SHIP";
-    /** Friend refit: the market the host is docked at, where joiners may refit their picked ship; "" when they can't. */
+    /** Friend refit: the market the host is docked at, where joiners may refit the host's ships but theirs; "" when they can't. */
     public String refitMarket = "";
     public List<Player> players = new ArrayList<Player>();
     public List<Member> members = new ArrayList<Member>();

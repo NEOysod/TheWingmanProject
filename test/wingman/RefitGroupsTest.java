@@ -25,6 +25,28 @@ public final class RefitGroupsTest {
         check(back.hasGroups, "groups sent");
         check(back.groups.equals(d.groups), "groups round-trip: " + back.groups.size());
 
+        RefitData.Slot slot = new RefitData.Slot();
+        slot.place = "module/child"; slot.size = "MEDIUM"; slot.type = "HYBRID";
+        slot.editable = true; slot.hardpoint = true;
+        slot.x = 12f; slot.y = -7f; slot.angle = 35f; slot.arc = 120f;
+        d.modulePictures.add("moduleHull|sprite|0|0|0");
+        d.systemId = "changed_system";
+        d.moduleSlots.add("module"); d.moduleHulls.add("moduleHull"); d.slots.add(slot);
+        back = RefitData.decode(d.encode());
+        check(back.systemId.equals("changed_system") && back.modulePictures.get(0).equals("moduleHull|sprite|0|0|0"), "host system and module frame round-trip");
+        RefitData.Slot copy = back.slot("module/child");
+        check(copy != null && copy.editable && copy.hardpoint && copy.size.equals("MEDIUM") && copy.type.equals("HYBRID")
+                && copy.x == 12f && copy.y == -7f && copy.angle == 35f && copy.arc == 120f && back.weaponIn(copy.place) == null,
+                "empty module slot and geometry round-trip");
+        byte[] truncated = d.encode();
+        boolean rejected = false;
+        try { RefitData.decode(Arrays.copyOf(truncated, truncated.length - 1)); } catch (IOException e) { rejected = true; }
+        check(rejected, "truncated display slot refused");
+        d.slots.add(slot);
+        rejected = false;
+        try { d.encode(); } catch (IllegalStateException e) { rejected = true; }
+        check(rejected, "duplicate display slot refused");
+
         RefitData old = ship();
         old.hasGroups = false;
         old.groups.clear();

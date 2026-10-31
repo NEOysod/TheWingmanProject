@@ -15,27 +15,27 @@ public final class LoadoutSwitchTest {
         RefitData d = ship();
 
         RefitRequest r = request();
-        check(!new RefitPlan(d, r).onlyTakesModsOff() && !FriendRefit.loadoutSwitch(new RefitPlan(d, r)), "nothing asked: no switch");
+        check(!new RefitPlan(d, r).onlyTakesModsOff() && !wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, r)), "nothing asked: no switch");
 
         r.removeMods.add(KIT);
         RefitPlan p = new RefitPlan(d, r);
-        check(p.onlyTakesModsOff() && !p.isEmpty() && FriendRefit.loadoutSwitch(p), "one selector off: a switch");
+        check(p.onlyTakesModsOff() && !p.isEmpty() && wingman.compat.ModCompat.onlySwitchOffs(p), "one selector off: a switch");
 
         r.removeMods.add(HEAD);
-        check(FriendRefit.loadoutSwitch(new RefitPlan(d, r)), "two selectors off: a switch");
+        check(wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, r)), "two selectors off: a switch");
 
         r.removeMods.add("hardenedshieldemitter");
-        check(new RefitPlan(d, r).onlyTakesModsOff() && !FriendRefit.loadoutSwitch(new RefitPlan(d, r)), "an ordinary hull mod off: needs approval");
+        check(new RefitPlan(d, r).onlyTakesModsOff() && !wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, r)), "an ordinary hull mod off: needs approval");
 
         RefitRequest vents = request();
         vents.removeMods.add(KIT);
         vents.vents = d.vents + 1;
-        check(!FriendRefit.loadoutSwitch(new RefitPlan(d, vents)), "selector with vents: needs approval");
+        check(!wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, vents)), "selector with vents: needs approval");
 
         RefitRequest added = request();
         added.removeMods.add(KIT);
         added.addMods.add("hardenedshieldemitter");
-        check(!FriendRefit.loadoutSwitch(new RefitPlan(d, added)), "selector with a hull mod added: needs approval");
+        check(!wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, added)), "selector with a hull mod added: needs approval");
 
         RefitRequest weapon = request();
         weapon.removeMods.add(KIT);
@@ -43,7 +43,7 @@ public final class LoadoutSwitchTest {
         c.place = "a";
         c.item = "";
         weapon.changes.add(c);
-        check(!FriendRefit.loadoutSwitch(new RefitPlan(d, weapon)), "selector with a weapon taken off: needs approval");
+        check(!wingman.compat.ModCompat.onlySwitchOffs(new RefitPlan(d, weapon)), "selector with a weapon taken off: needs approval");
 
         System.out.println("LoadoutSwitchTest: " + checks + " checks passed");
     }

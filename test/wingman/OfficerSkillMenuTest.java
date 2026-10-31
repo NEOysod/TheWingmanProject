@@ -16,6 +16,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
 import com.fs.starfarer.api.ui.CustomPanelAPI;
 import com.fs.starfarer.rpg.OfficerData;
 import com.fs.starfarer.rpg.Person;
+import wingman.client.OfficerSkillMenu;
 
 /** Headless checks for the native menu's intent-only bridge; does not claim to render a game dialog. */
 public final class OfficerSkillMenuTest {

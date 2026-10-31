@@ -6,14 +6,14 @@ import com.fs.starfarer.api.Global;
  * The host address and player name last typed into the join screen. Kept in the game's own "common" save
  * folder (saves/common), the one place a mod is allowed to write, so nobody has to edit a file by hand.
  */
-final class SavedJoin {
+public final class SavedJoin {
     private static final String FILE = "wingman_join";
 
-    String address = "";
-    String name = "";
-    String password = "";
+    public String address = "";
+    public String name = "";
+    public String password = "";
 
-    static SavedJoin load() {
+    public static SavedJoin load() {
         SavedJoin s = new SavedJoin();
         try {
             if (!Global.getSettings().fileExistsInCommon(FILE)) return s;
@@ -29,7 +29,7 @@ final class SavedJoin {
         return s;
     }
 
-    void save() {
+    public void save() {
         try {
             Global.getSettings().writeTextFileToCommon(FILE, clean(address, 64) + "\n" + clean(name, 20) + "\n" + clean(password, 32) + "\n");
         } catch (Throwable t) {
@@ -43,13 +43,13 @@ final class SavedJoin {
     }
 
     /** The host part of "host" or "host:port". */
-    static String hostOf(String address) {
+    public static String hostOf(String address) {
         int i = address.lastIndexOf(':');
         return (i > 0 ? address.substring(0, i) : address).trim();
     }
 
     /** The port part of "host:port", or the fallback if none (or nonsense) was given. */
-    static int portOf(String address, int fallback) {
+    public static int portOf(String address, int fallback) {
         int i = address.lastIndexOf(':');
         if (i <= 0) return fallback;
         try {

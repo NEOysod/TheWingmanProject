@@ -21,6 +21,7 @@ import wingman.net.HostCombatFixture;
 import wingman.net.In;
 import wingman.net.Msg;
 import wingman.net.ShipSpawn;
+import wingman.client.WingmanClientPlugin;
 
 /** Production packet handlers, inbox ordering and presentation transitions; no game renderer. */
 public final class CombatControlResyncTest {
@@ -297,7 +298,7 @@ public final class CombatControlResyncTest {
         Body add(int id, boolean fighter, ShipAPI carrier) throws Exception {
             Body body = new Body(fighter, carrier);
             bodies.put(body.ship, body);
-            Class<?> type = Class.forName("wingman.WingmanClientPlugin$Puppet");
+            Class<?> type = Class.forName("wingman.client.WingmanClientPlugin$Puppet");
             Constructor<?> constructor = type.getDeclaredConstructor();
             constructor.setAccessible(true);
             Object puppet = constructor.newInstance();

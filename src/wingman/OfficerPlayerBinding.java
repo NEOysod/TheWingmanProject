@@ -17,16 +17,17 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 
 import wingman.api.WingmanAPI;
 import wingman.net.HostSession;
+import wingman.host.CampaignLobby;
 
 /** Host-owned, save-persistent officer identity; only campaign code moves captains. */
-final class OfficerPlayerBinding {
-    static final String TAG_PREFIX = "wingman_player:";
+public final class OfficerPlayerBinding {
+    public static final String TAG_PREFIX = "wingman_player:";
 
-    static String identity(String name) {
+    public static String identity(String name) {
         return name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
     }
 
-    static String boundPlayer(PersonAPI person) {
+    public static String boundPlayer(PersonAPI person) {
         String found = null;
         for (String tag : person.getTags()) {
             if (!tag.startsWith(TAG_PREFIX)) continue;
@@ -97,7 +98,7 @@ final class OfficerPlayerBinding {
      * Called after lobby pick validation, before roster construction, never during combat. A player without an
      * officer binds the skilled captain of the ship they picked; a bound officer follows the player's pick.
      */
-    static void follow(CampaignFleetAPI fleet, List<HostSession.Player> players, WingmanConfig cfg) {
+    public static void follow(CampaignFleetAPI fleet, List<HostSession.Player> players, WingmanConfig cfg) {
         if (fleet == null) return;
         List<PersonAPI> officers = officers(fleet);
         List<FleetMemberAPI> members = fleet.getFleetData().getMembersListCopy();

@@ -26,6 +26,7 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
 import wingman.api.WingmanAPI;
 import wingman.net.Conn;
 import wingman.net.HostSession;
+import wingman.net.Person;
 
 /** Strict API doubles exercise real binding, reservation lookup, and lobby eligibility code. */
 public final class OfficerPlayerBindingTest {

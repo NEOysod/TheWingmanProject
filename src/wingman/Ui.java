@@ -3,19 +3,19 @@ package wingman;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 
-final class Ui {
+public final class Ui {
     private Ui() {}
 
     /** Show a line in the combat message feed (and the log, with any address taken out). Never throws. */
-    static void say(CombatEngineAPI engine, String text) {
+    public static void say(CombatEngineAPI engine, String text) {
         try {
             Global.getLogger(Ui.class).info(wingman.net.Redact.scrub(text));
             if (engine != null && engine.getCombatUI() != null) {
-                MessageSpy.ownLine = true; // Wingman's own notice: never sent to others or held back
+                MessageTap.ownLine = true; // Wingman's own notice: never sent to others or held back
                 try {
                     engine.getCombatUI().addMessage(0, text);
                 } finally {
-                    MessageSpy.ownLine = false;
+                    MessageTap.ownLine = false;
                 }
             }
         } catch (Throwable ignored) {
@@ -26,11 +26,11 @@ final class Ui {
     static void show(CombatEngineAPI engine, String text) {
         try {
             if (engine != null && engine.getCombatUI() != null) {
-                MessageSpy.ownLine = true;
+                MessageTap.ownLine = true;
                 try {
                     engine.getCombatUI().addMessage(0, text);
                 } finally {
-                    MessageSpy.ownLine = false;
+                    MessageTap.ownLine = false;
                 }
             }
         } catch (Throwable ignored) {

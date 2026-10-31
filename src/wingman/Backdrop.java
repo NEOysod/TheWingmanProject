@@ -30,7 +30,7 @@ import wingman.net.BattleInfo;
  * Touches the game's own classes (CombatEngine, Planet, PlanetSpec): every step fails soft, and the old
  * guess (one planet by the vanilla rule) is used when the host couldn't read them.
  */
-final class Backdrop {
+public final class Backdrop {
     private Backdrop() {}
 
     private static boolean readBroken, applyBroken, lightBroken;
@@ -39,7 +39,7 @@ final class Backdrop {
     // ---- host ----
 
     /** Fill in the host's planets and planet backdrop size. False if they couldn't be read. */
-    static boolean read(CombatEngineAPI engine, BattleInfo b) {
+    public static boolean read(CombatEngineAPI engine, BattleInfo b) {
         if (readBroken || !(engine instanceof CombatEngine)) return false;
         try {
             CombatEngine e = (CombatEngine) engine;
@@ -137,7 +137,7 @@ final class Backdrop {
      * Put the host's planets into the join mission. Returns false when the host's planets aren't known (an older
      * host, or it couldn't read them): the mission then uses the single guessed planet.
      */
-    static boolean addPlanets(MissionDefinitionAPI api, BattleInfo b) {
+    public static boolean addPlanets(MissionDefinitionAPI api, BattleInfo b) {
         if (b == null || !b.planetsKnown) return false;
         if (b.planetBgWidth > 0f && b.planetBgHeight > 0f) api.setPlanetBgSize(b.planetBgWidth, b.planetBgHeight);
         for (BattleInfo.Planet p : b.planets) {
@@ -153,7 +153,7 @@ final class Backdrop {
     // ---- joiner: in the battle ----
 
     /** Give this battle's planets the host's look and turn, and the host's background image if it differs. */
-    static void apply(CombatEngineAPI engine, BattleInfo b) {
+    public static void apply(CombatEngineAPI engine, BattleInfo b) {
         if (applyBroken || b == null || !(engine instanceof CombatEngine)) return;
         try {
             CombatEngine e = (CombatEngine) engine;

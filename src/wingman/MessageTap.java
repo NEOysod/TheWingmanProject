@@ -1,16 +1,13 @@
 package wingman;
 
 import java.awt.Color;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 
-import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.BattleObjectiveAPI;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.DeployedFleetMemberAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.combat.CombatState;
 
 import wingman.net.In;
 import wingman.net.Msg;
@@ -18,52 +15,45 @@ import wingman.net.Msg;
 /**
  * Scripts' lines in the battle's message feed, sent from the host's game to joiners.
  *
- * The feed is a private field of the game's combat screen (CombatState.messageWidget). At the start of a
- * battle it is swapped for a MessageSpy, an exact copy with a listener on it, using java.lang.invoke (which
- * the script sandbox allows; java.lang.reflect it does not). The host sends each script's line (COMBAT_MSG);
- * a joiner shows the host's lines and holds back its own scripts' (their copies of the same scripts would
- * otherwise write the same lines a moment apart, and held-back objectives write none). The game's own lines
- * are made by each PC from what it sees, as before; Wingman's own notices are never sent or held back.
+ * A script's line reaches the feed only through CombatUIAPI.addMessage, which the game's own lines never use;
+ * Patches.MessageLines hooks that method and hands each line here. The host sends it (COMBAT_MSG); a joiner
+ * shows the host's lines and holds back its own scripts' (their copies of the same scripts would otherwise
+ * write the same lines a moment apart, and held-back objectives write none). The game's own lines are made by
+ * each PC from what it sees, as before; Wingman's own notices are never sent or held back.
  *
  * A line is made of parts: text, colours, ships (an icon and name), objectives. Ships and objectives are sent
  * by the host's numbers and turned back into the joiner's copies; one with no copy is shown by name.
  */
-final class MessageTap {
+public final class MessageTap {
     private MessageTap() {}
 
     static final int MAX_PARTS = 40, MAX_TEXT = 1000;
     private static final byte COLOR = 1, TEXT = 2, SHIP = 3, OBJECTIVE = 4;
 
-    private static boolean broken;
-    private static MethodHandle getter, setter;
+    /** Told of every script's line; returns false to keep it off this screen. */
+    public interface LineSink { boolean line(int indent, Object[] parts); }
 
-    /** Put a MessageSpy in as this battle's feed (or find the one already there). Null if it can't be done. */
-    static MessageSpy install(CombatEngineAPI engine) {
-        if (broken || engine == null) return null;
-        try {
-            Object ui = engine.getCombatUI();
-            if (!(ui instanceof com.fs.starfarer.combat.CombatState)) return null;
-            if (getter == null) {
-                Class<?> feed = MessageSpy.class.getSuperclass();
-                // MethodHandles.privateLookupIn (Java 9 on) is looked up by name so this builds for Java 8 too.
-                MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
-                        MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
-                MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(com.fs.starfarer.combat.CombatState.class, MethodHandles.lookup());
-                getter = l.findGetter(com.fs.starfarer.combat.CombatState.class, "messageWidget", feed);
-                setter = l.findSetter(com.fs.starfarer.combat.CombatState.class, "messageWidget", feed);
-            }
-            Object now = getter.invoke(ui);
-            if (now instanceof MessageSpy) return (MessageSpy) now;
-            MessageSpy spy = new MessageSpy();
-            setter.invoke(ui, spy);
-            Dbg.info(MessageTap.class, "Wingman messages: listening to the battle's message feed");
-            return spy;
-        } catch (Throwable t) {
-            broken = true;
-            Global.getLogger(MessageTap.class).warn("Wingman: the battle's message feed can't be followed on this PC; "
-                    + "scripts' lines are not shared", t);
-            return null;
-        }
+    /** The battle's combat screen while its lines are followed; another screen's lines are left alone. */
+    private static volatile Object feed;
+    private static volatile LineSink sink;
+    /** Set while Wingman itself writes a line (Ui.say): those are never sent or held back. */
+    static volatile boolean ownLine;
+
+    /** Follow this battle's scripts' lines, offering each to the sink; a line the sink refuses is not shown. */
+    public static void install(CombatEngineAPI engine, LineSink sink) {
+        if (engine == null) return;
+        Object ui = engine.getCombatUI();
+        if (!(ui instanceof CombatState)) return;
+        if (ui != feed) Dbg.info(MessageTap.class, "Wingman messages: listening to the battle's message feed");
+        feed = ui;
+        MessageTap.sink = sink;
+    }
+
+    /** A script's line, from the addMessage hook: true holds it back. */
+    public static boolean hold(Object self, int indent, Object[] parts) {
+        LineSink s = sink;
+        if (ownLine || s == null || self != feed) return false;
+        try { return !s.line(indent, parts); } catch (Throwable t) { return false; }
     }
 
     /** How the host names ships and objectives on the wire. */
@@ -129,13 +119,20 @@ final class MessageTap {
     }
 
     /** How a joiner finds its copies of the host's ships and objectives. */
-    interface LocalNames {
+    public interface LocalNames {
         ShipAPI ship(int hostId);
         BattleObjectiveAPI objective(int hostIndex);
     }
 
+    /** Show a line the host's game wrote, at its indent. */
+    public static void show(CombatEngineAPI engine, int indent, Object[] parts) {
+        if (engine == null || engine.getCombatUI() == null) return;
+        ownLine = true;
+        try { engine.getCombatUI().addMessage(indent, parts); } finally { ownLine = false; }
+    }
+
     /** The parts of a COMBAT_MSG for this screen; null if the message is malformed. Index 0 is the indent. */
-    static Object[] decode(byte[] data, LocalNames names) throws java.io.IOException {
+    public static Object[] decode(byte[] data, LocalNames names) throws java.io.IOException {
         In in = Msg.reader(data);
         int indent = in.readByte() & 0x7F;
         int n = in.readByte() & 0xFF;

@@ -36,6 +36,17 @@ import wingman.net.Lobby;
 import wingman.net.Msg;
 import wingman.net.ShipSpawn;
 import wingman.net.Snapshot;
+import wingman.host.BattleStats;
+import wingman.host.CampaignLobby;
+import wingman.host.CarrierHoldAI;
+import wingman.host.HostCampaign;
+import wingman.host.HostDamage;
+import wingman.host.HostEnvironment;
+import wingman.host.HostExtras;
+import wingman.host.HostOrders;
+import wingman.host.Hosting;
+import wingman.host.Identity;
+import wingman.host.RemotePilotAI;
 
 /**
  * Loaded into every battle (see data/config/settings.json). If hosting is switched on in wingman_settings.json,
@@ -43,7 +54,7 @@ import wingman.net.Snapshot;
  * ship state out and feeds remote players' inputs in.
  */
 public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
-    static final String CLIENT_FLAG = "wingman_client";
+    public static final String CLIENT_FLAG = "wingman_client";
 
     private CombatEngineAPI engine;
     private boolean started, disabled;
@@ -274,26 +285,22 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     boolean onAutopilot(int playerId) { return onAutopilot.contains(playerId); }
     ShipAPI hostShip() { return engine.getPlayerShip(); }
 
-    private MessageSpy spy;
     private long spyCheckedAt, msgWindowStart;
     private int msgsInWindow, msgsDropped;
 
     /**
      * Send scripts' lines in the message feed to joiners (see MessageTap). Checked again every few seconds,
-     * in case the game rebuilt its feed.
+     * in case the battle's screen is a new one.
      */
     private void tapMessages() {
         spyCheckedAt = System.currentTimeMillis();
         if (!cfg.hostMessages) return;
-        MessageSpy s = MessageTap.install(engine);
-        if (s == null || s == spy) return;
-        spy = s;
-        s.sink = new MessageSpy.Sink() {
+        MessageTap.install(engine, new MessageTap.LineSink() {
             public boolean line(int indent, Object[] parts) {
                 sendLine(indent, parts);
                 return true;
             }
-        };
+        });
     }
 
     private void sendLine(int indent, Object[] parts) {
@@ -385,6 +392,11 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (endSent) return;
 
+        // Secrets of the Frontier's Fel infesting a ship is looked for while nobody is connected too: someone who
+        // joins later is told along with the rest of the battle.
+        byte[] felNews = wingman.compat.ModCompat.felNews(engine, ids);
+        if (felNews != null) session.broadcast(Msg.MOD, felNews);
+
         // With nobody connected there is nobody to tell anything: the host's own game should not pay for co-op.
         // Ships are still counted now and then (the ready-check panel shows how many there are); everything
         // else waits until someone joins, at which point the next frame picks it all up.
@@ -448,6 +460,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             byte[] objectives = orders.objectivesMessage(engine);
             if (objectives != null) p.conn.send(Msg.OBJECTIVES, objectives);
+            byte[] fel = wingman.compat.ModCompat.felState(engine); // after the ships: it names one
+            if (fel != null) p.conn.send(Msg.MOD, fel);
             p.needsSync = false;
             syncedPlayers.add(p);
             fullNext = true;
@@ -902,17 +916,69 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         int id = nextNetId++;
         ids.put(s, id);
         byId.put(id, s);
-        ShipSpawn sp = buildSpawn(s, id);
-        if (moduleIds != null) sp.moduleIds.addAll(moduleIds);
-        byte[] msg = sp.encode();
+        ShipSpawn sp;
+        byte[] msg;
+        try {
+            sp = buildSpawn(s, id);
+            if (moduleIds != null) sp.moduleIds.addAll(moduleIds);
+            msg = sp.encode();
+        } catch (RuntimeException e) {
+            Global.getLogger(WingmanHostPlugin.class).warn("Wingman: cannot describe ship " + s.getHullSpec().getHullId(), e);
+            sp = new ShipSpawn();
+            sp.netId = id;
+            sp.owner = s.getOwner();
+            sp.hullId = s.getHullSpec().getHullId();
+            if (moduleIds != null && moduleIds.size() <= 255) sp.moduleIds.addAll(moduleIds);
+            if (s.isStationModule()) {
+                sp.kind = ShipSpawn.MODULE;
+                sp.slotId = s.getStationSlot() == null ? "" : s.getStationSlot().getId();
+            }
+            sp.failure = "Host could not describe this ship: " + e.getClass().getSimpleName();
+            msg = sp.encode();
+        }
         spawnMsgs.put(id, msg);
         sides.put(id, sp.owner);
+        sizes.put(id, sp.hullSize);
         session.broadcast(Msg.SPAWN, msg);
         return id;
     }
 
     /** The side each ship was last reported on. */
     private final Map<Integer, Integer> sides = new HashMap<Integer, Integer>();
+
+    /** Each ship's hull size as last described, so a change during the battle can be noticed. */
+    private final Map<Integer, Integer> sizes = new HashMap<Integer, Integer>();
+
+    private static int hullSizeOf(ShipAPI s) {
+        try { return s.getHullSize() == null ? -1 : s.getHullSize().ordinal(); } catch (Throwable t) { return -1; }
+    }
+
+    /**
+     * A mod changed a ship's hull size in battle (ARMA's mechs take off and land, some drone systems do the
+     * like): joiners are told, and the description a late joiner gets says the size it is now. The battle check
+     * counts ships and fighters by hull size, so without this the two copies disagree for as long as the ship
+     * lives, which no refresh can repair (SPAWN only describes the hull).
+     */
+    private void checkHullSize(int id, ShipAPI s) {
+        int now = hullSizeOf(s);
+        Integer was = sizes.get(id);
+        if (now < 0 || (was != null && was == now)) return;
+        sizes.put(id, now);
+        try { // the description a late joiner (or a refresh) gets says what the ship is now, not what it was
+            byte[] old = spawnMsgs.get(id);
+            if (old != null) {
+                ShipSpawn sp = ShipSpawn.decode(old);
+                sp.hullSize = now;
+                spawnMsgs.put(id, sp.encode());
+            }
+        } catch (Throwable t) { /* the message below still reaches every copy that is already here */ }
+        Msg.W w = new Msg.W();
+        try { w.out.writeInt(id); w.out.writeByte(now); } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+        session.broadcast(Msg.HULL_SIZE, w.done());
+        String hull = "?";
+        try { hull = s.getHullSpec().getHullId(); } catch (Throwable t) { /* no hull spec to name it by */ }
+        Dbg.info(WingmanHostPlugin.class, "Wingman: ship " + id + " (" + hull + ") is now a " + s.getHullSize() + " hull; joiners told");
+    }
 
     /**
      * A ship that changed sides mid-battle (a mod's boarding, hacking or mind control): joiners are told, and
@@ -972,7 +1038,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = e.getValue();
             boolean gone = !present.contains(s);
             boolean dead = !gone && (s.isHulk() || !s.isAlive());
-            if (!gone && !dead) { checkSide(e.getKey(), s); continue; }
+            if (!gone && !dead) { checkSide(e.getKey(), s); checkHullSize(e.getKey(), s); continue; }
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle (see below), unless
             // there are already more wrecks than are worth keeping track of.
             boolean part = false;
@@ -987,6 +1053,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             session.broadcast(Msg.DESPAWN, w.done());
             byte[] description = spawnMsgs.remove(e.getKey());
             sides.remove(e.getKey());
+            sizes.remove(e.getKey());
             ids.remove(s);
             it.remove();
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle: it drifts, it blocks
@@ -1015,7 +1082,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private int seededCuts, unseededCuts, diceLines;
 
     /** For the wreck dice log: a ship's outline, as segment counts (now / as built). */
-    static String outline(ShipAPI s) {
+    public static String outline(ShipAPI s) {
         try {
             com.fs.starfarer.api.combat.BoundsAPI b = s.getExactBounds();
             return b == null ? "none" : b.getSegments().size() + "/" + b.getOrigSegments().size();
@@ -1195,6 +1262,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         sp.owner = s.getOwner();
         try { sp.ally = s.isAlly(); } catch (Throwable t) { /* not an ally */ }
         sp.hullId = s.getHullSpec().getHullId();
+        sp.hullSize = hullSizeOf(s);
         sp.name = s.getName() == null ? "" : s.getName();
         sp.x = s.getLocation().x;
         sp.y = s.getLocation().y;
@@ -1245,6 +1313,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             sp.sModdedBuiltIns.addAll(v.getSModdedBuiltIns());
             sp.suppressedMods.addAll(v.getSuppressedMods());
         } catch (Throwable t) { /* plain hullmod list still goes */ }
+        wingman.compat.ModCompat.captureCombatVariant(s, sp);
         try {
             PersonAPI captain = s.getCaptain();
             // A fighter normally has no officer of its own (if it reports one, it is its carrier's). A mod may
@@ -1271,6 +1340,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 sp.captainAiCore = captain.getAICoreId() == null ? "" : captain.getAICoreId();
                 sp.captainLevel = captain.getStats().getLevel();
                 sp.captain = Identity.person(captain, false); // id, faction, rank, post, personality, tags, memory
+                wingman.compat.ModCompat.captureBionics(captain, sp.captain); // the ship's effects follow the captain here
                 for (MutableCharacterStatsAPI.SkillLevelAPI sk : captain.getStats().getSkillsCopy()) {
                     if (sk.getLevel() <= 0f || sk.getSkill() == null) continue;
                     sp.skillIds.add(sk.getSkill().getId());
@@ -2044,7 +2114,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     }
 
     /** This fighter is from that ship (its carrier, or a hangar module of it). */
-    static boolean linked(ShipAPI fighter, ShipAPI ship) {
+    public static boolean linked(ShipAPI fighter, ShipAPI ship) {
         if (fighter == null || ship == null || !fighter.isFighter() || fighter.getWing() == null) return false;
         ShipAPI src = fighter.getWing().getSourceShip();
         return src != null && (src == ship || src.getParentStation() == ship);
@@ -2117,7 +2187,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     }
 
     /** Arma Armatura's "don't go and refit" mark: a ship whose mark is in the future isn't sent to a carrier. */
-    static final String ARMAA_NO_REFIT = "armaa_refitSuppressedUntil";
+    public static final String ARMAA_NO_REFIT = "armaa_refitSuppressedUntil";
     private int fightersKept;
 
     /**

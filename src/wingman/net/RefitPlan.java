@@ -11,7 +11,7 @@ import java.util.Set;
  * Friend refit: what a request (RefitRequest) comes to against the ship and the host's means as described
  * (RefitData): ordnance points, credits paid and received, story points, S-mods; and everything wrong with it.
  * Worked out the same way on the joiner (to show while choosing) and on the host (which also checks what only the
- * game can: slots, the real ordnance cost; see wingman.FriendRefit). No game classes.
+ * game can: slots, the real ordnance cost; see wingman.host.FriendRefit). No game classes.
  *
  * Items taken out go where the request says before any go in, so a weapon moved out to cargo can be fitted
  * elsewhere, and one sold can be bought back.

@@ -23,6 +23,7 @@ import com.fs.starfarer.api.combat.OnHitEffectPlugin;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
+import com.fs.starfarer.combat.CombatState;
 import com.fs.starfarer.api.plugins.ShipSystemStatsScript;
 
 import org.lwjgl.input.Keyboard;
@@ -41,9 +42,11 @@ import patchlib.api.patch.Except;
 import patchlib.api.patch.Patch;
 
 import wingman.ClassFields;
+import wingman.MessageTap;
 import wingman.OfficerPotential;
 import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.plugins.OfficerLevelupPlugin;
+import wingman.host.CampaignNews;
 
 /**
  * Wingman's PatchLib hooks (PatchLib finds them in this jar). They do what {@link Hooks} describes: frames set
@@ -87,9 +90,9 @@ public final class Patches {
             try {
                 if (!ctx.isMostDerivedCall() || ctx.getArgs().length < 1) return;
                 Object first = ctx.getArg(0);
-                if (first instanceof String) wingman.CampaignNews.offer((String) first);
+                if (first instanceof String) wingman.host.CampaignNews.offer((String) first);
                 else if (first instanceof com.fs.starfarer.api.campaign.comm.IntelInfoPlugin) {
-                    wingman.CampaignNews.offer(((com.fs.starfarer.api.campaign.comm.IntelInfoPlugin) first).getSmallDescriptionTitle());
+                    wingman.host.CampaignNews.offer(((com.fs.starfarer.api.campaign.comm.IntelInfoPlugin) first).getSmallDescriptionTitle());
                 }
             } catch (Throwable t) { /* the message itself is unaffected */ }
         }
@@ -571,6 +574,22 @@ public final class Patches {
         /** All three is(key, value). */
         @Before(target = @MethodMatch(methodName = "is", parameterCount = 2))
         public static void is(BeforeContext ctx) { missIfAbsent(ctx, "is"); }
+    }
+
+    /**
+     * A script's line in the battle's message feed (see MessageTap): the host sends it to the joiners, and a joiner
+     * holds its own scripts' lines back while the host's copies arrive. Only CombatUIAPI.addMessage produces these;
+     * the game's own lines never pass through it.
+     */
+    @Patch(target = @ClassMatch(type = CombatState.class))
+    public static final class MessageLines {
+        @Before(target = @MethodMatch(methodName = "addMessage", parameterTypes = { int.class, Object[].class }))
+        public static void before(BeforeContext ctx) {
+            try {
+                if (MessageTap.hold(ctx.getSelf(), ((Number) ctx.getArg(0)).intValue(), (Object[]) ctx.getArg(1)))
+                    ctx.skipOriginal(null);
+            } catch (Throwable t) { /* the line is shown */ }
+        }
     }
 
     /**

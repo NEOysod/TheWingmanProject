@@ -12,6 +12,8 @@ import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
 import wingman.net.HostSession;
+import wingman.host.CampaignPlayerList;
+import wingman.host.Hosting;
 
 /**
  * Wingman's settings page on the campaign map: Ctrl+Shift+O, as in a battle. The same page as on the title screen

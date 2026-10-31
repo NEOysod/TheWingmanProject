@@ -41,10 +41,8 @@ public final class WingmanConfig {
     public boolean predictOwnShip = true;
     /** Host: open the co-op session on the campaign map, so friends can connect and pick ships before a battle. */
     public boolean campaignLobby = true;
-    /** Host: friends may refit the ship they picked while the host is docked at a market (the host accepts each refit). */
+    /** Host: friends may refit the ship they picked while the host is docked at a market (each refit it checks is done). */
     public boolean friendRefit = true;
-    /** Host: a friend's valid refit is done at once, without the host accepting it. */
-    public boolean friendRefitAuto = true;
     /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */
     public boolean hostTethering = false;
     /** Joiner: while connected on the title screen, go into the host's battles as they begin, without being asked. */
@@ -161,7 +159,6 @@ public final class WingmanConfig {
             c.autoJoin = j.optBoolean("autoJoin", c.autoJoin);
             c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
             c.friendRefit = j.optBoolean("friendRefit", c.friendRefit);
-            c.friendRefitAuto = j.optBoolean("friendRefitAuto", c.friendRefitAuto);
             c.hostTethering = j.optBoolean("hostTethering", c.hostTethering);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
@@ -204,7 +201,7 @@ public final class WingmanConfig {
     }
 
     /** One setting as text, by its name in wingman_settings.json. Null for a name this does not know. */
-    String get(String key) {
+    public String get(String key) {
         if ("hostEnabled".equals(key)) return String.valueOf(hostEnabled);
         if ("port".equals(key)) return String.valueOf(port);
         if ("maxPlayers".equals(key)) return String.valueOf(maxPlayers);
@@ -223,7 +220,6 @@ public final class WingmanConfig {
         if ("autoJoin".equals(key)) return String.valueOf(autoJoin);
         if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
         if ("friendRefit".equals(key)) return String.valueOf(friendRefit);
-        if ("friendRefitAuto".equals(key)) return String.valueOf(friendRefitAuto);
         if ("hostTethering".equals(key)) return String.valueOf(hostTethering);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
@@ -281,7 +277,6 @@ public final class WingmanConfig {
             else if ("autoJoin".equals(key)) autoJoin = yes(value);
             else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
             else if ("friendRefit".equals(key)) friendRefit = yes(value);
-            else if ("friendRefitAuto".equals(key)) friendRefitAuto = yes(value);
             else if ("hostTethering".equals(key)) hostTethering = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);
@@ -315,7 +310,7 @@ public final class WingmanConfig {
     private static boolean yes(String v) { return "true".equalsIgnoreCase(v); }
 
     /** True if this PC's own shots with an on-hit script are left to hit by themselves and then compared with the host's. */
-    boolean matchHits() { return "match".equals(scriptedHits); }
+    public boolean matchHits() { return "match".equals(scriptedHits); }
 
     /** Put every value inside its limits. Called after loading and after every change made in the settings page. */
     void tidy(boolean warn) {

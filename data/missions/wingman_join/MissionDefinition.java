@@ -6,8 +6,8 @@ import com.fs.starfarer.api.mission.FleetSide;
 import com.fs.starfarer.api.mission.MissionDefinitionAPI;
 import com.fs.starfarer.api.mission.MissionDefinitionPlugin;
 
-import wingman.WingmanClientPlugin;
-import wingman.JoinSetup;
+import wingman.client.WingmanClientPlugin;
+import wingman.client.JoinSetup;
 
 public class MissionDefinition implements MissionDefinitionPlugin {
 

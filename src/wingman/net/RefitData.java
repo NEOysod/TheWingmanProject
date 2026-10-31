@@ -8,7 +8,7 @@ import java.util.Map;
 
 /**
  * Friend refit (Msg.REFIT_DATA, host -> one joiner): what a joiner's refit screen needs while the host is docked
- * at a market, built only from the host's campaign. The joiner's picked ship as it stands (with its limits worked
+ * at a market, built only from the host's campaign. The ship being refitted as it stands (with its limits worked
  * out on the host, with the host's skills), what the host can fit to it (cargo, storage, each submarket's weapons
  * and fighter LPCs), credits and story points, and the hull mods the host knows. Sent when the joiner opens the
  * refit screen (Msg.REFIT_ASK) and again whenever any of it changes. See docs/FRIEND_REFIT_DESIGN.md.
@@ -96,6 +96,32 @@ public final class RefitData {
     public List<Group> groups = new ArrayList<Group>();
     /** The hull in each station module slot (display only; sent after the groups). */
     public List<String> moduleSlots = new ArrayList<String>(), moduleHulls = new ArrayList<String>();
+    public List<String> modulePictures = new ArrayList<String>();
+    public String systemId = "";
+    /** Host-derived slot descriptions, including empty slots. */
+    public List<Slot> slots = new ArrayList<Slot>();
+
+    public static final class Slot {
+        public String place = "", size = "", type = "", builtInWeapon = "";
+        public boolean editable, builtIn, hardpoint;
+        public float x, y, angle, arc;
+    }
+
+    public Slot slot(String place) {
+        for (Slot s : slots) if (s.place.equals(place)) return s;
+        return null;
+    }
+
+    private static boolean validSlot(Slot s) {
+        return s.place != null && !s.place.isEmpty() && s.place.length() <= 100
+                && java.util.Arrays.asList("SMALL", "MEDIUM", "LARGE").contains(s.size)
+                && java.util.Arrays.asList("BALLISTIC", "ENERGY", "MISSILE", "LAUNCH_BAY", "UNIVERSAL", "HYBRID",
+                    "SYNERGY", "COMPOSITE", "BUILT_IN", "DECORATIVE", "SYSTEM", "STATION_MODULE").contains(s.type)
+                && s.builtInWeapon != null && s.builtInWeapon.length() <= 100
+                && s.editable != s.builtIn && Float.isFinite(s.x) && Math.abs(s.x) <= 1000000f
+                && Float.isFinite(s.y) && Math.abs(s.y) <= 1000000f && Float.isFinite(s.angle) && Math.abs(s.angle) <= 1000000f
+                && Float.isFinite(s.arc) && s.arc >= 0f && s.arc <= 360f;
+    }
 
     public static String key(int kind, String id) { return (kind == WING ? "f:" : "w:") + id; }
 
@@ -176,9 +202,15 @@ public final class RefitData {
             o.writeUTF(cap(hullId, 100));
             o.writeUTF(cap(hullSize, 20));
             for (int v : new int[] { opMax, opUsed, vents, caps, maxVents, maxCaps, maxSMods }) o.writeVarInt(Math.max(0, Math.min(100000, v)));
-            int nf = Math.min(Math.min(fitSlots.size(), fitWeapons.size()), MAX_SLOTS);
+            if (fitSlots.size() != fitWeapons.size() || fitSlots.size() > MAX_SLOTS) throw new IOException("invalid fitted weapons");
+            int nf = fitSlots.size();
             o.writeVarInt(nf);
-            for (int i = 0; i < nf; i++) { o.writeUTF(cap(fitSlots.get(i), 100)); o.writeUTF(cap(fitWeapons.get(i), 100)); }
+            for (int i = 0; i < nf; i++) {
+                String place = fitSlots.get(i), weapon = fitWeapons.get(i);
+                if (place == null || place.isEmpty() || place.length() > 100 || weapon == null || weapon.isEmpty() || weapon.length() > 100)
+                    throw new IOException("invalid fitted weapon");
+                o.writeUTF(place); o.writeUTF(weapon);
+            }
             writeStrings(o, wings, MAX_BAYS, 100);
             writeStrings(o, hullmods, MAX_MODS, 100);
             writeStrings(o, sMods, MAX_MODS, 100);
@@ -216,9 +248,30 @@ public final class RefitData {
             writeStrings(o, noBuildIn, MAX_MODS, 100);
             if (hasGroups) {
                 writeGroups(o, groups);
-                int nmod = Math.min(Math.min(moduleSlots.size(), moduleHulls.size()), MAX_SLOTS);
+                if (moduleSlots.size() != moduleHulls.size() || moduleSlots.size() != modulePictures.size() || moduleSlots.size() > MAX_SLOTS) throw new IOException("invalid modules");
+                int nmod = moduleSlots.size();
                 o.writeVarInt(nmod);
-                for (int k = 0; k < nmod; k++) { o.writeUTF(cap(moduleSlots.get(k), 100)); o.writeUTF(cap(moduleHulls.get(k), 100)); }
+                for (int k = 0; k < nmod; k++) {
+                    String place = moduleSlots.get(k), hull = moduleHulls.get(k);
+                    if (place == null || place.isEmpty() || place.length() > 100 || hull == null || hull.isEmpty() || hull.length() > 100)
+                        throw new IOException("invalid module");
+                    o.writeUTF(place); o.writeUTF(hull);
+                    String picture = modulePictures.get(k);
+                    if (picture == null || picture.length() > 500) throw new IOException("invalid module picture");
+                    o.writeUTF(picture);
+                }
+                if (slots.size() > MAX_SLOTS) throw new IOException("too many display slots");
+                o.writeVarInt(slots.size());
+                java.util.Set<String> places = new java.util.HashSet<String>();
+                for (Slot s : slots) {
+                    if (!validSlot(s) || !places.add(s.place))
+                        throw new IOException("invalid display slot");
+                    o.writeUTF(s.place); o.writeUTF(s.size); o.writeUTF(s.type); o.writeUTF(s.builtInWeapon);
+                    o.writeByte((s.editable ? 1 : 0) | (s.builtIn ? 2 : 0) | (s.hardpoint ? 4 : 0));
+                    o.writeFloat(s.x); o.writeFloat(s.y); o.writeFloat(s.angle); o.writeFloat(s.arc);
+                }
+                if (systemId == null || systemId.length() > 100) throw new IOException("invalid ship system");
+                o.writeUTF(systemId);
             }
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
@@ -310,9 +363,26 @@ public final class RefitData {
         readInts(in, d.modCosts, MAX_MODS);
         readStrings(in, d.noBuildIn, MAX_MODS, 100, "hull mods");
         if (in.remaining() > 0) { d.groups = readGroups(in); d.hasGroups = true; }
-        if (in.remaining() > 0) { // modules, after the groups, for the same reason
+        if (d.hasGroups) {
             int nmod = count(in, MAX_SLOTS, "modules");
-            for (int i = 0; i < nmod; i++) { d.moduleSlots.add(id(in, 100)); d.moduleHulls.add(id(in, 100)); }
+            for (int i = 0; i < nmod; i++) { d.moduleSlots.add(id(in, 100)); d.moduleHulls.add(id(in, 100)); d.modulePictures.add(id(in, 500)); }
+        }
+        if (d.hasGroups) {
+            int n = count(in, MAX_SLOTS, "display slots");
+            java.util.Set<String> places = new java.util.HashSet<String>();
+            for (int i = 0; i < n; i++) {
+                Slot s = new Slot();
+                s.place = id(in, 100); s.size = id(in, 20); s.type = id(in, 30); s.builtInWeapon = id(in, 100);
+                if (s.place.isEmpty() || !places.add(s.place)) throw new IOException("invalid display slot");
+                int flags = in.readByte();
+                if ((flags & ~7) != 0) throw new IOException("invalid display slot flags");
+                s.editable = (flags & 1) != 0; s.builtIn = (flags & 2) != 0; s.hardpoint = (flags & 4) != 0;
+                s.x = number(in, -1000000f, 1000000f); s.y = number(in, -1000000f, 1000000f);
+                s.angle = number(in, -1000000f, 1000000f); s.arc = number(in, 0f, 360f);
+                if (!validSlot(s)) throw new IOException("invalid display slot");
+                d.slots.add(s);
+            }
+            d.systemId = id(in, 100);
         }
         return d;
     }

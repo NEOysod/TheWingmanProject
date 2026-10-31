@@ -9,6 +9,7 @@ import java.util.Map;
 import org.lwjgl.opengl.GL11;
 
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.graphics.SpriteAPI;
 import com.fs.starfarer.api.ui.LabelAPI;
 
 /**
@@ -16,36 +17,36 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * a title bar, a section heading with its rule, a tab strip, a button, a row of key hints). Everything is drawn
  * by hand in screen units, so it works on the title screen, in battle and over the campaign's own screens.
  */
-final class Style {
+public final class Style {
     private Style() {}
 
     // ---- colours ----
-    static final Color ACCENT = new Color(120, 210, 255);
-    static final Color TEXT = new Color(220, 225, 230);
-    static final Color DIM = new Color(150, 160, 170);
-    static final Color FAINT = new Color(105, 115, 128);
-    static final Color GOOD = new Color(110, 220, 120);
+    public static final Color ACCENT = new Color(120, 210, 255);
+    public static final Color TEXT = new Color(220, 225, 230);
+    public static final Color DIM = new Color(150, 160, 170);
+    public static final Color FAINT = new Color(105, 115, 128);
+    public static final Color GOOD = new Color(110, 220, 120);
     static final Color WARN = new Color(255, 200, 80);
-    static final Color BAD = new Color(255, 110, 90);
+    public static final Color BAD = new Color(255, 110, 90);
 
-    static final Color WINDOW = new Color(6, 10, 16, 240);
-    static final Color BAR = new Color(120, 210, 255, 26);
-    static final Color EDGE = new Color(120, 210, 255, 115);
-    static final Color RULE = new Color(120, 210, 255, 60);
-    static final Color WELL = new Color(255, 255, 255, 9);
-    static final Color HOVER = new Color(120, 210, 255, 30);
+    public static final Color WINDOW = new Color(6, 10, 16, 240);
+    public static final Color BAR = new Color(120, 210, 255, 26);
+    public static final Color EDGE = new Color(120, 210, 255, 115);
+    public static final Color RULE = new Color(120, 210, 255, 60);
+    public static final Color WELL = new Color(255, 255, 255, 9);
+    public static final Color HOVER = new Color(120, 210, 255, 30);
     static final Color MARKED = new Color(120, 210, 255, 48);
-    static final Color CHIP = new Color(255, 255, 255, 16);
-    static final Color CHIP_EDGE = new Color(150, 160, 170, 110);
+    public static final Color CHIP = new Color(255, 255, 255, 16);
+    public static final Color CHIP_EDGE = new Color(150, 160, 170, 110);
 
     // ---- fonts ----
-    static final String TITLE_FONT = "graphics/fonts/orbitron20aabold.fnt";
+    public static final String TITLE_FONT = "graphics/fonts/orbitron20aabold.fnt";
     static final String BIG_FONT = "graphics/fonts/orbitron24aabold.fnt";
-    static final String SMALL_FONT = "graphics/fonts/orbitron12condensed.fnt";
+    public static final String SMALL_FONT = "graphics/fonts/orbitron12condensed.fnt";
     private static String body;
 
     /** The game's normal text font. */
-    static String body() {
+    public static String body() {
         if (body == null) {
             try { body = Global.getSettings().getString("defaultFont"); } catch (Throwable t) { body = "graphics/fonts/insignia15LTaa.fnt"; }
         }
@@ -53,7 +54,7 @@ final class Style {
     }
 
     // ---- sizes ----
-    static final float BAR_H = 34f, PAD = 16f, TAB_H = 28f;
+    public static final float BAR_H = 34f, PAD = 16f, TAB_H = 28f;
 
     // ---- text ----
     private static final Map<String, LabelAPI> labels = new HashMap<String, LabelAPI>();
@@ -73,10 +74,10 @@ final class Style {
     }
 
     /** Forget every label (after a drawing failure, in case a bad one caused it). */
-    static void forget() { labels.clear(); }
+    public static void forget() { labels.clear(); }
 
     /** Text with its top edge at 'top', wrapped to 'width'; returns the y of its bottom edge. */
-    static float text(String s, String font, Color c, float x, float top, float width) {
+    public static float text(String s, String font, Color c, float x, float top, float width) {
         if (s == null || s.isEmpty()) return top;
         LabelAPI l = label(s, font, c, width);
         float h = l.getPosition().getHeight();
@@ -86,7 +87,7 @@ final class Style {
     }
 
     /** One line of text, its top at 'top', right edge at 'right'. Returns its left edge. */
-    static float textRight(String s, String font, Color c, float right, float top) {
+    public static float textRight(String s, String font, Color c, float right, float top) {
         if (s == null || s.isEmpty()) return right;
         float w = width(s, font);
         text(s, font, c, right - w, top, w + 40f);
@@ -94,21 +95,73 @@ final class Style {
     }
 
     /** How wide one line of text is. */
-    static float width(String s, String font) {
+    public static float width(String s, String font) {
         if (s == null || s.isEmpty()) return 0f;
         return label(s, font, TEXT, 4000f).computeTextWidth(s);
     }
 
     /** How tall the text is once wrapped to 'width'. */
-    static float height(String s, String font, float width) {
+    public static float height(String s, String font, float width) {
         if (s == null || s.isEmpty()) return 0f;
         return label(s, font, TEXT, width).getPosition().getHeight();
     }
 
     /** One line's height in a font. */
-    static float lineHeight(String font) { return height("Ag", font, 4000f); }
+    public static float lineHeight(String font) { return height("Ag", font, 4000f); }
 
     // ---- shapes ----
+
+    private static final java.util.Set<String> loadTried = new java.util.HashSet<String>();
+    /** Pictures that may still be loaded this frame (set each frame a screen draws). */
+    public static int loadBudget = 4;
+
+    /** A sprite by its path, loaded if the game hasn't yet (portraits load as they are first shown); null if none. */
+    public static SpriteAPI sprite(String path) {
+        if (path == null || path.isEmpty()) return null;
+        try {
+            SpriteAPI s = Global.getSettings().getSprite(path);
+            // (only a picture under graphics/ is ever loaded from what the host names, and each once, at most 600, a few a frame)
+            boolean picture = path.startsWith("graphics/") && !path.contains("..") && (path.endsWith(".png") || path.endsWith(".jpg"));
+            if ((s == null || s.getWidth() <= 0f) && picture && loadBudget > 0 && loadTried.size() < 600 && loadTried.add(path)) {
+                loadBudget--; // a few new pictures a frame, so a long list doesn't stall the screen
+                Global.getSettings().loadTexture(path);
+                s = Global.getSettings().getSprite(path);
+            }
+            return s == null || s.getWidth() <= 0f ? null : s;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Draw a sprite fitted into a square (bottom-left x, y), keeping its shape. */
+    public static void icon(SpriteAPI s, float x, float y, float size) {
+        if (s == null) return;
+        float w0 = s.getWidth(), h0 = s.getHeight();
+        float k = Math.min(size / w0, size / h0);
+        s.setSize(w0 * k, h0 * k);
+        s.setAngle(0f);
+        s.setAlphaMult(1f);
+        s.setColor(Color.WHITE);
+        s.renderAtCenter(x + size / 2f, y + size / 2f);
+        s.setSize(w0, h0);
+    }
+
+    /** Whether the mouse is inside the box. */
+    public static boolean inside(float x, float y, float w, float h) {
+        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    }
+
+    /** A whole number with its thousands separators ("1,234", "-56"). */
+    public static String grouped(long n) {
+        String s = String.valueOf(Math.abs(n));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            if (i > 0 && (s.length() - i) % 3 == 0) sb.append(',');
+            sb.append(s.charAt(i));
+        }
+        return (n < 0 ? "-" : "") + sb;
+    }
 
     private static void begin() {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_LINE_BIT);
@@ -119,9 +172,9 @@ final class Style {
 
     private static void color(Color c) { GL11.glColor4f(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f); }
 
-    static Color alpha(Color c, int a) { return new Color(c.getRed(), c.getGreen(), c.getBlue(), Math.max(0, Math.min(255, a))); }
+    public static Color alpha(Color c, int a) { return new Color(c.getRed(), c.getGreen(), c.getBlue(), Math.max(0, Math.min(255, a))); }
 
-    static void fill(float x, float y, float w, float h, Color c) {
+    public static void fill(float x, float y, float w, float h, Color c) {
         if (w <= 0f || h <= 0f) return;
         begin();
         color(c);
@@ -131,7 +184,7 @@ final class Style {
         GL11.glPopAttrib();
     }
 
-    static void outline(float x, float y, float w, float h, Color c) {
+    public static void outline(float x, float y, float w, float h, Color c) {
         begin();
         color(c);
         GL11.glLineWidth(1f);
@@ -144,7 +197,7 @@ final class Style {
     private static final java.nio.IntBuffer SCISSOR = org.lwjgl.BufferUtils.createIntBuffer(16);
 
     /** Until unclip(), nothing (shapes or text) draws outside the box (x, y, w, h), nor outside an earlier clip. */
-    static void clip(float x, float y, float w, float h) {
+    public static void clip(float x, float y, float w, float h) {
         float scale = Global.getSettings().getScreenScaleMult();
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_SCISSOR_BIT);
         int left = (int) Math.floor(x * scale), bottom = (int) Math.floor(y * scale);
@@ -160,13 +213,13 @@ final class Style {
         GL11.glScissor(left, bottom, Math.max(0, right - left), Math.max(0, top - bottom));
     }
 
-    static void unclip() { GL11.glPopAttrib(); }
+    public static void unclip() { GL11.glPopAttrib(); }
 
     /**
      * A narrow triangle around (cx, cy) pointing along (dx, dy) (up when that is zero), its tip r from the middle:
      * filled with fillColor and outlined with edge (either may be null).
      */
-    static void arrow(float cx, float cy, float r, float dx, float dy, Color fillColor, Color edge) {
+    public static void arrow(float cx, float cy, float r, float dx, float dy, Color fillColor, Color edge) {
         if (r <= 0f) return;
         float len = (float) Math.sqrt(dx * dx + dy * dy);
         float ux = len > 0f ? dx / len : 0f, uy = len > 0f ? dy / len : 1f; // along
@@ -192,7 +245,7 @@ final class Style {
     }
 
     /** A circle around (cx, cy): filled with fillColor and ringed with edge (either may be null). */
-    static void disc(float cx, float cy, float r, Color fillColor, Color edge) {
+    public static void disc(float cx, float cy, float r, Color fillColor, Color edge) {
         if (r <= 0f) return;
         int n = Math.max(10, Math.min(48, (int) (r * 0.8f)));
         begin();
@@ -220,7 +273,7 @@ final class Style {
     }
 
     /** A box with its corners cut: the frame of windows and buttons. */
-    static void frame(float x, float y, float w, float h, Color fillColor, Color edge, float cut) {
+    public static void frame(float x, float y, float w, float h, Color fillColor, Color edge, float cut) {
         cut = Math.min(cut, Math.min(w, h) / 3f);
         begin();
         if (fillColor != null && fillColor.getAlpha() > 0) {
@@ -256,10 +309,10 @@ final class Style {
      * A window: dark body, cut corners, a title bar with an accent mark, the title, and a note on the right of the
      * bar. Returns the top of the space under the bar.
      */
-    static float window(float x, float y, float w, float h, String title, String note) { return window(x, y, w, h, title, note, 0f); }
+    public static float window(float x, float y, float w, float h, String title, String note) { return window(x, y, w, h, title, note, 0f); }
 
     /** The same, keeping 'reserve' clear at the right end of the bar (for a close box). */
-    static float window(float x, float y, float w, float h, String title, String note, float reserve) {
+    public static float window(float x, float y, float w, float h, String title, String note, float reserve) {
         frame(x, y, w, h, WINDOW, EDGE, 10f);
         return titleBar(x, y + h, w, title, note, reserve);
     }
@@ -283,10 +336,10 @@ final class Style {
     }
 
     /** A section heading: its name in small capitals and a thin rule to the right edge. Returns the y under it. */
-    static float section(String name, float x, float top, float w) { return section(name, null, x, top, w); }
+    public static float section(String name, float x, float top, float w) { return section(name, null, x, top, w); }
 
     /** A section heading with a dim note after its name (null: none). */
-    static float section(String name, String note, float x, float top, float w) {
+    public static float section(String name, String note, float x, float top, float w) {
         String s = name.toUpperCase();
         float h = lineHeight(SMALL_FONT);
         text(s, SMALL_FONT, alpha(ACCENT, 230), x, top, w);
@@ -300,10 +353,10 @@ final class Style {
     }
 
     /** A thin rule across. */
-    static void rule(float x, float y, float w) { fill(x, y, w, 1f, RULE); }
+    public static void rule(float x, float y, float w) { fill(x, y, w, 1f, RULE); }
 
     /** A coloured mark down the left of a line of notice text, with a faint band behind it. Returns the y under it. */
-    static float callout(String s, Color c, float x, float top, float w) {
+    public static float callout(String s, Color c, float x, float top, float w) {
         float h = height(s, body(), w - 14f);
         fill(x, top - h - 6f, w, h + 6f, alpha(c, 18));
         fill(x, top - h - 6f, 3f, h + 6f, c);
@@ -312,7 +365,7 @@ final class Style {
     }
 
     /** A small box with a short word in it (a key, a tag). Returns its width. */
-    static float chip(String s, Color c, float x, float top) {
+    public static float chip(String s, Color c, float x, float top) {
         String t = s.toUpperCase();
         float tw = width(t, SMALL_FONT), th = lineHeight(SMALL_FONT);
         float w = tw + 10f, h = th + 6f;
@@ -322,10 +375,10 @@ final class Style {
         return w;
     }
 
-    static float chipHeight() { return lineHeight(SMALL_FONT) + 6f; }
+    public static float chipHeight() { return lineHeight(SMALL_FONT) + 6f; }
 
     /** A button; 'over' lights it up. */
-    static void button(float x, float y, float w, float h, String text, Color c, boolean enabled, boolean over) {
+    public static void button(float x, float y, float w, float h, String text, Color c, boolean enabled, boolean over) {
         Color edge = !enabled ? new Color(120, 120, 120, 80) : over ? c : alpha(c, 150);
         Color back = !enabled ? alpha(c, 8) : over ? alpha(c, 60) : alpha(c, 22);
         frame(x, y, w, h, back, edge, 6f);
@@ -339,7 +392,7 @@ final class Style {
      * A tab strip: each name a tab, the active one lit with a bar under it. Returns the x ranges of the tabs
      * (left, right per tab) for clicks.
      */
-    static float[] tabs(List<String> names, int active, float x, float top, float w) {
+    public static float[] tabs(List<String> names, int active, float x, float top, float w) {
         float[] at = new float[names.size() * 2];
         float tx = x, th = lineHeight(SMALL_FONT);
         fill(x, top - TAB_H, w, 1f, RULE);
@@ -360,7 +413,7 @@ final class Style {
     }
 
     /** "Enter: join     Esc: close" as pairs of {key, what it does}; a part without ": " is plain text. */
-    static List<String[]> keys(String footer) {
+    public static List<String[]> keys(String footer) {
         List<String[]> out = new ArrayList<String[]>();
         if (footer == null) return out;
         for (String part : footer.trim().split(" {3,}")) {
@@ -373,16 +426,16 @@ final class Style {
     }
 
     /** How tall a row of key hints is when wrapped to 'w'. */
-    static float keysHeight(List<String[]> keys, float w) { return layoutKeys(keys, 0f, 0f, w, false, null); }
+    public static float keysHeight(List<String[]> keys, float w) { return layoutKeys(keys, 0f, 0f, w, false, null); }
 
     /** Draws the key hints from 'top' down, wrapping; returns the height used. */
-    static float drawKeys(List<String[]> keys, float x, float top, float w) { return layoutKeys(keys, x, top, w, true, null); }
+    public static float drawKeys(List<String[]> keys, float x, float top, float w) { return layoutKeys(keys, x, top, w, true, null); }
 
     /**
      * The same, each hint a button for the mouse: clicking it does what the key does. Where each is goes into
      * 'hits' as {x, y, w, h, key code, ctrl (1/0)}; hints whose key isn't one key (Up/Down) are drawn but not added.
      */
-    static float drawKeys(List<String[]> keys, float x, float top, float w, List<float[]> hits) { return layoutKeys(keys, x, top, w, true, hits); }
+    public static float drawKeys(List<String[]> keys, float x, float top, float w, List<float[]> hits) { return layoutKeys(keys, x, top, w, true, hits); }
 
     /** The key code (LWJGL) for a key's name as the hints write it ("Enter", "F3", "Ctrl+V", "R"), and ctrl; null if none. */
     static int[] keyCode(String name) {
@@ -413,7 +466,7 @@ final class Style {
     }
 
     /** True if the mouse is over that box. */
-    static boolean over(float x, float y, float w, float h) {
+    public static boolean over(float x, float y, float w, float h) {
         try {
             float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
             return mx >= x && mx <= x + w && my >= y && my <= y + h;
@@ -446,7 +499,7 @@ final class Style {
     }
 
     /** A bar showing used out of max (red past max). */
-    static void meter(float x, float y, float w, float h, float used, float max) {
+    public static void meter(float x, float y, float w, float h, float used, float max) {
         fill(x, y, w, h, alpha(Color.WHITE, 14));
         if (max <= 0f) return;
         float f = Math.min(1f, used / max);

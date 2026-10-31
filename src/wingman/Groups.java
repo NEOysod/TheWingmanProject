@@ -6,7 +6,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.WeaponAPI;
 import com.fs.starfarer.api.combat.WeaponGroupAPI;
 
-final class Groups {
+public final class Groups {
     private Groups() {}
 
     /**
@@ -14,7 +14,7 @@ final class Groups {
      * Groups are matched by the weapons inside them, because the game hands out fresh group objects each
      * time it is asked and two objects for the same group don't compare as equal.
      */
-    static int selectedIndex(ShipAPI ship, List<WeaponGroupAPI> groups) {
+    public static int selectedIndex(ShipAPI ship, List<WeaponGroupAPI> groups) {
         WeaponGroupAPI sel = ship.getSelectedGroupAPI();
         if (sel == null) return -1;
         int i = groups.indexOf(sel);

@@ -17,7 +17,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  * The same page is shown from the CO-OP panel on the title screen (F3) and inside a battle (Ctrl+Shift+O),
  * where the settings that can change mid-battle take effect at once.
  */
-final class Settings {
+public final class Settings {
     private static final String FILE = "wingman_settings";
 
     static final int HOST = 1, JOINER = 2, BOTH = 3;
@@ -52,9 +52,7 @@ final class Settings {
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
-                "On: while you are docked at a market, friends get a Refit button for the ship they picked. Their refits are done at once, or wait for you to accept or deny them (see below)."));
-        ITEMS.add(new Item(0, "friendRefitAuto", "Friends' refits need no approval", HOST, true, YES_NO,
-                "On: a friend's refit that passes the checks is done by itself once you are docked and have no fleet, cargo or refit screen open (no screen is opened or closed for you), at your cost (cargo, credits, story points). Off: you accept or deny each one (Ctrl+Shift+R)."));
+                "On: while you are docked at a market, friends get a Refit button for the ship they picked. A refit that passes the checks is done at once, at your cost (cargo, credits, story points); no screen is opened or closed for you."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,
@@ -180,20 +178,20 @@ final class Settings {
     }
 
     /** The page itself: which row is picked, the keys that change it, and the lines to draw. */
-    static final class Menu {
-        boolean open;
+    public static final class Menu {
+        public boolean open;
         private int page, row;
         private WingmanConfig cfg, file;
         private Map<String, String> overrides = new LinkedHashMap<String, String>();
         private boolean inBattle, saveFailed;
         /** Settings changed since the owner last looked; the owner empties it. */
-        final List<String> changed = new ArrayList<String>();
+        public final List<String> changed = new ArrayList<String>();
 
         /**
          * @param live the settings object a running battle is reading, which is then changed in place;
          *             null on the title screen, where the next battle reads everything afresh.
          */
-        void open(WingmanConfig live) {
+        public void open(WingmanConfig live) {
             inBattle = live != null;
             cfg = live != null ? live : WingmanConfig.load();
             file = WingmanConfig.fromFile();
@@ -275,7 +273,7 @@ final class Settings {
         }
 
         /** Takes every key while the page is up. */
-        void keys(List<InputEventAPI> events) {
+        public void keys(List<InputEventAPI> events) {
             if (!open || events == null) return;
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isKeyboardEvent()) continue;
@@ -370,7 +368,7 @@ final class Settings {
         }
 
         /** The page as a window: a tab per page, a row per setting, then what the picked one does. */
-        Panel.Doc doc() {
+        public Panel.Doc doc() {
             List<Item> rows = rows();
             if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
             boolean blink = (System.currentTimeMillis() / 400) % 2 == 0;

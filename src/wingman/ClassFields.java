@@ -16,7 +16,7 @@ public final class ClassFields {
 
     private static final int STATIC = 0x0008;
 
-    static String nameOfFieldWithType(Class<?> c, String descriptor) {
+    public static String nameOfFieldWithType(Class<?> c, String descriptor) {
         List<String[]> all = fields(c);
         if (all == null) return null;
         String found = null;

@@ -29,7 +29,7 @@ import wingman.net.Plain;
  * LunaLib is another mod: it is reached by name, and without it (or with a version laid out differently) this
  * does nothing.
  */
-final class LunaCopy {
+public final class LunaCopy {
     private LunaCopy() {}
 
     private static final String LOADER = "lunalib.backend.ui.settings.LunaSettingsLoader";
@@ -196,7 +196,7 @@ final class LunaCopy {
     }
 
     /** This PC's keys for LunaLib settings ("mod/field" -> key code); empty without LunaLib. */
-    static Map<String, Integer> readKeys() {
+    public static Map<String, Integer> readKeys() {
         Map<String, Integer> out = new LinkedHashMap<String, Integer>();
         try {
             Map<String, Object> all = settings();
@@ -225,10 +225,10 @@ final class LunaCopy {
     private static final Map<String, Map<String, Object>> undo = new LinkedHashMap<String, Map<String, Object>>();
     private static boolean warned;
 
-    static void remember(byte[] data) { heard = data; }
+    public static void remember(byte[] data) { heard = data; }
 
     /** Put the host's settings in place for a battle (joiner side). Undone by restore(). */
-    static synchronized void apply() {
+    public static synchronized void apply() {
         byte[] data = heard;
         if (data == null) return;
         restore(); // never two layers
@@ -275,7 +275,7 @@ final class LunaCopy {
     }
 
     /** This PC's own settings back (after a battle). Safe to call any time. */
-    static synchronized void restore() {
+    public static synchronized void restore() {
         if (undo.isEmpty()) return;
         try {
             Map<String, Object> all = settings();

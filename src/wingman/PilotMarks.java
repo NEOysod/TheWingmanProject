@@ -13,20 +13,20 @@ import wingman.api.WingmanAPI;
  * person at its helm, and whether that person is on another PC. Each frame the plugin says who flies what;
  * ships no longer flown by a person lose the marks.
  */
-final class PilotMarks {
+public final class PilotMarks {
     private final Map<ShipAPI, String> marked = new IdentityHashMap<ShipAPI, String>();
     private final Map<ShipAPI, Boolean> now = new IdentityHashMap<ShipAPI, Boolean>();
     private final Map<ShipAPI, String> names = new IdentityHashMap<ShipAPI, String>();
 
     /** This frame, this ship is flown by this person (remote: on another PC). */
-    void flown(ShipAPI ship, String name, boolean remote) {
+    public void flown(ShipAPI ship, String name, boolean remote) {
         if (ship == null || name == null || now.containsKey(ship)) return;
         now.put(ship, remote);
         names.put(ship, name);
     }
 
     /** Write the marks for this frame and clear those no longer true. */
-    void apply() {
+    public void apply() {
         for (Iterator<Map.Entry<ShipAPI, String>> it = marked.entrySet().iterator(); it.hasNext();) {
             ShipAPI s = it.next().getKey();
             if (now.containsKey(s)) continue;

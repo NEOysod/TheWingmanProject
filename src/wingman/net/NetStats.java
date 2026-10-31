@@ -68,6 +68,7 @@ public final class NetStats {
             case Msg.SUBSYSTEM: return "extra abilities";
             case Msg.LANDING: return "landings";
             case Msg.MOD: return "other mods' messages";
+            case Msg.HULL_SIZE: return "hull size changes";
             case Msg.UDP_OFFER: return "UDP set-up";
             case Msg.UDP_READY: return "UDP set-up";
             case Msg.UDP_MODE: return "UDP set-up";

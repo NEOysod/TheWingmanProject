@@ -8,12 +8,12 @@ import com.fs.starfarer.api.Global;
  * along with a bug report; in normal play they are only noise in starsector.log. Warnings and errors are
  * always written.
  */
-final class Dbg {
-    static volatile boolean on;
+public final class Dbg {
+    public static volatile boolean on;
 
     private Dbg() {}
 
-    static void info(Class<?> where, String text) {
+    public static void info(Class<?> where, String text) {
         if (on) Global.getLogger(where).info(wingman.net.Redact.scrub(text));
     }
 }
