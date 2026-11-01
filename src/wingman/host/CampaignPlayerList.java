@@ -15,8 +15,10 @@ import com.fs.starfarer.api.campaign.CampaignUIAPI;
 import com.fs.starfarer.api.campaign.listeners.CampaignUIRenderingListener;
 import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.fleet.FleetMemberAPI;
+import com.fs.starfarer.api.ui.LabelAPI;
 
 import wingman.api.WingmanAPI;
+import wingman.CampaignSettings;
 import wingman.net.HostSession;
 import wingman.Panel;
 import wingman.PlayerTags;
@@ -30,7 +32,7 @@ import wingman.WingmanConfig;
  * map. Registered on each game load as a transient listener: nothing of it goes into the save.
  */
 public final class CampaignPlayerList implements CampaignUIRenderingListener {
-    private static final float MAX_W = 300f;
+    private static final float MAX_W = 300f, MIN_NAME_W = 30f;
     private static final int MAX_ROWS = 8;
     private WingmanConfig cfg;
     private long cfgAt;
@@ -51,7 +53,7 @@ public final class CampaignPlayerList implements CampaignUIRenderingListener {
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {
         bottom = Float.MAX_VALUE; // until it is drawn this frame
         settingsButton = null;
-        if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
+        if (broken || Global.getCurrentState() != GameState.CAMPAIGN || CampaignSettings.isOpen() || FriendRefitPanel.isOpen()) return;
         try {
             long now = System.currentTimeMillis();
             if (cfg == null || now - cfgAt > 5000) { cfg = WingmanConfig.load(); cfgAt = now; }
@@ -75,9 +77,12 @@ public final class CampaignPlayerList implements CampaignUIRenderingListener {
     /** A row: slot, name, ship ("" none), and whether their link has gone quiet. */
     private static final class Row {
         final int slot;
-        final String name, ship;
+        final String name, ship, shipLabel;
         final boolean quiet;
-        Row(int slot, String name, String ship, boolean quiet) { this.slot = slot; this.name = name; this.ship = ship; this.quiet = quiet; }
+        Row(int slot, String name, String ship, boolean quiet) {
+            this.slot = slot; this.name = name; this.ship = ship; this.quiet = quiet;
+            this.shipLabel = ship.length() > 22 ? ship.substring(0, 21) + "." : ship;
+        }
     }
 
     /** The SETTINGS button in the list's header as drawn ({x, y, w, h}), or null: CampaignSettings opens on a click. */
@@ -89,6 +94,9 @@ public final class CampaignPlayerList implements CampaignUIRenderingListener {
     private List<Row> list = new ArrayList<Row>();
     private int more;
     private long builtAt;
+    private final String[] textSource = new String[MAX_ROWS * 2], textValue = new String[MAX_ROWS * 2];
+    private final float[] textWidth = new float[MAX_ROWS * 2];
+    private LabelAPI textMeasure;
 
     private List<Row> rows(HostSession s, long now) {
         if (now - builtAt >= 1000) {
@@ -112,6 +120,24 @@ public final class CampaignPlayerList implements CampaignUIRenderingListener {
             list = l;
         }
         return list;
+    }
+
+    private String fitText(int index, String text, String font, float width) {
+        if (!text.equals(textSource[index]) || width != textWidth[index]) {
+            if (textMeasure == null) textMeasure = Global.getSettings().createLabel("Ag", font);
+            String fitted = text;
+            if (textMeasure.computeTextWidth(text) > width - 4f) {
+                int end = text.length();
+                do {
+                    end = text.offsetByCodePoints(end, -1);
+                    fitted = text.substring(0, end).trim() + "...";
+                } while (end > 0 && textMeasure.computeTextWidth(fitted) > width - 4f);
+            }
+            textSource[index] = text;
+            textWidth[index] = width;
+            textValue[index] = fitted;
+        }
+        return textValue[index];
     }
 
     // ---- drawing: a small window, top right ----
@@ -139,14 +165,17 @@ public final class CampaignPlayerList implements CampaignUIRenderingListener {
         settingsButton = new float[] { sbx, sby, sbw, sbh };
         Style.textRight((rows.size() + more) + " players", Style.SMALL_FONT, Style.DIM, sbx - 8f, y + h - 5f);
         float top = y + h - headH - 4f;
+        int index = 0;
         for (Row r : rows) {
             Color c = PlayerTags.color(r.slot);
             float cw = Style.chip("P" + r.slot, c, x + 8f, top - (rowH - Style.chipHeight()) / 2f);
             float bh = Style.lineHeight(body), ty = top - (rowH - bh) / 2f;
-            float right = x + w - 10f;
-            String ship = r.quiet ? "link quiet" : r.ship.isEmpty() ? "no pick" : r.ship;
-            float sx = Style.textRight(ship.length() > 22 ? ship.substring(0, 21) + "." : ship, body, r.quiet ? Panel.WARN : r.ship.isEmpty() ? Style.FAINT : Style.DIM, right, ty);
-            Style.text(r.name, body, r.slot == 1 ? Style.TEXT : c, x + 8f + cw + 8f, ty, Math.max(30f, sx - (x + 8f + cw + 8f) - 8f));
+            float right = x + w - 10f, nx = x + 8f + cw + 8f;
+            String ship = r.quiet ? "link quiet" : r.ship.isEmpty() ? "no pick" : r.shipLabel;
+            ship = fitText(index + MAX_ROWS, ship, body, right - nx - 8f - MIN_NAME_W);
+            float sx = Style.textRight(ship, body, r.quiet ? Panel.WARN : r.ship.isEmpty() ? Style.FAINT : Style.DIM, right, ty);
+            float nw = sx - nx - 8f;
+            Style.text(fitText(index++, r.name, body, nw), body, r.slot == 1 ? Style.TEXT : c, nx, ty, nw);
             top -= rowH;
         }
         if (more > 0) Style.text("and " + more + " more", body, Style.DIM, x + 10f, top - 3f, w - 20f);

@@ -372,7 +372,7 @@ public final class Settings {
             List<Item> rows = rows();
             if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
             boolean blink = (System.currentTimeMillis() / 400) % 2 == 0;
-            Panel.Doc d = new Panel.Doc("SETTINGS").note((page + 1) + " / " + PAGES.length);
+            Panel.Doc d = new Panel.Doc("SETTINGS").note((page + 1) + " / " + PAGES.length).fitOptions();
             List<String> tabs = new ArrayList<String>();
             for (String p : PAGE_TABS) tabs.add(p);
             d.tabs(tabs, page);
@@ -408,7 +408,7 @@ public final class Settings {
             }
             if (saveFailed) d.callout("Could not save: these settings last until the game is closed. See starsector.log.", Panel.BAD);
             d.buttons(Panel.Doc.button("DONE", 1, Panel.GOOD), rows.isEmpty() ? null : Panel.Doc.button("BACK TO DEFAULT", 211, Panel.WARN));
-            d.keys("Up/Down: pick     Left/Right: change     Delete: default     Tab: next page     Esc: done");
+            d.keys("Up: previous     Down: next     Left/Right: change     Delete: default     Tab: next page     Esc: done");
             return d;
         }
 

@@ -27,6 +27,7 @@ public final class Panel {
     /** Drawing failures in a row; one bad frame is skipped and logged, only a run of them switches panels off. */
     private int failures;
     private String lastFailure;
+    private int optionFirst;
 
     /** Enter on the main keyboard or the numpad. */
     public static boolean isEnter(int key) { return key == 28 || key == 156; }
@@ -75,12 +76,14 @@ public final class Panel {
         int tab = -1;
         final List<Block> blocks = new ArrayList<Block>();
         public String keys = "";
+        boolean fitOptions;
 
         public Doc(String title) { this.title = title == null ? "" : title; }
 
         public Doc note(String n) { note = n == null ? "" : n; return this; }
         public Doc keys(String k) { keys = k == null ? "" : k; return this; }
         public Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
+        Doc fitOptions() { fitOptions = true; return this; }
 
         /** A section heading. */
         public Doc section(String name) { blocks.add(new Block(Block.SECTION, name, null, TEXT)); return this; }
@@ -124,6 +127,7 @@ public final class Panel {
         }
 
         public static Object[] button(String label, int key, Color c) { return new Object[] { label, key, c }; }
+        public static Object[] button(String label, int key, Color c, boolean enabled) { return new Object[] { label, key, c, enabled }; }
     }
 
     static final class Block {
@@ -186,26 +190,59 @@ public final class Panel {
         draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh * 0.6f, maxTop);
     }
 
+    static float measureHeight(Doc d, float width, boolean mouse, float keysH) {
+        float inner = width - PAD * 2f;
+        float bodyH = 0f;
+        for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
+        float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
+        return Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
+    }
+
     /** 'top' NaN: the box's middle at height 'middle', no higher than 'maxTop'; else its top at 'top'. */
     private void draw(Doc d, float width, float right, float top, float middle, float maxTop) {
         if (broken) return;
         try {
+            if (d.fitOptions) {
+                maxTop = Math.min(maxTop, Global.getSettings().getScreenHeight() - PAD);
+                if (!Float.isNaN(top)) top = Math.min(top, maxTop);
+            }
             float inner = width - PAD * 2f;
             List<String[]> keys = Style.keys(d.keys);
             float keysH = keys.isEmpty() ? 0f : Style.keysHeight(keys, inner) + 12f;
             float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
-            float bodyH = 0f;
-            for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
-            float h = Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
+            float h = measureHeight(d, width, mouse, keysH);
+            int optionCount = 0, selectedOption = -1;
+            Block option = null;
+            if (d.fitOptions) {
+                for (Block b : d.blocks) if (b.kind == Block.OPTION) {
+                    option = b;
+                    if (b.selected) selectedOption = optionCount;
+                    optionCount++;
+                }
+            }
+            int visibleOptions = optionCount, firstOption = 0;
+            String note = d.note;
+            if (option != null && selectedOption >= 0) {
+                float maxH = Math.min(maxTop, Float.isNaN(top) ? maxTop : top) - PAD;
+                while (visibleOptions > 1 && h > maxH) {
+                    h -= height(option, inner, false);
+                    visibleOptions--;
+                }
+                optionFirst = Math.max(0, Math.min(optionFirst, optionCount - visibleOptions));
+                if (selectedOption < optionFirst) optionFirst = selectedOption;
+                else if (selectedOption >= optionFirst + visibleOptions) optionFirst = selectedOption - visibleOptions + 1;
+                firstOption = optionFirst;
+                if (visibleOptions < optionCount) note += "    " + (firstOption + 1) + "-" + (firstOption + visibleOptions) + " / " + optionCount + " settings";
+            }
             float x = right - width, y;
             if (Float.isNaN(top)) y = Math.min(middle - h / 2f, maxTop - h);
             else y = top - h;
             x = Math.max(4f, x);
-            y = Math.max(4f, y);
+            y = Math.max(d.fitOptions ? PAD : 4f, y);
             lastX = x; lastY = y; lastW = width; lastH = h;
             hits.clear();
 
-            float cy = Style.window(x, y, width, h, d.title, d.note, mouse ? Style.BAR_H - 2f : 0f);
+            float cy = Style.window(x, y, width, h, d.title, note, mouse ? Style.BAR_H - 2f : 0f);
             if (mouse) closeBox(x + width, y + h);
             if (!d.tabs.isEmpty()) {
                 float[] at = Style.tabs(d.tabs, d.tab, x + 1f, cy, width - 2f);
@@ -215,7 +252,15 @@ public final class Panel {
             cy -= PAD;
             float lx = x + PAD;
             float labelW = labelColumn(d, inner);
-            for (int i = 0; i < d.blocks.size(); i++) cy = drawBlock(d.blocks.get(i), lx, cy, inner, labelW, i == 0, mouse ? hits : null);
+            int optionIndex = 0;
+            for (int i = 0; i < d.blocks.size(); i++) {
+                Block b = d.blocks.get(i);
+                if (d.fitOptions && b.kind == Block.OPTION) {
+                    int index = optionIndex++;
+                    if (index < firstOption || index >= firstOption + visibleOptions) continue;
+                }
+                cy = drawBlock(b, lx, cy, inner, labelW, i == 0, mouse ? hits : null);
+            }
             if (!keys.isEmpty()) {
                 float ky = y + keysH - 4f;
                 Style.rule(x + 1f, ky + 4f, width - 2f);
@@ -283,9 +328,10 @@ public final class Panel {
                     float bw = i == 0 ? mainW : restW;
                     if (twoRows && i == 1) { bx = x; y -= 28f + 8f; }
                     float h2 = i == 0 ? bh : 28f, y2 = twoRows && i > 0 ? y + bh - 28f : y + (bh - h2) / 2f; // the others smaller, in small capitals
-                    boolean over = Style.over(bx, y2, bw, h2);
-                    Style.button(bx, y2, bw, h2, String.valueOf(o[0]), (Color) o[2], true, over);
-                    hits.add(new Hit(bx, y2, bw, h2, Hit.KEY, (Integer) o[1], false));
+                    boolean enabled = o.length < 4 || Boolean.TRUE.equals(o[3]);
+                    boolean over = enabled && Style.over(bx, y2, bw, h2);
+                    Style.button(bx, y2, bw, h2, String.valueOf(o[0]), (Color) o[2], enabled, over);
+                    if (enabled) hits.add(new Hit(bx, y2, bw, h2, Hit.KEY, (Integer) o[1], false));
                     bx += bw + gap;
                 }
                 return y - 6f;

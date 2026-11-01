@@ -30,6 +30,7 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
     private static final int SECTION = 0, LINE = 1, CALLOUT = 2;
     private static final List<String> TABS = Arrays.asList("REQUESTS", "PLAYERS");
     private static final String KEYS = "Left: previous     Right: next     Q: page back     E: page forward     Tab: switch tab     Esc: close";
+    private static FriendRefitPanel active;
 
     private final Panel panel = new Panel();
     private boolean open, broken, launcherShown, renderedOpen;
@@ -69,21 +70,24 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
     private HostSession.Player cachedPlayer;
     private RefitPlan cachedPlan;
     private List<String> cachedProblems;
-    private boolean cachedDocked, cachedBypass;
+    private boolean cachedDocked, cachedBypass, cachedCanAccept, cachedEmptyPlan;
     private String cachedName, cachedShip, cachedMessage;
     private Color cachedMessageColor;
-    private long dockedAt;
     private boolean docked;
 
     public FriendRefitPanel() { panel.mouse = true; }
 
     public static void install() {
         try {
-            Global.getSector().getListenerManager().addListener(new FriendRefitPanel(), true);
+            FriendRefitPanel review = new FriendRefitPanel();
+            Global.getSector().getListenerManager().addListener(review, true);
+            active = review;
         } catch (Throwable t) {
             Global.getLogger(FriendRefitPanel.class).warn("Wingman: friend refit review can't be shown on the campaign map", t);
         }
     }
+
+    static boolean isOpen() { return active != null && active.open; }
 
     public int getListenerInputPriority() { return 110; }
 
@@ -188,7 +192,12 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
                 return;
             }
             if (key == Keyboard.KEY_A) {
-                String why = FriendRefit.accept(request);
+                String why = acceptanceProblem(request, FriendRefit.docked(), request.plan != null && request.plan.isEmpty());
+                if (why != null || !cachedCanAccept) {
+                    say(why != null ? why : "The checks changed. Review them before accepting.", Panel.WARN);
+                    return;
+                }
+                why = FriendRefit.accept(request);
                 say(why == null ? "Accepted. " + request.ship + " is refitted." : why, why == null ? Panel.GOOD : Panel.BAD);
             } else {
                 FriendRefit.deny(request);
@@ -231,6 +240,16 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
     private static boolean live(HostSession session, HostSession.Player player) {
         return session != null && player != null && !player.replaced && player.conn != null && !player.conn.isClosed()
                 && session.getPlayers().contains(player);
+    }
+
+    private static String acceptanceProblem(FriendRefit.Pending request, boolean atMarket, boolean emptyPlan) {
+        if (!isPending(request) || !live(HostSession.active(), request.player)) return "That request or player is no longer current.";
+        if (request.player.refitRequest != null) return "A newer refit request is waiting to be checked.";
+        if (request.plan == null) return "Waiting for the refit checks.";
+        if (!atMarket) return "Dock at a market to refresh the checks and accept this refit.";
+        if (emptyPlan) return "No changes remain in this refit.";
+        if (!request.problems.isEmpty()) return "Resolve the refit checks before accepting.";
+        return null;
     }
 
     private static int playerCount(HostSession session) {
@@ -321,15 +340,11 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
             int count = tab == REQUESTS ? requests : players;
             int index = tab == REQUESTS ? requestIndex(selectedRequest) : playerIndex(session, selectedPlayer);
             boolean bypass = selectedPlayer != null && FriendRefit.bypass(selectedPlayer);
-            long now = System.currentTimeMillis();
-            if (tab == REQUESTS && selectedRequest != null && (dockedAt == 0 || now - dockedAt >= 1000)) {
-                docked = FriendRefit.docked();
-                dockedAt = now;
-            }
-            float width = Math.min(600f, Global.getSettings().getScreenWidth() - 16f);
+            docked = tab == REQUESTS && selectedRequest != null && FriendRefit.docked();
+            float width = Math.min(600f, Global.getSettings().getScreenWidth() - 2f * Style.PAD);
             float height = Global.getSettings().getScreenHeight();
             prepare(width, height, count, index, bypass);
-            panel.renderCentred(width, height - 4f, document());
+            panel.renderCentred(width, height - Style.PAD, document());
             renderedTab = tab;
             renderedPage = page;
             renderedRequest = selectedRequest;
@@ -351,10 +366,10 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
             launcherText = "FRIEND REFITS (" + count + ")   CTRL+SHIFT+R";
         }
         float screenW = Global.getSettings().getScreenWidth(), screenH = Global.getSettings().getScreenHeight();
-        launcherW = Math.min(screenW - 16f, Style.width(launcherText, Style.SMALL_FONT) + 24f);
+        launcherW = Math.min(screenW - 2f * Style.PAD, Style.width(launcherText, Style.SMALL_FONT) + 24f);
         launcherH = 28f;
-        launcherX = screenW - launcherW - 8f;
-        launcherY = Math.max(4f, Math.min(screenH, CampaignPlayerList.bottom) - launcherH - 10f);
+        launcherX = screenW - launcherW - Style.PAD;
+        launcherY = Math.max(Style.PAD, Math.min(screenH, CampaignPlayerList.bottom) - launcherH - Style.PAD);
         Style.button(launcherX, launcherY, launcherW, launcherH, launcherText, Style.ACCENT, true,
                 Style.over(launcherX, launcherY, launcherW, launcherH));
         launcherShown = true;
@@ -369,15 +384,17 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
         String ship = request == null ? "" : request.ship;
         int op = request == null ? 0 : request.op, opMax = request == null ? 0 : request.opMax;
         boolean atMarket = request != null && docked;
+        if (cachedPlan != plan) cachedEmptyPlan = plan != null && plan.isEmpty();
+        boolean canAccept = request != null && acceptanceProblem(request, atMarket, cachedEmptyPlan) == null;
         if (cachedTab == tab && cachedRequest == request && cachedPlayer == player && cachedPlan == plan
                 && cachedProblems == problems && cachedCount == count && cachedIndex == index
-                && cachedWidth == width && cachedHeight == height && cachedDocked == atMarket
+                && cachedWidth == width && cachedHeight == height && cachedDocked == atMarket && cachedCanAccept == canAccept
                 && cachedBypass == bypass && cachedOp == op && cachedOpMax == opMax
                 && same(cachedName, name) && same(cachedShip, ship) && same(cachedMessage, message)
                 && cachedMessageColor == messageColor) return;
         cachedTab = tab; cachedRequest = request; cachedPlayer = player; cachedPlan = plan; cachedProblems = problems;
         cachedCount = count; cachedIndex = index; cachedWidth = width; cachedHeight = height;
-        cachedDocked = atMarket; cachedBypass = bypass; cachedOp = op; cachedOpMax = opMax;
+        cachedDocked = atMarket; cachedBypass = bypass; cachedCanAccept = canAccept; cachedOp = op; cachedOpMax = opMax;
         cachedName = name; cachedShip = ship; cachedMessage = message; cachedMessageColor = messageColor;
         document = null;
         documentPage = -1;
@@ -387,7 +404,7 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
         float keysHeight = Style.keysHeight(Style.keys(KEYS), bodyWidth) + 12f;
         float buttonsHeight = request != null || player != null ? 52f : 0f;
         bodyBudget = Math.max(Style.lineHeight(Style.body()) + 5f,
-                height - 8f - Style.BAR_H - Style.TAB_H - 4f - Style.PAD - Style.PAD * 0.75f - keysHeight - buttonsHeight);
+                height - 2f * Style.PAD - Style.BAR_H - Style.TAB_H - 4f - Style.PAD - Style.PAD * 0.75f - keysHeight - buttonsHeight);
         if (!message.isEmpty()) add(CALLOUT, message, messageColor);
         if (tab == REQUESTS) requestLines(request, atMarket);
         else playerLines(player, bypass);
@@ -540,7 +557,7 @@ public final class FriendRefitPanel implements CampaignInputListener, CampaignUI
             else d.line(line.text, line.color);
         }
         if (tab == REQUESTS && selectedRequest != null) {
-            d.buttons(Panel.Doc.button("A: ACCEPT", Keyboard.KEY_A, Panel.GOOD),
+            d.buttons(Panel.Doc.button("A: ACCEPT", Keyboard.KEY_A, Panel.GOOD, cachedCanAccept),
                     Panel.Doc.button("D: DENY", Keyboard.KEY_D, Panel.BAD));
         } else if (tab == PLAYERS && selectedPlayer != null) {
             d.buttons(Panel.Doc.button("SPACE: TOGGLE", Keyboard.KEY_SPACE, Style.ACCENT));

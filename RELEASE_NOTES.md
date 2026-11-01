@@ -44,6 +44,9 @@ each fly a ship from the host's fleet, side by side, in real time.
   **Ctrl+Shift+R** to review changes and costs, or use **PLAYERS** to let selected players skip confirmation.
   Host validation still applies. Permissions last for the current connection and clear on reconnect or campaign
   load. Wingman never opens or closes the host's screens.
+- **Campaign menu layout:** long player names stay on one line, and the player list hides behind open settings
+  and refit menus. Settings keep the selected row and controls visible on smaller screens, with correct mouse
+  targets at enlarged UI scales. Refit approval is disabled while its checks fail.
 - **Host tethering** (host setting, off by default, Troubleshooting page): if a mod's script moves the host into an
   enemy ship, the host is put back in their own and the log names the script. Dev mode is left alone.
 - **PatchLib is now required** (every PC). Wingman's "player ship" hooks are built into the mod on top of it, so

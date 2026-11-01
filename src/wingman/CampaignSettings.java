@@ -45,14 +45,13 @@ public final class CampaignSettings implements CampaignInputListener, CampaignUI
     public void processCampaignInputPreCore(List<InputEventAPI> events) {
         if (broken || events == null || Global.getCurrentState() != GameState.CAMPAIGN) return;
         try {
-            float scale = Global.getSettings().getScreenScaleMult();
             if (!menu.open) {
                 if (Global.getSector().getCampaignUI() != null && Global.getSector().getCampaignUI().isShowingDialog()) return;
                 for (InputEventAPI e : events) { // Ctrl+Shift+O, or a click on SETTINGS in the player list
                     if (e.isConsumed()) continue;
                     float[] b = CampaignPlayerList.settingsButton;
                     boolean clickedButton = e.isMouseEvent() && b != null && !e.isMouseMoveEvent() && !e.isMouseScrollEvent()
-                            && e.getX() / scale >= b[0] && e.getX() / scale <= b[0] + b[2] && e.getY() / scale >= b[1] && e.getY() / scale <= b[1] + b[3];
+                            && e.getX() >= b[0] && e.getX() <= b[0] + b[2] && e.getY() >= b[1] && e.getY() <= b[1] + b[3];
                     if (clickedButton && !e.isLMBDownEvent()) { e.consume(); continue; } // the rest of that click goes no further
                     boolean keys = e.isKeyDownEvent() && e.isCtrlDown() && e.isShiftDown() && e.getEventValue() == 24;
                     if (!keys && !(clickedButton && e.isLMBDownEvent())) continue;
@@ -68,8 +67,8 @@ public final class CampaignSettings implements CampaignInputListener, CampaignUI
             List<InputEventAPI> all = new ArrayList<InputEventAPI>();
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
-                if (e.isLMBDownEvent() && panel.contains(e.getX() / scale, e.getY() / scale)) {
-                    FakeKey k = menu.mouse(panel.hitAt(e.getX() / scale, e.getY() / scale));
+                if (e.isLMBDownEvent() && panel.contains(e.getX(), e.getY())) {
+                    FakeKey k = menu.mouse(panel.hitAt(e.getX(), e.getY()));
                     if (k != null) all.add(k);
                     try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
                 }
