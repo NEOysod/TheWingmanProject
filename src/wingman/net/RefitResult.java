@@ -3,9 +3,8 @@ package wingman.net;
 import java.io.IOException;
 
 /**
- * Friend refit (Msg.REFIT_RESULT, host -> joiner): what became of a refit request. RECEIVED: the host has it and
- * will decide; ACCEPTED: done in the host's campaign; DENIED: the host said no; REFUSED: it failed the host's
- * checks (the text says which); WITHDRAWN: it can't be done any more (the host left the market, the pick changed).
+ * Friend refit (Msg.REFIT_RESULT, host -> joiner): RECEIVED waits for the host; ACCEPTED is done in the host's
+ * campaign; DENIED is the host's decision; REFUSED failed validation; WITHDRAWN can no longer be done.
  */
 public final class RefitResult {
     public static final int RECEIVED = 0, ACCEPTED = 1, DENIED = 2, REFUSED = 3, WITHDRAWN = 4;

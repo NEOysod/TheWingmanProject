@@ -1,17 +1,51 @@
 package wingman;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Finds a field of a game class by its type, reading the class file itself (the game's loader hands it out as a
  * resource). For private fields whose scrambled name may differ between copies of the game (a localised or
  * patched game jar): java.lang.reflect, which could list them, is refused to mods. Returns null if the class file
- * can't be read, or if not exactly one field has that type.
+ * can't be read, or if not exactly one field has that type. Public for wingman.patch, which asks it which fields of
+ * an object could hold a ship.
  */
-final class ClassFields {
+public final class ClassFields {
     private ClassFields() {}
 
-    static String nameOfFieldWithType(Class<?> c, String descriptor) {
+    private static final int STATIC = 0x0008;
+
+    public static String nameOfFieldWithType(Class<?> c, String descriptor) {
+        List<String[]> all = fields(c);
+        if (all == null) return null;
+        String found = null;
+        for (String[] f : all) {
+            if (!descriptor.equals(f[1])) continue;
+            if (found != null) return null; // two of that type: can't tell which
+            found = f[0];
+        }
+        return found;
+    }
+
+    /**
+     * The instance fields a class declares itself (not its superclasses') whose type is a class or interface:
+     * {name, binary name of the type}. Null if the class file can't be read (a loose script's class has none).
+     */
+    public static List<String[]> objectFields(Class<?> c) {
+        List<String[]> all = fields(c);
+        if (all == null) return null;
+        List<String[]> out = new ArrayList<String[]>();
+        for (String[] f : all) {
+            String d = f[1];
+            if ((Integer.parseInt(f[2]) & STATIC) != 0 || !d.startsWith("L") || !d.endsWith(";")) continue;
+            out.add(new String[] { f[0], d.substring(1, d.length() - 1).replace('/', '.') });
+        }
+        return out;
+    }
+
+    /** Every field the class file declares: {name, descriptor, access flags}; null if it can't be read. */
+    private static List<String[]> fields(Class<?> c) {
         try {
             byte[] b = read(c);
             if (b == null) return null;
@@ -33,18 +67,16 @@ final class ClassFields {
             at += 2 + 2 * u2(b, at); // interfaces
             int fields = u2(b, at);
             at += 2;
-            String found = null;
+            List<String[]> out = new ArrayList<String[]>(fields);
             for (int f = 0; f < fields; f++) {
+                int access = u2(b, at);
                 String name = utf[u2(b, at + 2)], desc = utf[u2(b, at + 4)];
                 int attrs = u2(b, at + 6);
                 at += 8;
                 for (int a = 0; a < attrs; a++) at += 6 + u4(b, at + 2);
-                if (descriptor.equals(desc)) {
-                    if (found != null) return null; // two of that type: can't tell which
-                    found = name;
-                }
+                out.add(new String[] { name, desc, String.valueOf(access) });
             }
-            return found;
+            return out;
         } catch (Throwable t) {
             return null;
         }

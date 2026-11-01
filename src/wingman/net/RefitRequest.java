@@ -10,7 +10,7 @@ import java.util.List;
  * in, where it comes from (the host's cargo, storage, or a submarket to buy it from) and where the one taken out
  * goes (cargo, storage, or a submarket to sell it to). Hull mods added and removed, those to build in (S-mods),
  * vents and capacitors; and the cost the joiner was shown, so the host can see if anything changed meanwhile.
- * Nothing happens until the host accepts it, after checking all of it again (see wingman.FriendRefit).
+ * The host checks all of it again and requests approval unless that player may skip confirmation.
  */
 public final class RefitRequest {
     /** Where an item comes from or goes to, besides a submarket (by its id). */
@@ -35,6 +35,8 @@ public final class RefitRequest {
     public int vents, caps;
     /** What the joiner was shown: credits to pay (negative: to receive) and story points to spend. */
     public int expectCredits, expectStoryPoints;
+    /** The weapon groups wanted, in order; null leaves them as they are. */
+    public List<RefitData.Group> groups;
 
     /** The change for a slot or bay, or null. */
     public Change change(String place, boolean wing) {
@@ -85,6 +87,8 @@ public final class RefitRequest {
             o.writeVarInt(Math.max(0, Math.min(1000, caps)));
             o.writeInt(expectCredits);
             o.writeVarInt(Math.max(0, Math.min(1000, expectStoryPoints)));
+            o.writeBoolean(groups != null); // appended: an older host stops reading before it
+            if (groups != null) RefitData.writeGroups(o, groups);
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -116,6 +120,7 @@ public final class RefitRequest {
         r.expectCredits = in.readInt();
         r.expectStoryPoints = in.readVarInt();
         if (r.expectStoryPoints < 0 || r.expectStoryPoints > 1000) throw new IOException("impossible story points");
+        if (in.remaining() > 0 && in.readBoolean()) r.groups = RefitData.readGroups(in);
         return r;
     }
 }

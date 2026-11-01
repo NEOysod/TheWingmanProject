@@ -4,39 +4,39 @@ package wingman;
  * Debug-only stopwatch: how long the co-op code itself takes each frame, part by part. Does nothing unless
  * "debugLog" is on. Call begin() at the top of a frame, mark(part) after each part, end() at the bottom.
  */
-final class Prof {
+public final class Prof {
     private final String[] names;
     private final long[] total;
     private long last, start, worst;
     private int frames;
 
-    Prof(String... names) {
+    public Prof(String... names) {
         this.names = names;
         this.total = new long[names.length];
     }
 
-    void begin() {
+    public void begin() {
         if (!Dbg.on) return;
         start = System.nanoTime();
         last = start;
     }
 
     /** Everything since the previous mark (or begin) is counted as this part. */
-    void mark(int part) {
+    public void mark(int part) {
         if (!Dbg.on) return;
         long now = System.nanoTime();
         total[part] += now - last;
         last = now;
     }
 
-    void end() {
+    public void end() {
         if (!Dbg.on) return;
         frames++;
         if (last - start > worst) worst = last - start;
     }
 
     /** Average milliseconds a frame since the last report, in total and by part; then starts counting afresh. */
-    String report() {
+    public String report() {
         if (frames == 0) return "no frames timed";
         long sum = 0;
         for (long t : total) sum += t;

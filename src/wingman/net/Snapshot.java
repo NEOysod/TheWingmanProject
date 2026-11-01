@@ -116,7 +116,7 @@ public final class Snapshot {
     /**
      * Where each piloted ship's player is pointing (map coordinates, to 2 units), and the host's own (hasHostAim):
      * so on every PC a mod's script that aims "where the player points" for one of these ships (with Wingman's
-     * agent, or through the ship's mouse target) aims where that person really points.
+     * hooks, or through the ship's mouse target) aims where that person really points.
      */
     public float[] pilotedAimX = new float[0], pilotedAimY = new float[0];
     public boolean hasHostAim;

@@ -10,13 +10,53 @@ each fly a ship from the host's fleet, side by side, in real time.
 
 ## New in 0.9.2-beta
 
+- **EHM compatibility:** battle replicas now carry the variant inputs needed to rebuild modified hulls, and friend
+  refit uses host-provided slot details. The host and joiners need the updated Wingman and matching EHM content.
+  Two-PC verification of EHM reconstruction is still required.
+
+- **Secrets of the Frontier compatibility:** when Fel infests one of the enemy's ships, the joiners now see it on the
+  same ship as the host: SotF's own jitter, smoke, sounds, warning pointer, traits readout and status line, and Fel
+  as that ship's captain with the skills the host rolled. Before, only the host's chat lines reached joiners. The
+  host and joiners need the updated Wingman. Two-PC verification is still required.
+
+- **Linked officer skills:** joining players can open the vanilla skill picker from their linked officer's lobby
+  card. The host checks and applies the chosen level-up; cancelling leaves the officer unchanged. The picker uses
+  the vanilla opening method so PatchLib patches on that path also apply. Host and joiners need the updated mod.
+
+- **Bionic Alteration compatibility:** the linked officer's lobby card has a **BIONICS** button (or **B**) opening
+  Bionic Alteration's own workshop on a mirror of that captain and of the mod's bionic container. The host plays the
+  changes back through the mod's own install/remove methods (limits and item costs included) with no host input, and
+  puts the captain's bionics on the ship description so a joiner's battle copy gets the same effects. The host checks
+  the whole change against the captain and the container first: a change it can't make in full is refused before
+  anything moves. It also waits while any dialog is open, and tells the joiner when a battle drops a waiting change.
+
+- **Lobby panels:** the friend's linked officer has a panel of their own, always shown: portrait, level, skills, and
+  the ship they are on, with **SELECT** to mark that ship in the fleet list. The campaign map and the events moved to
+  the right column above the last battle; the separate players list is gone, and the header still says who is in the
+  game.
+- **Refit any of the host's ships:** a friend may refit any ship in the host's fleet but the host's own, picked or
+  not: mark it in the fleet list and press **R**, or use the Refit button on its card. Refitting no longer needs a
+  pick, so it no longer moves the linked officer onto that ship.
 - **CO-OP is a screen of its own:** the connection window, how-to, mods and settings no longer sit behind the
   game's title menu on small screens. A header has **MAIN MENU** and a red **DISCONNECT**; the lobby has them too.
 - The game's missions list no longer pops up over the lobby when a joiner leaves a battle themselves.
-- The market dialog no longer goes empty after the host accepts a friend's refit with the refit screen open.
+- **Friend refit approval:** requests wait for the host to accept or deny them. Open **FRIEND REFITS** with
+  **Ctrl+Shift+R** to review changes and costs, or use **PLAYERS** to let selected players skip confirmation.
+  Host validation still applies. Permissions last for the current connection and clear on reconnect or campaign
+  load. Wingman never opens or closes the host's screens.
+- **Campaign menu layout:** long player names stay on one line, and the player list hides behind open settings
+  and refit menus. Settings keep the selected row and controls visible on smaller screens, with correct mouse
+  targets at enlarged UI scales. Refit approval is disabled while its checks fail.
 - **Host tethering** (host setting, off by default, Troubleshooting page): if a mod's script moves the host into an
   enemy ship, the host is put back in their own and the log names the script. Dev mode is left alone.
-- Still protocol 60, but the host and every joiner should update together.
+- **PatchLib is now required** (every PC). Wingman's "player ship" hooks are built into the mod on top of it, so
+  the separate agent (`WingmanAgent.jar` and its `-javaagent` launch line) is no longer used; remove that line.
+- **Hull size changes reach joiners:** when a mod changes a ship's hull size mid-battle (ARMA's mechs taking
+  off and landing, drone systems that morph), the host says so and every copy changes with it; a ship is
+  otherwise described by its hull id alone, so both ends disagreed on whether it counted as a fighter. Before
+  this, the battle check saw one ship more here and one fighter fewer than the host, and asked for a full
+  refresh every twenty seconds for the rest of the battle — a refresh that could not repair it.
+- Protocol 66 requires the host and every joiner to update together.
 
 ## New in 0.9.1-beta
 

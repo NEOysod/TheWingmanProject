@@ -11,7 +11,7 @@ import com.fs.starfarer.api.GameState;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.combat.ShipAPI;
 
-import wingman.Hosting;
+import wingman.host.Hosting;
 import wingman.WingmanConfig;
 import wingman.net.ClientLink;
 import wingman.net.HostSession;

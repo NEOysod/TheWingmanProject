@@ -16,7 +16,7 @@ import com.fs.starfarer.api.ui.LabelAPI;
  *
  * Drawn on the screen, not in the world, so the tag stays the same size at any zoom.
  */
-final class PlayerTags {
+public final class PlayerTags {
     /** One colour per player, as many as a game can have (16), told apart from each other and from the HUD's. */
     private static final Color[] COLORS = {
         new Color(110, 255, 120),  // P1: green
@@ -50,7 +50,7 @@ final class PlayerTags {
     static volatile boolean hidden;
 
     /** F3, with no Ctrl, Shift or Alt: toggle. Returns true if the key was taken. Safe to call with anything. */
-    static boolean toggleKey(java.util.List<com.fs.starfarer.api.input.InputEventAPI> events, com.fs.starfarer.api.combat.CombatEngineAPI engine) {
+    public static boolean toggleKey(java.util.List<com.fs.starfarer.api.input.InputEventAPI> events, com.fs.starfarer.api.combat.CombatEngineAPI engine) {
         boolean took = false;
         if (events == null) return false;
         for (com.fs.starfarer.api.input.InputEventAPI e : events) {
@@ -64,7 +64,7 @@ final class PlayerTags {
     }
     private boolean broken;
 
-    static Color color(int slot) {
+    public static Color color(int slot) {
         return slot >= 1 && slot <= COLORS.length ? COLORS[slot - 1] : COLORS[COLORS.length - 1];
     }
 
@@ -100,10 +100,10 @@ final class PlayerTags {
     }
 
     /** Draw one player's tag by their ship. Never throws; if drawing ever fails, tags switch off quietly. */
-    void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline) { draw(vp, ship, slot, outline, null); }
+    public void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline) { draw(vp, ship, slot, outline, null); }
 
     /** The same, with the player's name after the number. */
-    void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline, String name) {
+    public void draw(ViewportAPI vp, ShipAPI ship, int slot, boolean outline, String name) {
         if (broken || hidden || vp == null || ship == null || slot < 1) return;
         try {
             if (!Global.getCombatEngine().isEntityInPlay(ship) || ship.isHulk()) return;

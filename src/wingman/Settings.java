@@ -17,7 +17,7 @@ import com.fs.starfarer.api.input.InputEventAPI;
  * The same page is shown from the CO-OP panel on the title screen (F3) and inside a battle (Ctrl+Shift+O),
  * where the settings that can change mid-battle take effect at once.
  */
-final class Settings {
+public final class Settings {
     private static final String FILE = "wingman_settings";
 
     static final int HOST = 1, JOINER = 2, BOTH = 3;
@@ -52,9 +52,7 @@ final class Settings {
         ITEMS.add(new Item(0, "campaignLobby", "Friends can connect on the campaign map", HOST, false, YES_NO,
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
-                "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
-        ITEMS.add(new Item(0, "friendRefitReopen", "Reopen the refit screen after a friend's refit", HOST, true, YES_NO,
-                "A friend's refit accepted in the refit screen is done when that screen closes. On: it then opens again on that ship, so you see the result."));
+                "On: friends may refit ships other than your flagship while you are docked at a market. Review requests with Ctrl+Shift+R, or let individual players skip confirmation there. Host checks and costs (cargo, credits, story points) still apply; no host screen is opened or closed."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },
                 "content: mods must match, except utility mods. all: every mod must match. off: no check (expect trouble)."));
         ITEMS.add(new Item(0, "autoJoin", "Join the host's battles by myself", JOINER, false, YES_NO,
@@ -114,6 +112,8 @@ final class Settings {
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
         ITEMS.add(new Item(2, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
                 "A small list at the top right of the campaign map while friends are connected: each player in their colour, the ship they picked, and whose link has gone quiet."));
+        ITEMS.add(new Item(2, "shareCampaignMap", "Show friends your campaign map", HOST, true, YES_NO,
+                "Friends waiting in the lobby see where your fleet is: the whole star system you are in, or hyperspace near you, and the fleets your sensors see."));
         ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
                 "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
         ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,
@@ -178,20 +178,20 @@ final class Settings {
     }
 
     /** The page itself: which row is picked, the keys that change it, and the lines to draw. */
-    static final class Menu {
-        boolean open;
+    public static final class Menu {
+        public boolean open;
         private int page, row;
         private WingmanConfig cfg, file;
         private Map<String, String> overrides = new LinkedHashMap<String, String>();
         private boolean inBattle, saveFailed;
         /** Settings changed since the owner last looked; the owner empties it. */
-        final List<String> changed = new ArrayList<String>();
+        public final List<String> changed = new ArrayList<String>();
 
         /**
          * @param live the settings object a running battle is reading, which is then changed in place;
          *             null on the title screen, where the next battle reads everything afresh.
          */
-        void open(WingmanConfig live) {
+        public void open(WingmanConfig live) {
             inBattle = live != null;
             cfg = live != null ? live : WingmanConfig.load();
             file = WingmanConfig.fromFile();
@@ -273,7 +273,7 @@ final class Settings {
         }
 
         /** Takes every key while the page is up. */
-        void keys(List<InputEventAPI> events) {
+        public void keys(List<InputEventAPI> events) {
             if (!open || events == null) return;
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isKeyboardEvent()) continue;
@@ -368,11 +368,11 @@ final class Settings {
         }
 
         /** The page as a window: a tab per page, a row per setting, then what the picked one does. */
-        Panel.Doc doc() {
+        public Panel.Doc doc() {
             List<Item> rows = rows();
             if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
             boolean blink = (System.currentTimeMillis() / 400) % 2 == 0;
-            Panel.Doc d = new Panel.Doc("SETTINGS").note((page + 1) + " / " + PAGES.length);
+            Panel.Doc d = new Panel.Doc("SETTINGS").note((page + 1) + " / " + PAGES.length).fitOptions();
             List<String> tabs = new ArrayList<String>();
             for (String p : PAGE_TABS) tabs.add(p);
             d.tabs(tabs, page);
@@ -408,7 +408,7 @@ final class Settings {
             }
             if (saveFailed) d.callout("Could not save: these settings last until the game is closed. See starsector.log.", Panel.BAD);
             d.buttons(Panel.Doc.button("DONE", 1, Panel.GOOD), rows.isEmpty() ? null : Panel.Doc.button("BACK TO DEFAULT", 211, Panel.WARN));
-            d.keys("Up/Down: pick     Left/Right: change     Delete: default     Tab: next page     Esc: done");
+            d.keys("Up: previous     Down: next     Left/Right: change     Delete: default     Tab: next page     Esc: done");
             return d;
         }
 

@@ -5,11 +5,11 @@ import com.fs.starfarer.api.ModSpecAPI;
 
 import wingman.net.ModList;
 
-final class Mods {
+public final class Mods {
     private Mods() {}
 
     /** The mods enabled in this copy of the game. */
-    static ModList enabled() {
+    public static ModList enabled() {
         ModList list = new ModList();
         for (ModSpecAPI m : Global.getSettings().getModManager().getEnabledModsCopy()) {
             list.add(m.getId(), m.getName(), m.getVersion(), m.isUtility());
@@ -28,7 +28,7 @@ final class Mods {
     }
 
     /** This copy of the game, e.g. "Starsector 0.98a-RC8". Host and joiners must be on the same one. */
-    static String gameVersion() {
+    public static String gameVersion() {
         try {
             String v = Global.getSettings().getVersionString();
             return v == null ? "" : v.trim();

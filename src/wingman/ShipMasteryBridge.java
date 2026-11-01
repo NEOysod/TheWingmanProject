@@ -27,7 +27,7 @@ import com.fs.starfarer.api.fleet.FleetMemberAPI;
  * The mod's internals are not an interface it promises: each step is tried on its own, and one that doesn't
  * fit this version of the mod switches the rest off for the session, with a line in the log.
  */
-final class ShipMasteryBridge {
+public final class ShipMasteryBridge {
     private ShipMasteryBridge() {}
 
     /** Where the mod keeps its table in saved data, and the plain copy of it in the campaign copy. */
@@ -72,7 +72,7 @@ final class ShipMasteryBridge {
      * The host's mastery table as plain data, into the campaign copy's saved data (if Ship Mastery is in use).
      * Returns about how many bytes it takes there.
      */
-    static int addTo(Map<String, Object> saved, Map<String, Object> copy) {
+    public static int addTo(Map<String, Object> saved, Map<String, Object> copy) {
         Object table = saved == null ? null : saved.get(TABLE_KEY);
         if (!(table instanceof Map)) return 0;
         try {
@@ -117,7 +117,7 @@ final class ShipMasteryBridge {
      * table, have the mod load it and work out the masteries.
      */
     @SuppressWarnings("unchecked")
-    static void install() {
+    public static void install() {
         if (broken || installed) return;
         Map<String, Object> pd;
         try { pd = Global.getSector().getPersistentData(); } catch (Throwable t) { return; }
@@ -177,7 +177,7 @@ final class ShipMasteryBridge {
      * A copy of a ship, about to be built: introduced to the mod (with its modules) so that its mastery hull mod
      * finds the ship's fleet and commander, as on the host. The member must be in its fleet already.
      */
-    static void track(FleetMemberAPI member) {
+    public static void track(FleetMemberAPI member) {
         if (!installed || broken || member == null) return;
         try {
             ShipVariantAPI root = member.getVariant();
@@ -194,7 +194,7 @@ final class ShipMasteryBridge {
     }
 
     /** After the battle: the stand-in's saved data as it was, and the mod made to redo its work next campaign load. */
-    static void uninstall() {
+    public static void uninstall() {
         if (!installed) return;
         installed = false;
         try {

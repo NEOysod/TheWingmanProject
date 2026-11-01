@@ -23,7 +23,7 @@ public final class Person {
 
     private static String cap(String s, int n) { return s == null ? "" : s.length() > n ? s.substring(0, n) : s; }
 
-    void write(Out out) throws IOException {
+    public void write(Out out) throws IOException {
         for (String s : new String[] { id, first, last, portrait, faction, rank, post, personality, aiCore }) out.writeUTF(cap(s, 200));
         out.writeInt(level);
         int n = Math.min(Math.min(skillIds.size(), skillLevels.size()), MAX_SKILLS);
@@ -35,7 +35,7 @@ public final class Person {
         Plain.writeMap(out, memory);
     }
 
-    static Person read(In in) throws IOException {
+    public static Person read(In in) throws IOException {
         Person p = new Person();
         p.id = in.readUTF(); p.first = in.readUTF(); p.last = in.readUTF(); p.portrait = in.readUTF(); p.faction = in.readUTF();
         p.rank = in.readUTF(); p.post = in.readUTF(); p.personality = in.readUTF(); p.aiCore = in.readUTF();

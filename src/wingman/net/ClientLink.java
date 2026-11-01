@@ -153,6 +153,19 @@ public final class ClientLink {
         return c.sendDroppable(Msg.INPUT, controls);
     }
 
+    /** Send a host-authoritative skill choice for one linked officer on the campaign map. */
+    public boolean sendOfficerSkillPick(String memberId, String officerId, long skillRevision, String skillId) {
+        Conn c = conn;
+        if (c == null || c.isClosed()) return false;
+        OfficerSkillRequest request = new OfficerSkillRequest();
+        request.memberId = memberId;
+        request.officerId = officerId;
+        request.skillRevision = skillRevision;
+        request.skillId = skillId;
+        c.send(Msg.SKILL_PICK, request.encode());
+        return true;
+    }
+
     /** True if our controls are going by UDP, where one may be lost and is not sent again. */
     public boolean controlsByUdp() { Udp.Client u = udp; return u != null && u.up && u.sendControlsHere; }
 

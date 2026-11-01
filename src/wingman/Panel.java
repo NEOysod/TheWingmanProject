@@ -14,12 +14,12 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * notices), then the keys that work, as key chips along the bottom. Used for the CO-OP panel, the settings, the
  * help pages, the ready check and alerts. See Style for the look.
  */
-final class Panel {
-    static final Color TEXT = Style.TEXT;
-    static final Color GOOD = Style.GOOD;
-    static final Color WARN = Style.WARN;
-    static final Color BAD = Style.BAD;
-    static final Color DIM = Style.DIM;
+public final class Panel {
+    public static final Color TEXT = Style.TEXT;
+    public static final Color GOOD = Style.GOOD;
+    public static final Color WARN = Style.WARN;
+    public static final Color BAD = Style.BAD;
+    public static final Color DIM = Style.DIM;
 
     private static final float WIDTH = 600f, PAD = Style.PAD, GAP = 5f;
 
@@ -27,23 +27,24 @@ final class Panel {
     /** Drawing failures in a row; one bad frame is skipped and logged, only a run of them switches panels off. */
     private int failures;
     private String lastFailure;
+    private int optionFirst;
 
     /** Enter on the main keyboard or the numpad. */
-    static boolean isEnter(int key) { return key == 28 || key == 156; }
+    public static boolean isEnter(int key) { return key == 28 || key == 156; }
 
     /** Where the last box was drawn (screen units: left, bottom, width, height), for the mouse. */
-    float lastX, lastY, lastW, lastH;
+    public float lastX, lastY, lastW, lastH;
 
-    boolean contains(float mx, float my) { return lastW > 0f && mx >= lastX && mx <= lastX + lastW && my >= lastY && my <= lastY + lastH; }
+    public boolean contains(float mx, float my) { return lastW > 0f && mx >= lastX && mx <= lastX + lastW && my >= lastY && my <= lastY + lastH; }
 
     // ---- the mouse: what was drawn where, for clicks (the owner asks hitAt and acts on it) ----
 
     /** Something clickable in the window as last drawn. */
-    static final class Hit {
-        static final int KEY = 0, ROW = 1, TAB = 2, STEP = 3;
+    public static final class Hit {
+        public static final int KEY = 0, ROW = 1, TAB = 2, STEP = 3;
         final float x, y, w, h;
         /** KEY: a key code (as if pressed, with ctrl); ROW: a field or option row (in order); TAB: a tab; STEP: -1 or +1 on the marked option. */
-        final int kind, value;
+        public final int kind, value;
         final boolean ctrl;
         Hit(float x, float y, float w, float h, int kind, int value, boolean ctrl) { this.x = x; this.y = y; this.w = w; this.h = h; this.kind = kind; this.value = value; this.ctrl = ctrl; }
         boolean has(float mx, float my) { return mx >= x && mx <= x + w && my >= y && my <= y + h; }
@@ -54,10 +55,10 @@ final class Panel {
      * Whether whoever shows this window acts on clicks (Hit). Only then are there a close box and lit key hints:
      * in a battle, where the keys are used, nothing pretends to be clickable.
      */
-    boolean mouse;
+    public boolean mouse;
 
     /** What is under the mouse in the window as last drawn (the topmost), or null. */
-    Hit hitAt(float mx, float my) {
+    public Hit hitAt(float mx, float my) {
         for (int i = hits.size() - 1; i >= 0; i--) if (hits.get(i).has(mx, my)) return hits.get(i);
         return null;
     }
@@ -68,30 +69,32 @@ final class Panel {
     // ---- what a window holds ----
 
     /** One window's content, built each frame by whoever shows it. */
-    static final class Doc {
+    public static final class Doc {
         String title = "", note = "";
         /** Tabs under the title bar (empty: none), and which is lit. */
         final List<String> tabs = new ArrayList<String>();
         int tab = -1;
         final List<Block> blocks = new ArrayList<Block>();
-        String keys = "";
+        public String keys = "";
+        boolean fitOptions;
 
-        Doc(String title) { this.title = title == null ? "" : title; }
+        public Doc(String title) { this.title = title == null ? "" : title; }
 
-        Doc note(String n) { note = n == null ? "" : n; return this; }
-        Doc keys(String k) { keys = k == null ? "" : k; return this; }
-        Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
+        public Doc note(String n) { note = n == null ? "" : n; return this; }
+        public Doc keys(String k) { keys = k == null ? "" : k; return this; }
+        public Doc tabs(List<String> names, int active) { tabs.clear(); tabs.addAll(names); tab = active; return this; }
+        Doc fitOptions() { fitOptions = true; return this; }
 
         /** A section heading. */
-        Doc section(String name) { blocks.add(new Block(Block.SECTION, name, null, TEXT)); return this; }
+        public Doc section(String name) { blocks.add(new Block(Block.SECTION, name, null, TEXT)); return this; }
         /** A line of text. */
-        Doc line(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.LINE, text, null, c == null ? TEXT : c)); return this; }
+        public Doc line(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.LINE, text, null, c == null ? TEXT : c)); return this; }
         /** A notice: a line with a coloured mark down its left. */
-        Doc callout(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.CALLOUT, text, null, c == null ? WARN : c)); return this; }
+        public Doc callout(String text, Color c) { if (text != null && !text.isEmpty()) blocks.add(new Block(Block.CALLOUT, text, null, c == null ? WARN : c)); return this; }
         /** A labelled value; 'selected' marks the row, 'input' draws the value in a box (typed fields). */
         private int rows;
 
-        Doc field(String label, String value, boolean selected, boolean input) {
+        public Doc field(String label, String value, boolean selected, boolean input) {
             Block b = new Block(Block.FIELD, label, value, TEXT);
             b.row = rows++;
             b.selected = selected;
@@ -116,21 +119,22 @@ final class Panel {
          * A row of buttons for the mouse, each doing what a key does: {label, key code, colour}, the first the main
          * one. Only shown where clicks are acted on (Panel.mouse); elsewhere the key hints say the same.
          */
-        Doc buttons(Object[]... b) {
+        public Doc buttons(Object[]... b) {
             Block bl = new Block(Block.BUTTONS, "", null, TEXT);
             for (Object[] o : b) if (o != null) bl.buttons.add(o);
             if (!bl.buttons.isEmpty()) blocks.add(bl);
             return this;
         }
 
-        static Object[] button(String label, int key, Color c) { return new Object[] { label, key, c }; }
+        public static Object[] button(String label, int key, Color c) { return new Object[] { label, key, c }; }
+        public static Object[] button(String label, int key, Color c, boolean enabled) { return new Object[] { label, key, c, enabled }; }
     }
 
     static final class Block {
         static final int SECTION = 0, LINE = 1, CALLOUT = 2, FIELD = 3, OPTION = 4, SPACE = 5, BUTTONS = 6;
         final List<Object[]> buttons = new ArrayList<Object[]>();
-        final int kind;
-        final String text, value;
+        public final int kind;
+        public final String text, value;
         final Color color;
         boolean selected, input, edited;
         String tag;
@@ -142,8 +146,14 @@ final class Panel {
     // ---- the older calls: plain lines and a footer ----
 
     /** The usual box, centred a little above the middle of the screen. */
-    void render(String title, List<String> lines, List<Color> colors, String footer) {
+    public void render(String title, List<String> lines, List<Color> colors, String footer) {
         render(plain(title, lines, colors, footer));
+    }
+
+    /** The usual box, its middle three quarters of the way down the screen: battle menus, clear of the fighting. */
+    public void renderLow(String title, List<String> lines, List<Color> colors, String footer) {
+        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        draw(plain(title, lines, colors, footer), WIDTH, sw / 2f + WIDTH / 2f, Float.NaN, sh * 0.25f, sh);
     }
 
     /** A box hanging from a point: its top right corner at (right, top), growing downwards. */
@@ -159,9 +169,9 @@ final class Panel {
 
     // ---- drawing ----
 
-    void render(Doc d) {
+    public void render(Doc d) {
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-        draw(d, WIDTH, sw / 2f + WIDTH / 2f, Float.NaN, sh);
+        draw(d, WIDTH, sw / 2f + WIDTH / 2f, Float.NaN, sh * 0.6f, sh);
     }
 
     /**
@@ -169,37 +179,70 @@ final class Panel {
      * the middle is taken by the game's logo and menu, which are drawn over anything of ours.
      */
     void renderBelow(float right, float top, float boxWidth, Doc d) {
-        draw(d, boxWidth, right, top, Global.getSettings().getScreenHeight());
+        float sh = Global.getSettings().getScreenHeight();
+        draw(d, boxWidth, right, top, sh * 0.6f, sh);
     }
 
     /** In the middle of the screen, but no higher than 'maxTop' (below a screen's header): the co-op screen's windows. */
-    void renderCentred(float boxWidth, float maxTop, Doc d) {
+    public void renderCentred(float boxWidth, float maxTop, Doc d) {
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
         boxWidth = Math.min(boxWidth, sw - 16f);
-        draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh, maxTop);
+        draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh * 0.6f, maxTop);
     }
 
-    private void draw(Doc d, float width, float right, float top, float sh) { draw(d, width, right, top, sh, sh); }
+    static float measureHeight(Doc d, float width, boolean mouse, float keysH) {
+        float inner = width - PAD * 2f;
+        float bodyH = 0f;
+        for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
+        float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
+        return Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
+    }
 
-    private void draw(Doc d, float width, float right, float top, float sh, float maxTop) {
+    /** 'top' NaN: the box's middle at height 'middle', no higher than 'maxTop'; else its top at 'top'. */
+    private void draw(Doc d, float width, float right, float top, float middle, float maxTop) {
         if (broken) return;
         try {
+            if (d.fitOptions) {
+                maxTop = Math.min(maxTop, Global.getSettings().getScreenHeight() - PAD);
+                if (!Float.isNaN(top)) top = Math.min(top, maxTop);
+            }
             float inner = width - PAD * 2f;
             List<String[]> keys = Style.keys(d.keys);
             float keysH = keys.isEmpty() ? 0f : Style.keysHeight(keys, inner) + 12f;
             float tabsH = d.tabs.isEmpty() ? 0f : Style.TAB_H + 4f;
-            float bodyH = 0f;
-            for (int i = 0; i < d.blocks.size(); i++) bodyH += d.blocks.get(i).kind == Block.BUTTONS && !mouse ? 0f : height(d.blocks.get(i), inner, i == 0);
-            float h = Style.BAR_H + tabsH + PAD + bodyH + PAD * 0.75f + keysH;
+            float h = measureHeight(d, width, mouse, keysH);
+            int optionCount = 0, selectedOption = -1;
+            Block option = null;
+            if (d.fitOptions) {
+                for (Block b : d.blocks) if (b.kind == Block.OPTION) {
+                    option = b;
+                    if (b.selected) selectedOption = optionCount;
+                    optionCount++;
+                }
+            }
+            int visibleOptions = optionCount, firstOption = 0;
+            String note = d.note;
+            if (option != null && selectedOption >= 0) {
+                float maxH = Math.min(maxTop, Float.isNaN(top) ? maxTop : top) - PAD;
+                while (visibleOptions > 1 && h > maxH) {
+                    h -= height(option, inner, false);
+                    visibleOptions--;
+                }
+                optionFirst = Math.max(0, Math.min(optionFirst, optionCount - visibleOptions));
+                if (selectedOption < optionFirst) optionFirst = selectedOption;
+                else if (selectedOption >= optionFirst + visibleOptions) optionFirst = selectedOption - visibleOptions + 1;
+                firstOption = optionFirst;
+                if (visibleOptions < optionCount) note += "    " + (firstOption + 1) + "-" + (firstOption + visibleOptions) + " / " + optionCount + " settings";
+            }
             float x = right - width, y;
-            if (Float.isNaN(top)) y = Math.min(sh * 0.6f - h / 2f, maxTop - h);
+            if (Float.isNaN(top)) y = Math.min(middle - h / 2f, maxTop - h);
             else y = top - h;
             x = Math.max(4f, x);
-            y = Math.max(4f, y);
+            y = Math.max(d.fitOptions ? PAD : 4f, y);
             lastX = x; lastY = y; lastW = width; lastH = h;
             hits.clear();
 
-            float cy = Style.window(x, y, width, h, d.title, d.note, mouse ? Style.BAR_H - 2f : 0f);
+            float cy = Style.window(x, y, width, h, d.title, note, mouse ? Style.BAR_H - 2f : 0f);
             if (mouse) closeBox(x + width, y + h);
             if (!d.tabs.isEmpty()) {
                 float[] at = Style.tabs(d.tabs, d.tab, x + 1f, cy, width - 2f);
@@ -209,7 +252,15 @@ final class Panel {
             cy -= PAD;
             float lx = x + PAD;
             float labelW = labelColumn(d, inner);
-            for (int i = 0; i < d.blocks.size(); i++) cy = drawBlock(d.blocks.get(i), lx, cy, inner, labelW, i == 0, mouse ? hits : null);
+            int optionIndex = 0;
+            for (int i = 0; i < d.blocks.size(); i++) {
+                Block b = d.blocks.get(i);
+                if (d.fitOptions && b.kind == Block.OPTION) {
+                    int index = optionIndex++;
+                    if (index < firstOption || index >= firstOption + visibleOptions) continue;
+                }
+                cy = drawBlock(b, lx, cy, inner, labelW, i == 0, mouse ? hits : null);
+            }
             if (!keys.isEmpty()) {
                 float ky = y + keysH - 4f;
                 Style.rule(x + 1f, ky + 4f, width - 2f);
@@ -277,9 +328,10 @@ final class Panel {
                     float bw = i == 0 ? mainW : restW;
                     if (twoRows && i == 1) { bx = x; y -= 28f + 8f; }
                     float h2 = i == 0 ? bh : 28f, y2 = twoRows && i > 0 ? y + bh - 28f : y + (bh - h2) / 2f; // the others smaller, in small capitals
-                    boolean over = Style.over(bx, y2, bw, h2);
-                    Style.button(bx, y2, bw, h2, String.valueOf(o[0]), (Color) o[2], true, over);
-                    hits.add(new Hit(bx, y2, bw, h2, Hit.KEY, (Integer) o[1], false));
+                    boolean enabled = o.length < 4 || Boolean.TRUE.equals(o[3]);
+                    boolean over = enabled && Style.over(bx, y2, bw, h2);
+                    Style.button(bx, y2, bw, h2, String.valueOf(o[0]), (Color) o[2], enabled, over);
+                    if (enabled) hits.add(new Hit(bx, y2, bw, h2, Hit.KEY, (Integer) o[1], false));
                     bx += bw + gap;
                 }
                 return y - 6f;
@@ -360,7 +412,7 @@ final class Panel {
      * A large word across the screen, a little above the middle, on a dark band: for "PAUSED". The game's
      * biggest font is drawn at 3x, and the line under it at its normal size.
      */
-    void banner(String word, String sub, Color color) {
+    public void banner(String word, String sub, Color color) {
         if (broken) return;
         try {
             LabelAPI big = Style.label(word, Style.BIG_FONT, color, 2000f);
@@ -392,7 +444,7 @@ final class Panel {
     }
 
     /** The CO-OP button on the title screen: a name and a line under it. */
-    void button(float x, float y, float w, float h, String text, String sub, boolean hover) {
+    public void button(float x, float y, float w, float h, String text, String sub, boolean hover) {
         if (broken) return;
         try {
             Style.frame(x, y, w, h, hover ? new Color(14, 26, 38, 235) : new Color(6, 10, 16, 220), hover ? Style.ACCENT : Style.EDGE, 8f);

@@ -1,0 +1,17 @@
+{
+    "id": "wingman_officer_potential",
+    "governingAptitude": "leadership",
+    "scope": "NONE",
+    "effectGroups": [
+        {
+            "requiredSkillLevel": 1,
+            "effectBasedOnLevel": false,
+            "effects": [
+                {
+                    "type": "DESCRIPTION",
+                    "script": "wingman.OfficerPotential$Description"
+                }
+            ]
+        }
+    ]
+}

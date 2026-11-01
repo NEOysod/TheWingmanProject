@@ -1,6 +1,7 @@
 {
-    "plugins": {
-        "wingman_host": "wingman.WingmanHostPlugin",
-        "wingman_title": "wingman.WingmanTitlePlugin"
-    }
+  "plugins": {
+    "wingman_host": "wingman.WingmanHostPlugin",
+    "wingman_title": "wingman.WingmanTitlePlugin",
+    "wingman_officer_binding": "wingman.OfficerPlayerCombatPlugin"
+  }
 }

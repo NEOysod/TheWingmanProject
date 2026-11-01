@@ -31,7 +31,7 @@ import com.fs.starfarer.api.util.IntervalUtil;
  * the ship. No callback of the mod runs for that. MagicLib is reached only through java.lang.invoke, by name,
  * so Wingman needs no MagicLib to build or to run; without it this does nothing.
  */
-final class Subsystems {
+public final class Subsystems {
     private Subsystems() {}
 
     static final String KEY = "magicSubsystems"; // MagicSubsystemsManager.CUSTOM_DATA_KEY
@@ -111,11 +111,11 @@ final class Subsystems {
      * Subsystems of the ship this player flies that the player has just switched on (or a toggle off), by class
      * name. Call once a frame with the ship.
      */
-    static List<String> pressed(ShipAPI own) {
+    public static List<String> pressed(ShipAPI own) {
         return pressed(of(own));
     }
 
-    static List<String> pressed(List<Object> subs) {
+    public static List<String> pressed(List<Object> subs) {
         if (subs.isEmpty()) return Collections.emptyList();
         List<String> out = null;
         try {
@@ -142,11 +142,11 @@ final class Subsystems {
     private static final Map<Object, Boolean> held = new IdentityHashMap<Object, Boolean>();
 
     /** Keep the AI logic from firing this ship's ready subsystems (a joiner flies it). Call once a frame. */
-    static void hold(ShipAPI ship) {
+    public static void hold(ShipAPI ship) {
         hold(of(ship));
     }
 
-    static void hold(List<Object> subs) {
+    public static void hold(List<Object> subs) {
         for (Object s : subs) {
             try {
                 if (getState.invoke(s) != READY) continue;
@@ -162,11 +162,11 @@ final class Subsystems {
     }
 
     /** Let this ship's parked subsystems go (nobody flies it now): ready, as they were. */
-    static void release(ShipAPI ship) {
+    public static void release(ShipAPI ship) {
         release(of(ship));
     }
 
-    static void release(List<Object> subs) {
+    public static void release(List<Object> subs) {
         for (Object s : subs) unpark(s);
     }
 
@@ -183,11 +183,11 @@ final class Subsystems {
      * The joiner flying this ship switched this subsystem on (or a toggle off): do the same here, if the
      * subsystem lets itself be used now. Returns true if it fired.
      */
-    static boolean fire(ShipAPI ship, String className) {
+    public static boolean fire(ShipAPI ship, String className) {
         return fire(of(ship), className);
     }
 
-    static boolean fire(List<Object> subs, String className) {
+    public static boolean fire(List<Object> subs, String className) {
         for (Object s : subs) {
             if (!name(s).equals(className)) continue;
             try {
@@ -205,7 +205,7 @@ final class Subsystems {
     }
 
     /** Which subsystems every ship has now (by MagicLib's keys), to compare with afterwards. */
-    static Map<ShipAPI, java.util.Set<Object>> snapshotAll(com.fs.starfarer.api.combat.CombatEngineAPI engine) {
+    public static Map<ShipAPI, java.util.Set<Object>> snapshotAll(com.fs.starfarer.api.combat.CombatEngineAPI engine) {
         Map<ShipAPI, java.util.Set<Object>> out = new IdentityHashMap<ShipAPI, java.util.Set<Object>>();
         if (broken) return out;
         try {
@@ -218,7 +218,7 @@ final class Subsystems {
     }
 
     /** Take off this ship the subsystems it didn't have in the snapshot (a script just gave them to it). */
-    static void dropAddedSince(ShipAPI ship, Map<ShipAPI, java.util.Set<Object>> before) {
+    public static void dropAddedSince(ShipAPI ship, Map<ShipAPI, java.util.Set<Object>> before) {
         if (broken || ship == null) return;
         try {
             Object m = ship.getCustomData().get(KEY);
@@ -231,7 +231,7 @@ final class Subsystems {
     }
 
     /** A new battle: forget objects of the last one. */
-    static void reset() {
+    public static void reset() {
         lastState.clear();
         held.clear();
     }

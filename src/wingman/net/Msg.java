@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 60;
+    public static final int PROTOCOL_VERSION = 66;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -93,11 +93,20 @@ public final class Msg {
     public static final byte REFIT_ASK = 63;
     /** host -> joiner: what the refit screen shows (RefitData); sent on REFIT_ASK and again when any of it changes. */
     public static final byte REFIT_DATA = 64;
-    /** joiner -> host: a refit the joiner wants for their picked ship (RefitRequest); a new one replaces the last. */
+    /** joiner -> host: a refit the joiner wants for a ship of the host's fleet (RefitRequest); a new one replaces the last. */
     public static final byte REFIT_REQUEST = 65;
     /** host -> joiner: what became of the refit request (RefitResult): received, accepted, denied, refused, withdrawn. */
     public static final byte REFIT_RESULT = 66;
+    public static final byte NEWS = 67;         // host -> joiners, campaign map only: the campaign date and new notifications (News)
+    public static final byte MAP = 68;          // host -> joiners, campaign map only: what the host's map shows (CampaignMap)
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
+    public static final byte SKILL_PICK = 69;   // joiner -> host: officer skill selection (OfficerSkillRequest)
+    /**
+     * host -> joiner: int net id, byte hull size ordinal (see ShipAPI.HullSize). A mod changed a ship's hull
+     * size in battle (a mech taking off or landing, say): the copy here changes with it, so both ends agree on
+     * what counts as a fighter (the battle check counts by hull size).
+     */
+    public static final byte HULL_SIZE = 70;
     public static final byte[] EMPTY = new byte[0];
 
     /** Payload writer. */

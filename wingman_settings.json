@@ -5,7 +5,7 @@
     # (Delete on a setting there goes back to this file's value). These are the defaults.
 
     # Your name as other players see it, until you type one into the CO-OP panel. Also the host's name.
-    "playerName": "Player",
+    "playerName": "MATT",
 
     # ---- HOSTING ----
     # true: every battle you start (mission, simulator, campaign) is open for friends to join.
@@ -69,13 +69,10 @@
     # fleet and pick the ship they want to fly in the next battle. false: only once a battle starts.
     "campaignLobby": true,
 
-    # true: while you are docked at a market, friends get a Refit button for the ship they picked, and can send
-    # you a refit of it. Nothing changes in your campaign unless you accept it. false: no Refit button.
+    # true: friends may request refits of ships other than your flagship while you are docked at a market.
+    # Review with Ctrl+Shift+R. PLAYERS lets each connected player skip confirmation; host checks still apply.
+    # Permissions clear on reconnect or campaign load. false: no Refit button.
     "friendRefit": true,
-
-    # A friend's refit accepted while the refit screen is open is done the moment that screen closes (the screen
-    # keeps its own copy of the ship). true: the refit screen then opens again on that ship.
-    "friendRefitReopen": true,
 
     # Host tethering. true: if a mod's script moves the host's controls into an enemy ship, the host is put back in
     # their own ship, and the log names the script (with the agent). Dev mode's own takeovers are left alone.
@@ -153,6 +150,10 @@
     # Player list (host): a small box at the top right of the campaign map while friends are connected: each
     # player in their colour and the ship they picked. Hidden while a dialog or a fleet/cargo screen is open.
     "playerList": true,
+
+    # Share the campaign map (host): friends in the lobby see where your fleet is: the whole star system, or
+    # hyperspace near you, and only the fleets your sensors see.
+    "shareCampaignMap": true,
 
     # Ship Mastery System (joiner): the host's masteries, and those of the fleets it fights, apply to the copies
     # of ships here as they do on the host. Needs the stand-in campaign above. Turn off if it misbehaves.

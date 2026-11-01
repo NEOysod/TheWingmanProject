@@ -11,7 +11,7 @@ import java.util.Set;
  * Friend refit: what a request (RefitRequest) comes to against the ship and the host's means as described
  * (RefitData): ordnance points, credits paid and received, story points, S-mods; and everything wrong with it.
  * Worked out the same way on the joiner (to show while choosing) and on the host (which also checks what only the
- * game can: slots, the real ordnance cost; see wingman.FriendRefit). No game classes.
+ * game can: slots, the real ordnance cost; see wingman.host.FriendRefit). No game classes.
  *
  * Items taken out go where the request says before any go in, so a weapon moved out to cargo can be fitted
  * elsewhere, and one sold can be bought back.
@@ -59,9 +59,58 @@ public final class RefitPlan {
     public int net() { return buy - sell; }
 
     public boolean isEmpty() {
-        if (r.vents != d.vents || r.caps != d.caps || !r.addMods.isEmpty() || !r.removeMods.isEmpty() || !r.buildIn.isEmpty()) return false;
+        return r.removeMods.isEmpty() && sameButModsTakenOff();
+    }
+
+    /** True if the refit only takes hull mods off: nothing else differs from the ship. */
+    public boolean onlyTakesModsOff() {
+        return !r.removeMods.isEmpty() && sameButModsTakenOff();
+    }
+
+    private boolean sameButModsTakenOff() {
+        if (groupsChanged()) return false;
+        if (r.vents != d.vents || r.caps != d.caps || !r.addMods.isEmpty() || !r.buildIn.isEmpty()) return false;
         for (RefitRequest.Change c : r.changes) if (!sameAsBefore(c)) return false;
         return true;
+    }
+
+    /** The most weapon groups a ship can have (the game folds any more into the last). */
+    public static final int MAX_GROUPS = 7;
+
+    /** The weapon slots of the ship (not its modules: they have weapon groups of their own) that hold a weapon after the refit: those fitted or grouped now, less those emptied, plus those filled. */
+    public Set<String> armedSlots() {
+        Set<String> s = new java.util.LinkedHashSet<String>();
+        for (String slot : d.fitSlots) if (slot.indexOf('/') < 0) s.add(slot);
+        for (RefitData.Group g : d.groups) s.addAll(g.slots);
+        for (RefitRequest.Change c : r.changes) {
+            if (c.wing || c.place.indexOf('/') >= 0) continue;
+            if (c.item.isEmpty()) s.remove(c.place);
+            else s.add(c.place);
+        }
+        return s;
+    }
+
+    /** Groups as they would be on the ship: only armed slots, each once, no empty groups. */
+    public static List<RefitData.Group> normalize(List<RefitData.Group> groups, Set<String> armed) {
+        List<RefitData.Group> out = new ArrayList<RefitData.Group>();
+        Set<String> seen = new HashSet<String>();
+        for (RefitData.Group g : groups) {
+            RefitData.Group n = new RefitData.Group(g.alternating, g.autofire);
+            for (String slot : g.slots) if (armed.contains(slot) && seen.add(slot)) n.slots.add(slot);
+            if (!n.slots.isEmpty()) out.add(n);
+        }
+        return out;
+    }
+
+    /** The groups the ship will have (as now when the request leaves them alone). */
+    public List<RefitData.Group> groupsAfter() {
+        return normalize(r.groups != null ? r.groups : d.groups, armedSlots());
+    }
+
+    public boolean groupsChanged() {
+        if (r.groups == null) return false;
+        Set<String> armed = armedSlots();
+        return !normalize(r.groups, armed).equals(normalize(d.groups, armed));
     }
 
     /** The key of what is in that slot or bay now, or null if it is empty. */
@@ -172,6 +221,14 @@ public final class RefitPlan {
         if (storyPoints > 0 && sMods > d.maxSMods) problems.add("S-mods: " + sMods + ", at most " + d.maxSMods + " on this ship.");
         if (net() > d.credits) problems.add("Credits: " + net() + " needed, the host has " + Math.round(d.credits) + ".");
         if (storyPoints > d.storyPoints) problems.add("Story points: " + storyPoints + " needed, the host has " + d.storyPoints + ".");
+
+        if (r.groups != null) {
+            if (r.groups.size() > MAX_GROUPS) problems.add("Weapon groups: " + r.groups.size() + ", at most " + MAX_GROUPS + ".");
+            Set<String> grouped = new HashSet<String>();
+            for (RefitData.Group g : r.groups) for (String slot : g.slots) {
+                if (!grouped.add(slot)) { problems.add("A weapon is in two weapon groups."); return; }
+            }
+        }
     }
 
     private void missing(String place, String why) {

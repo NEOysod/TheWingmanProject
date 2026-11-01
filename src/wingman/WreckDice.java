@@ -21,7 +21,7 @@ import com.fs.starfarer.api.Global;
  * with the seed they were cut with and their order. A joiner sets its dice to that seed and makes the same cuts
  * in the same order, so it draws the same numbers. The field's name is obfuscated, written as an escape.
  */
-final class WreckDice {
+public final class WreckDice {
     private WreckDice() {}
 
     private static final String CLASS = "com.fs.starfarer.util.Tesselator";
@@ -29,11 +29,11 @@ final class WreckDice {
     private static final long MULT = 0x5DEECE66DL, ADD = 0xBL, MASK = (1L << 48) - 1;
 
     /** java.util.Random's own algorithm, with its state in the open. */
-    static final class Dice extends Random {
+    public static final class Dice extends Random {
         private static final long serialVersionUID = 1L;
         private long state;
         /** Numbers drawn since the last seed. */
-        int draws;
+        public int draws;
         /** The seed last given (0 never is). */
         long seed;
 
@@ -51,11 +51,11 @@ final class WreckDice {
             return (int) (state >>> (48 - bits));
         }
 
-        long state() { return state; }
-        void restore(long s) { state = s; }
+        public long state() { return state; }
+        public void restore(long s) { state = s; }
 
         /** The state a seed gives, without drawing. */
-        static long stateOf(long s) { return (s ^ MULT) & MASK; }
+        public static long stateOf(long s) { return (s ^ MULT) & MASK; }
     }
 
     private static boolean broken;
@@ -63,7 +63,7 @@ final class WreckDice {
     private static final Random seeds = new Random();
 
     /** The game's wreck dice, made ours first if they aren't yet; null if they can't be reached. */
-    static Dice dice() {
+    public static Dice dice() {
         if (broken) return null;
         try {
             if (getter == null) {
