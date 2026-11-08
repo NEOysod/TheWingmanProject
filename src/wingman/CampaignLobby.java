@@ -44,6 +44,7 @@ final class CampaignLobby implements EveryFrameScript {
 
     public void advance(float amount) {
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
+        AgentGate.stopOutOfBattle(); // a battle that ended without its own end (a crash in it) leaves no hooks behind
         try {
             long now = System.currentTimeMillis();
             if (cfg == null || now - cfgAt > 5000) { cfg = WingmanConfig.load(); cfgAt = now; }
@@ -63,6 +64,7 @@ final class CampaignLobby implements EveryFrameScript {
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
             FriendRefit.advance(s, cfg);
+            WishList.advance(s);
             FriendRefit.applyWaiting();
             aftermath(s);
             // The fleet as joiners see it: sent when it (or who picked what) changes, and every few seconds anyway.

@@ -210,6 +210,12 @@
     # Shot counts (joiner): each weapon on a copy of a ship fires exactly as many times as the host's did.
     "shotCounts": true,
 
+    # Shield grace (host): a joiner raises their shield the moment they see a shot coming, but that reaches the
+    # host a round trip later, so a shot their shield stopped on their screen can hit their hull here first.
+    # On: such a hit is given back one round trip later (hull and armor restored, the flux their shield would
+    # have taken added instead) if their shield was up then, facing the hit. The same for a phase cloak.
+    "shieldGrace": true,
+
     # Hits by shots from guns that have an on-hit script (an arc, a blast, a mod's special effect), on a joiner:
     #   "match": this PC's own shots hit by themselves and their script runs at once. When the host reports a
     #            hit, it is compared with this PC's own: if this PC made the same hit (same gun, same target)

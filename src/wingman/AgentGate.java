@@ -14,6 +14,8 @@ final class AgentGate {
 
     private static int state; // 0: not asked yet, 1: the agent is there, 2: it isn't
     private static boolean failed;
+    /** The hooks are in for a battle (and are to come out when it ends, however it ends). */
+    private static volatile boolean linked;
 
     static boolean present() {
         if (state == 0) {
@@ -58,6 +60,7 @@ final class AgentGate {
         }
         try {
             AgentLink.install(host);
+            linked = true;
             Global.getLogger(AgentGate.class).info("Wingman agent: on. " + AgentLink.report());
         } catch (Throwable t) {
             failed = true;
@@ -73,6 +76,7 @@ final class AgentGate {
         }
         try {
             JoinerAgentLink.install(joiner);
+            linked = true;
             Global.getLogger(AgentGate.class).info("Wingman agent: on (joiner). " + AgentLink.report());
         } catch (Throwable t) {
             failed = true;
@@ -82,8 +86,16 @@ final class AgentGate {
 
     /** Co-op stopped in this battle: the hooks give the real answers again. */
     static void stop() {
+        linked = false;
         if (!present()) return;
         try { AgentLink.uninstall(); } catch (Throwable t) { failed = true; }
+    }
+
+    /** Back on the campaign map with the hooks still in (a battle that never ran its own end): out with them. */
+    static void stopOutOfBattle() {
+        if (!linked) return;
+        stop();
+        Subsystems.reset();
     }
 
     /** Run something as part of this ship's frame (a joiner's ability fired by Wingman itself). */

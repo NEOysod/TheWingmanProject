@@ -53,6 +53,14 @@ public class RemotePilotAI implements ShipAIPlugin {
     /** Set when the host flew this pilot itself this frame (see flyFromHost): the game's next call is skipped. */
     private float flownByHostAt = -1f;
 
+    /** The player's fire presses counted so far (InputState.fireTaps), and how long a short tap still holds the trigger. */
+    private int seenTaps = -1;
+    private float tapHold;
+    /** A tap shorter than a frame is held this long (battle seconds), so a single-shot weapon still fires. */
+    private static final float TAP_HOLD = 0.05f;
+    /** Taps the host held down for the player (for the report). */
+    public int tapsHeld;
+
     /**
      * Called by the game. Usually once a frame; but a ship whose time runs faster than the battle's (a phase
      * cloak, a temporal shell, a mod's time system) is moved in several steps a frame and its AI is asked to fly
@@ -108,6 +116,11 @@ public class RemotePilotAI implements ShipAIPlugin {
             return;
         }
 
+        // Hits that the player's own shield would have stopped on their screen (see ShieldGrace).
+        if (ShieldGrace.enabled && !ship.isFighter()) {
+            try { ShieldGrace.of(ship).frame(this, in); } catch (Throwable t) { /* no grace this frame */ }
+        }
+
         if (in.has(InputState.ACCEL)) ship.giveCommand(ShipCommand.ACCELERATE, null, 0);
         if (in.has(InputState.BACK)) ship.giveCommand(ShipCommand.ACCELERATE_BACKWARDS, null, 0);
         if (in.has(InputState.DECEL)) ship.giveCommand(ShipCommand.DECELERATE, null, 0);
@@ -146,7 +159,14 @@ public class RemotePilotAI implements ShipAIPlugin {
 
         // The group in hand and the fire button: see GroupFire. The guns of that group follow the cursor.
         trackCursor(groups, amount);
-        guns.advance(groups, in.group, in.has(InputState.FIRE), aim, amount);
+        // A press and release between two of the player's messages still fires: held a moment here.
+        if (seenTaps < 0) seenTaps = in.fireTaps;
+        int taps = (in.fireTaps - seenTaps) & 0xFF;
+        seenTaps = in.fireTaps;
+        if (taps > 0 && taps < 16 && !in.has(InputState.FIRE)) { tapHold = TAP_HOLD; tapsHeld++; }
+        boolean fire = in.has(InputState.FIRE) || tapHold > 0f;
+        tapHold -= amount;
+        guns.advance(groups, in.group, fire, aim, amount);
 
         // Shield / phase cloak: make the host ship match what the player has locally.
         ShieldAPI shield = ship.getShield();

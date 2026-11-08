@@ -106,6 +106,8 @@ final class Settings {
                 "On: wrecks never break into pieces, in your battles too, so every screen shows the same wrecks. Off: they break up as normal; the break lines may differ a little on joiners' screens."));
         ITEMS.add(new Item(2, "shotCounts", "Weapons fire as often as the host's", JOINER, true, YES_NO,
                 "On: each weapon on a copy of a ship fires exactly as many times as the real one did."));
+        ITEMS.add(new Item(2, "shieldGrace", "Joiners' shields forgive the delay", HOST, true, YES_NO,
+                "On: a shot that a joiner's raised shield (or phase cloak) stopped on their screen, but that hit their ship here before their shield came up, is given back: hull and armor restored, the shield's flux added instead."));
         ITEMS.add(new Item(2, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,
                 "Speed, turn rate, flux, ranges, rate of fire. The host sends them, the joiner applies them: needed on both."));
         ITEMS.add(new Item(2, "syncScriptMemory", "Script memory follows the host", BOTH, true, YES_NO,

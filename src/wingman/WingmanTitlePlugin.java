@@ -92,6 +92,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private boolean screenUp;
     /** Friend refit: the refit screen is open on this member ("" closed), and what the host last sent for it. */
     private String refitMember = "";
+    /** The ship whose refit we last sent: its saved plan is forgotten once the host accepts it. */
+    private String sentMember = "";
     private wingman.net.RefitData refitData;
 
     private static final String[] HELP_TITLES = {
@@ -192,6 +194,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void advance(float amount, List<InputEventAPI> events) {
         if (broken || !onTitle()) return;
+        AgentGate.stopOutOfBattle(); // hooks left in by a battle that never ran its own end
+        FriendRefit.forgetCampaign("The host left the campaign.");
         CampaignStandIn.removeIfLeft(); // back on the title screen however the battle was left
         LunaCopy.restoreIfLeft();
         wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
@@ -254,6 +258,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 if (state != ClientLink.State.CONNECTED) {
                     welcomed = false; withHost = ""; roster = null; lobbyOpen = false; lobbyShown = false; JoinSetup.lobbyPick = null;
                     lobby.refit.saveDraft(); refitMember = ""; refitData = null; if (lobby.page == LobbyScreen.REFIT) lobby.page = LobbyScreen.FLEET;
+                    sentMember = "";
+                    WishView.forget();
                 }
                 lastState = state;
             }
@@ -269,6 +275,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             // Nothing else reads the connection while we sit on the title screen, and a host in a battle keeps
             // talking. Read it all, keep the few things worth showing, let the rest go: the mission asks the
             // host for everything afresh when it starts.
+            Conn out = link.getConn();
+            if (out != null) for (byte[] w : WishView.takeOutgoing()) out.send(Msg.WISH, w); // wish list changes made here
             Conn c = link.getConn();
             Conn.Packet p;
             int read = 0;
@@ -344,6 +352,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     try {
                         wingman.net.RefitResult r = wingman.net.RefitResult.decode(p.data);
                         lobby.refit.onResult(r);
+                        if (r.status == wingman.net.RefitResult.ACCEPTED && !sentMember.isEmpty()) Drafts.forget(sentMember);
                         Global.getLogger(WingmanTitlePlugin.class).info("Wingman: the host on our refit: " + r.text.replace('\n', ' '));
                         if (r.status == wingman.net.RefitResult.ACCEPTED && !refitMember.isEmpty()) {
                             // the ship has changed: what the screen shows is out of date until the host sends it afresh
@@ -354,6 +363,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                             note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED ? Panel.GOOD : Panel.WARN);
                         }
                     } catch (java.io.IOException e) { /* skipped */ }
+                } else if (p.type == Msg.WISH_LIST) { // everyone's wish lists, for the wish list window
+                    WishView.onList(p.data);
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
                     StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
@@ -582,6 +593,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             Conn c = ClientLink.get().getConn();
             if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
             c.send(Msg.REFIT_REQUEST, lobby.refit.request().encode());
+            sentMember = refitMember;
         }
     }
 

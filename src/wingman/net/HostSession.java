@@ -50,6 +50,8 @@ public final class HostSession {
         public String refitAsk;
         /** Friend refit: the latest refit request from this player (Msg.REFIT_REQUEST, undecoded), waiting for the game thread. */
         public byte[] refitRequest;
+        /** Wish list changes from this player (WishMessage), oldest first; the game thread takes them. */
+        public final java.util.List<byte[]> wishes = new java.util.ArrayList<byte[]>();
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -143,6 +145,8 @@ public final class HostSession {
             p.shipNetId = -1;
             p.ship = null;
             p.savedAI = null; // nothing of the finished battle is kept (an AI holds its ship, and the ship its battle)
+            p.heldCarrier = null;
+            p.subsystemPresses.clear();
             p.ready = false;
         }
     }
@@ -558,6 +562,11 @@ public final class HostSession {
                     }
                     else if (p.type == Msg.REFIT_REQUEST) {
                         if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
+                    }
+                    else if (p.type == Msg.WISH) {
+                        synchronized (pl.wishes) { // each change kept, in order, for the game thread (WishList)
+                            if (p.data.length <= 16 * 1024 && pl.wishes.size() < 20) pl.wishes.add(p.data);
+                        }
                     }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();

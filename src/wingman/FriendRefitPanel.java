@@ -28,6 +28,8 @@ import com.fs.starfarer.api.ui.LabelAPI;
  */
 final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderingListener {
     private static final String SMALL = "graphics/fonts/orbitron12condensed.fnt";
+    /** Where the stack of buttons top right ends (screen y): the wish lists' button goes under this one. */
+    static volatile float bottom = Float.MAX_VALUE;
     private final Panel panel = new Panel();
     { panel.mouse = true; } // clicks on it are acted on
     private boolean open, broken, wasDown;
@@ -236,6 +238,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         String key = c.getRGB() + "|" + text;
         LabelAPI l = labels.get(key);
         if (l == null) {
+            if (labels.size() > 64) labels.clear();
             l = Global.getSettings().createLabel(text, BUTTON_FONT);
             l.setColor(c);
             labels.put(key, l);
@@ -250,6 +253,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
+        bottom = Math.min(Global.getSettings().getScreenHeight(), CampaignPlayerList.bottom); // no button: under the player list
         try {
             FriendRefit.applyWaiting(); // (also from the lobby's script, which may not run under a core screen)
             List<FriendRefit.Pending> list = requests();
@@ -333,6 +337,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         buttonLabel.getPosition().setLocation(x + 16f, y + 8f);
         buttonLabel.render(1f);
         button = new float[] { x, y, w, h };
+        bottom = y;
     }
 
 }

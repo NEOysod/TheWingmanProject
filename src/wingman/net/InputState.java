@@ -30,6 +30,10 @@ public final class InputState {
     public int sysUses;
     /** For a drone system: 1 + the drone order the player has set (recall, deploy, attack). 0 = not a drone system. */
     public int sysOrders;
+    /** How many times the player has pressed fire so far (the low 8 bits travel): a tap shorter than a frame still counts. */
+    public int fireTaps;
+    /** The player's round trip to the host as their game measures it (ms, sent in steps of 4), for the host's own guesses. */
+    public int rttMs;
     /**
      * Other keys the player is holding that mods' scripts for their ship ask about (a hullmod's ability on a
      * hotkey, say), as key codes; at most MAX_KEYS. See Hooks.isKeyDown in the agent.
@@ -56,6 +60,7 @@ public final class InputState {
     public byte[] encode() {
         Msg.W w = new Msg.W();
         try {
+            w.out.writeByte(Math.max(0, Math.min(255, (rttMs + 2) / 4))); // first, so it is left out of "the same controls"
             w.out.writeShort(flags);
             w.out.writeFloat(mouseX);
             w.out.writeFloat(mouseY);
@@ -65,6 +70,7 @@ public final class InputState {
             w.out.writeFloat(facing);
             w.out.writeByte(sysUses);
             w.out.writeByte(sysOrders);
+            w.out.writeByte(fireTaps);
             int n = Math.min(keys.length, MAX_KEYS);
             w.out.writeByte(n);
             for (int i = 0; i < n; i++) w.out.writeByte(keys[i]);
@@ -73,10 +79,10 @@ public final class InputState {
         return w.done();
     }
 
-    /** True if two encoded sets of controls differ in anything but their number. */
+    /** True if two encoded sets of controls differ in anything but their number (and the round trip, first). */
     public static boolean differ(byte[] a, byte[] b) {
         if (a == null || b == null || a.length != b.length) return true;
-        for (int i = 0; i < a.length - 2; i++) if (a[i] != b[i]) return true;
+        for (int i = 1; i < a.length - 2; i++) if (a[i] != b[i]) return true;
         return false;
     }
 
@@ -95,6 +101,7 @@ public final class InputState {
 
     public void decode(byte[] data) throws IOException {
         In in = Msg.reader(data);
+        int rtt = (in.readByte() & 0xFF) * 4;
         int newFlags = in.readShort() & 0xFFFF;
         float mx = in.readFloat(), my = in.readFloat();
         int newGroup = in.readByte();
@@ -102,6 +109,7 @@ public final class InputState {
         int newAutofire = in.readShort() & 0xFFFF;
         float newFacing = in.readFloat();
         int newUses = in.readByte() & 0xFF, newOrders = in.readByte() & 0xFF;
+        int newTaps = in.readByte() & 0xFF;
         int nKeys = in.readByte() & 0xFF;
         if (nKeys > MAX_KEYS) return; // impossible: ignored whole, like the other guard rails below
         int[] newKeys = nKeys == 0 ? NO_KEYS : new int[nKeys];
@@ -125,6 +133,8 @@ public final class InputState {
         facing = newFacing;
         sysUses = newUses;
         sysOrders = newOrders > 3 ? 0 : newOrders;
+        fireTaps = newTaps;
+        rttMs = rtt;
         keys = newKeys;
         seq = newSeq;
         receivedAt = System.currentTimeMillis();

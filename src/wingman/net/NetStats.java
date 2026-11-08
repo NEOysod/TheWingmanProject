@@ -77,6 +77,9 @@ public final class NetStats {
             case Msg.REFIT_DATA: return "refit data";
             case Msg.REFIT_REQUEST: return "refit requests";
             case Msg.REFIT_RESULT: return "refit results";
+            case Msg.AIMS: return "point defense aims";
+            case Msg.WISH: return "wish list changes";
+            case Msg.WISH_LIST: return "wish lists";
             case Msg.INPUT_MODE: return "controls mode";
             case Msg.INPUTS: return "controls (steady)";
             case Msg.REPORT: return "after-action report";

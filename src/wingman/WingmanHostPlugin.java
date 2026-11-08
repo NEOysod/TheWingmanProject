@@ -15,6 +15,7 @@ import com.fs.starfarer.api.GameState;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
+import com.fs.starfarer.api.combat.AutofireAIPlugin;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.FighterWingAPI;
@@ -235,6 +236,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         lastHostShip = engine.getPlayerShip();
         tapMessages();
         started = true;
+        ShieldGrace.enabled = cfg.shieldGrace;
+        ShieldGrace.givenBack = 0;
+        ShieldGrace.judged = 0;
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
         if (cfg.password.isEmpty()) Ui.say(engine, "Co-op: no join password is set, so anyone who can reach this PC on port " + cfg.port
                 + " can join. Set a join password in the settings (Ctrl+Shift+O) to change that.");
@@ -399,6 +403,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         prof.mark(4);
         trackFiring();
+        if (!aimsBroken && gameClock - aimsAt >= 0.1f) { // ten times a battle second
+            aimsAt = gameClock;
+            try {
+                trackAims();
+            } catch (Throwable t) {
+                aimsBroken = true;
+                Global.getLogger(WingmanHostPlugin.class).error("Wingman: sending point defense aims failed; joiners aim those weapons by angle for the rest of this battle", t);
+            }
+        }
         prof.mark(5);
 
         // Anyone who just joined (or restarted their side) gets the full picture.
@@ -431,6 +444,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             for (Map.Entry<Integer, Integer> t : scriptedTargets.entrySet()) {
                 if (missilesById.containsKey(t.getKey())) p.conn.send(Msg.MISSILE_TARGET, Msg.twoInts(t.getKey(), t.getValue()));
             }
+            if (!aims.isEmpty()) p.conn.send(Msg.AIMS, aimsMessage(aims.entrySet()));
             byte[] objectives = orders.objectivesMessage(engine);
             if (objectives != null) p.conn.send(Msg.OBJECTIVES, objectives);
             p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, p.shipNetId));
@@ -468,7 +482,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 long[] pc = session.packerCounts();
                 Global.getLogger(WingmanHostPlugin.class).info("Wingman traffic (host, " + session.getPlayers().size() + " joined, " + ships
                         + " ships, " + fighters + " fighters, " + missilesById.size() + " missiles, " + rate + " of " + cfg.snapshotRate
-                        + " updates/s, " + pc[2] + " ship/missile states left out as guessed right so far): " + traffic);
+                        + " updates/s, " + pc[2] + " ship/missile states left out as guessed right so far, " + aimChanges + " point defense aims sent, "
+                        + ShieldGrace.givenBack + " of " + ShieldGrace.judged + " hits on joiners' ships given back to their shields): " + traffic);
                 String agent = AgentGate.report();
                 if (agent != null) Global.getLogger(WingmanHostPlugin.class).info(agent);
             }
@@ -486,6 +501,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
                         + session.packerCounts()[2] + " ship/missile states left out as guessed right"
                         + "; updates: " + session.describeUpdates()
+                        + "; point defense aims sent: " + aimChanges
+                        + "; hits on joiners' ships given back to their shields: " + ShieldGrace.givenBack + " of " + ShieldGrace.judged
                         + "; armor/ammo read for " + damage.looked + " ships and passed over for " + damage.passedOver
                         + (extras == null ? "" : "; stats read for " + extras.statLooks + " and passed over for " + extras.statSkips) + "): " + traffic);
                 halved = 0;
@@ -1595,6 +1612,69 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         return snap;
     }
 
+    /** What each autofiring weapon's AI aims at, by id; changes are sent to every joiner (see the field aims). */
+    private void trackAims() {
+        if (session.getPlayers().isEmpty()) { aims.clear(); return; }
+        Set<Long> live = new HashSet<Long>();
+        List<Object[]> changed = new ArrayList<Object[]>();
+        for (Map.Entry<ShipAPI, Integer> e : ids.entrySet()) {
+            ShipAPI s = e.getKey();
+            if (s == null || !s.isAlive() || s.isHulk()) continue;
+            List<WeaponAPI> ws = s.getAllWeapons();
+            int n = Math.min(ws.size(), 255);
+            for (int i = 0; i < n; i++) {
+                WeaponAPI w = ws.get(i);
+                long aim = 0L;
+                try {
+                    WeaponGroupAPI g = s.getWeaponGroupFor(w);
+                    if (g != null && g.isAutofiring()) {
+                        AutofireAIPlugin ai = g.getAutofirePlugin(w);
+                        if (ai != null) {
+                            MissileAPI m = ai.getTargetMissile();
+                            Integer mid = m != null ? missileIds.get(m) : null;
+                            if (mid != null && mid >= 0) aim = (1L << 32) | (mid & 0xFFFFFFFFL);
+                            else {
+                                ShipAPI t = ai.getTargetShip();
+                                Integer tid = t != null && t.isFighter() ? ids.get(t) : null;
+                                if (tid != null) aim = (2L << 32) | (tid & 0xFFFFFFFFL);
+                            }
+                        }
+                    }
+                } catch (Throwable t) { /* no aim known for it */ }
+                long key = ((long) e.getValue() << 8) | i;
+                if (aim == 0L) {
+                    if (aims.remove(key) != null) changed.add(new Object[] { key, 0L });
+                } else {
+                    live.add(key);
+                    Long was = aims.put(key, aim);
+                    if (was == null || was != aim) changed.add(new Object[] { key, aim });
+                }
+            }
+        }
+        if (aims.size() > live.size()) aims.keySet().retainAll(live); // ships gone
+        if (changed.isEmpty()) return;
+        aimChanges += changed.size();
+        Map<Long, Long> out = new LinkedHashMap<Long, Long>();
+        for (Object[] c : changed) out.put((Long) c[0], (Long) c[1]);
+        session.broadcast(Msg.AIMS, aimsMessage(out.entrySet()));
+    }
+
+    /** PD aims: a count, then for each the ship id, the weapon's index, the kind (0 none, 1 missile, 2 fighter) and the target's id. */
+    private static byte[] aimsMessage(Set<Map.Entry<Long, Long>> entries) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeVarInt(entries.size());
+            for (Map.Entry<Long, Long> e : entries) {
+                long key = e.getKey(), aim = e.getValue();
+                w.out.writeInt((int) (key >>> 8));
+                w.out.writeByte((int) (key & 0xFF));
+                w.out.writeByte((int) (aim >>> 32));
+                w.out.writeInt((int) aim);
+            }
+        } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+        return w.done();
+    }
+
     /**
      * Snapshots go out 20 times a second, but a gun that fires a single shot is only "firing" for an instant,
      * usually between two snapshots, so asking "is it firing right now?" at snapshot time misses most single
@@ -1787,6 +1867,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             new IdentityHashMap<com.fs.starfarer.api.combat.DamagingProjectileAPI, int[]>();
     private int shotFrame, shotsThisSecond;
     private boolean shotsBroken, shotTurn;
+
+    /**
+     * Point defense aims: for each weapon on autofire (key: ship id << 8 | weapon index), what its own AI is aiming
+     * at here: 1 << 32 | a missile's id, or 2 << 32 | a fighter's id. Sent when they change (and whole to a player
+     * who syncs), so a joiner's copy points its guns at the same missile or fighter instead of by the angle alone.
+     */
+    private final Map<Long, Long> aims = new HashMap<Long, Long>();
+    private float aimsAt = -1f;
+    private boolean aimsBroken;
+    private int aimChanges;
     private long shotSecond;
 
     /**

@@ -11,6 +11,9 @@ cp "$MOD/mod_info.json" "$MOD/wingman_settings.json" "$MOD/RELEASE_NOTES.md" "$M
 cp "$MOD/dist/README.md" "$STAGE/README.md"
 cp "$MOD/jars/Wingman.jar" "$MOD/jars/WingmanAgent.jar" "$STAGE/jars/"
 cp -r "$MOD/data" "$STAGE/"
+# the agent's launcher for Windows (optional; see the README)
+mkdir -p "$STAGE/launch"
+cp "$MOD/launch/WingmanLaunch.ps1" "$MOD/launch/Start Starsector with Wingman agent.bat" "$STAGE/launch/"
 rm -f "$OUT"
 (cd "$(dirname "$STAGE")" && zip -qr "$OUT" Wingman)
 rm -rf "$(dirname "$STAGE")"
