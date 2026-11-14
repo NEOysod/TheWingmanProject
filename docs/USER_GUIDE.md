@@ -416,7 +416,8 @@ each player who adds it gets this on their own PC, and the host's matters most. 
 folder) in your Starsector folder and start the game with it. Each time, it reads your launch settings (the
 normal game's `vmparams`, Mikohime's `Miko_Rouge.bat`, or Fast Rendering 1.0's `fr.bat` in `starsector-core`),
 adds the agent to a copy of them and starts the game; your own files aren't changed. Settings left from before a
-game update, or set up for an older Fast Rendering, are noticed and skipped.
+game update, or set up for an older Fast Rendering, are noticed and skipped. With none of those it uses the
+normal game's settings, and if it can't add the agent at all it starts `starsector.exe` as usual, without it.
 
 **By hand:** add one setting to the game's launch settings, with the game closed. Find `-Xms` (the memory setting) and put the setting just before it, with a space after it:
 

@@ -39,6 +39,9 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   for FR's old class loader, which FR 1.0 no longer has, is noticed and skipped instead of failing to start.
   Checked: every game class loads with FR 1.0, FR Resource Cache 0.6.1 and Wingman's agent together, and the
   agent changes the same 460 classes as without them.
+- **The launcher always starts the game:** with no Mikohime, Fast Rendering or other launcher it uses the normal
+  game's settings (vmparams, or starsector-core's starsector.bat); if the agent can't be added (no Java, no agent
+  jar, settings it can't read) it starts starsector.exe without it, and says why.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta
