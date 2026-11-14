@@ -48,6 +48,10 @@ final class FleetBuild {
             }
          }
 
+         if (var0 == Global.getSector().getPlayerFleet()) {
+            var2.execs = SicBridge.read();
+         }
+
          return var2;
       }
    }

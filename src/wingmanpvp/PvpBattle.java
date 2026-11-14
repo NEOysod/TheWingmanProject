@@ -138,6 +138,14 @@ public final class PvpBattle {
          var8.getFleetData().syncIfNeeded();
          var8.getCargo().addCrew(Math.max(0, Math.round(var8.getFleetData().getMinCrew()) - var8.getCargo().getCrew()) + 1);
 
+         // Second in Command: each team fights with its captain's executive officers.
+         FleetPack enemyPack = var4[1] == null ? null : var2.get(var4[1]);
+         SicBridge.apply(var32, enemyPack == null ? new ArrayList<FleetPack.Exec>() : enemyPack.execs, false, var9.notes, String.valueOf(var4[1]));
+         if (var4[0] != null && !var4[0].equalsIgnoreCase(var25)) {
+            FleetPack ownPack = var2.get(var4[0]);
+            var9.sic = SicBridge.apply(var8, ownPack == null ? new ArrayList<FleetPack.Exec>() : ownPack.execs, true, var9.notes, var4[0]);
+         }
+
          for (Entry var51 : var15.entrySet()) {
             if (!((String)var51.getKey()).equalsIgnoreCase(var25)) {
                WingmanAPI.reserveShip((String)var51.getKey(), ((FleetMemberAPI)var51.getValue()).getId());
@@ -224,6 +232,9 @@ public final class PvpBattle {
             Global.getLogger(PvpBattle.class).error("Wingman PvP: putting the host's fleet back failed", var5);
          }
 
+         SicBridge.restore(var0.sic);
+         var0.sic = null;
+
          try {
             if (var0.enemy != null) {
                var0.enemy.despawn();
@@ -253,6 +264,8 @@ public final class PvpBattle {
       FleetMemberAPI stashFlag;
       CargoAPI cargoCopy;
       CampaignFleetAPI enemy;
+      /** The host's own Second in Command executive officers, while the battle uses their captain's. */
+      SicBridge.Saved sic;
       boolean restored;
    }
 }

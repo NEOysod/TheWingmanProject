@@ -10,7 +10,7 @@ import wingman.net.Msg.W;
 
 public final class Proto {
    public static final String CHANNEL = "wingman_pvp:lobby";
-   public static final int VERSION = 2; // 2: only captains' fleets (a player's pick is a ship of their captain's)
+   public static final int VERSION = 3; // 3: fleets carry Second in Command's executive officers; 2: 2: only captains' fleets (a player's pick is a ship of their captain's)
    public static final byte HELLO = 1;
    public static final byte TEAM = 2;
    public static final byte PICKS = 3;

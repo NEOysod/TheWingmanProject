@@ -19,6 +19,10 @@ public final class FleetPack {
    public static final int MAX_SKILLS = 120;
    public String owner = "";
    public List<FleetPack.Ship> ships = new ArrayList<>();
+   /** Second in Command's executive officers in the captain's slots (empty without that mod). */
+   public List<FleetPack.Exec> execs = new ArrayList<>();
+   public static final int MAX_EXECS = 10;
+   public static final int MAX_EXEC_SKILLS = 40;
 
    public float points() {
       float var1 = 0.0F;
@@ -43,6 +47,7 @@ public final class FleetPack {
    public FleetPack only(List<String> var1) {
       FleetPack var2 = new FleetPack();
       var2.owner = this.owner;
+      var2.execs = this.execs;
 
       for (String var4 : var1) {
          FleetPack.Ship var5 = this.find(var4);
@@ -66,6 +71,20 @@ public final class FleetPack {
          for (int var4 = 0; var4 < var3; var4++) {
             writeShip(var2, this.ships.get(var4));
          }
+
+         int ne = Math.min(this.execs.size(), MAX_EXECS);
+         var2.writeByte(ne);
+         for (int i = 0; i < ne; i++) {
+            FleetPack.Exec e = this.execs.get(i);
+            var2.writeByte(e.slot);
+            var2.writeUTF(cap(e.aptitudeId, 100));
+            var2.writeUTF(cap(e.name, 100));
+            int nk = Math.min(e.skills.size(), MAX_EXEC_SKILLS);
+            var2.writeByte(nk);
+            for (int k = 0; k < nk; k++) {
+               var2.writeUTF(cap(e.skills.get(k), 100));
+            }
+         }
       } catch (IOException var5) {
          throw new IllegalStateException(var5);
       }
@@ -83,6 +102,28 @@ public final class FleetPack {
       } else {
          for (int var4 = 0; var4 < var3; var4++) {
             var2.ships.add(readShip(var1));
+         }
+
+         int ne = var1.readByte() & 255;
+         if (ne > MAX_EXECS) {
+            throw new IOException("too many executive officers");
+         }
+         for (int i = 0; i < ne; i++) {
+            FleetPack.Exec e = new FleetPack.Exec();
+            e.slot = var1.readByte() & 255;
+            if (e.slot >= MAX_EXECS) {
+               throw new IOException("impossible executive officer slot");
+            }
+            e.aptitudeId = var1.readUTF();
+            e.name = var1.readUTF();
+            int nk = var1.readByte() & 255;
+            if (nk > MAX_EXEC_SKILLS) {
+               throw new IOException("too many executive officer skills");
+            }
+            for (int k = 0; k < nk; k++) {
+               e.skills.add(var1.readUTF());
+            }
+            var2.execs.add(e);
          }
 
          return var2;
@@ -342,6 +383,14 @@ public final class FleetPack {
       public int level = 1;
       public List<String> skillIds = new ArrayList<>();
       public List<Float> skillLevels = new ArrayList<>();
+   }
+
+   /** One of Second in Command's executive officers: the slot it sits in, its aptitude and its active skills. */
+   public static final class Exec {
+      public int slot;
+      public String aptitudeId = "";
+      public String name = "";
+      public List<String> skills = new ArrayList<>();
    }
 
    public static final class Ship {

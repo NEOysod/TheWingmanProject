@@ -3,12 +3,15 @@
 ## 0.1.1-beta (public beta test)
 
 - For Starsector 0.98.5a and Wingman 0.9.3-beta.
+- **Second in Command:** each team fights with its captain's executive officers. Before, the host's team got the
+  host's (even with another captain) and the other team could get random NPC ones. The host's own are put back
+  after the battle. Without that mod nothing changes.
 - **Only captains' fleets are used.** A captain ticks the ships the team brings from their own fleet (the points
   limit is now per team); every teammate picks the ship they fly from those, one player a ship. Changing captain
   or team, or the captain dropping a ship, asks whoever flew it to pick again. Only captains send a fleet at start.
 - **Joiners save before going to the main menu** for the battle (the game's Save and exit; without saving only if
   the game can't be saved then).
-- Lobby messages version 2 (everyone needs this version).
+- Lobby messages version 3 (everyone needs this version).
 
 ## 0.1.0-alpha (test)
 

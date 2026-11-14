@@ -75,6 +75,12 @@ started from the title screen; a campaign battle on the joiner's PC would need W
   are back on their title screen (Wingman takes them there); the results show at the top. A rematch with the same
   fleets takes them into the next battle by themselves; otherwise they load their save.
 
+- **Second in Command.** That mod keeps a fleet's executive officers in its fleet's memory (`$sc_stored_data`) and
+  applies their skills to each ship from it. The captain's pack carries their executive officers (slot, aptitude,
+  active skills); `SicBridge` gives side 1's fleet its own copy of them (tagged `sc_do_not_generate_skills`, so no
+  random NPC ones) and, when side 0's captain isn't the host, swaps the host's for the captain's until
+  `PvpBattle.restore`. All by name, so the mod isn't needed.
+
 Known gaps to test in game: the host's deployment screen (side 0) is the vanilla one; the joiner's exit to the
 main menu uses the game's "save and exit" (or "exit without saving" when it can't save); Wingman's own lobby screen on the title
 screen may cover the PvP results box.

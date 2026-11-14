@@ -60,6 +60,18 @@ public class LobbyCheck {
         check(h.whyNotStart() == null, "ready again");
         h.start(null); // host isn't captain: no host pack
         check(s.phase == LobbyState.Phase.STARTING && h.packs().isEmpty() && !h.allFleetsIn(), "starting: waiting for the 2 captains' fleets");
+        // fleets carry Second in Command's executive officers
+        FleetPack fp = new FleetPack(); fp.owner = "Ann";
+        FleetPack.Ship sh = new FleetPack.Ship(); sh.memberId = "a0"; sh.loadout.hullId = "onslaught"; fp.ships.add(sh);
+        FleetPack.Exec ex = new FleetPack.Exec(); ex.slot = 2; ex.aptitudeId = "sc_tactical"; ex.name = "Ada Vey";
+        ex.skills.addAll(Arrays.asList("sc_tactical_spotters", "sc_tactical_rapid_response")); fp.execs.add(ex);
+        FleetPack fb = FleetPack.decode(fp.encode());
+        check(fb.execs.size() == 1 && fb.execs.get(0).slot == 2 && fb.execs.get(0).aptitudeId.equals("sc_tactical")
+            && fb.execs.get(0).name.equals("Ada Vey") && fb.execs.get(0).skills.size() == 2 && fb.ships.size() == 1, "fleet pack keeps executive officers");
+        check(fp.only(Arrays.asList("a0")).execs.size() == 1, "the ships a captain brings keep the executive officers");
+        FleetPack bad = new FleetPack(); FleetPack.Exec bx = new FleetPack.Exec(); bx.slot = 200; bad.execs.add(bx);
+        boolean refused; try { FleetPack.decode(bad.encode()); refused = false; } catch (java.io.IOException e) { refused = true; }
+        check(refused, "an impossible executive officer slot is refused");
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
     }
 }
