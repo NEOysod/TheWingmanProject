@@ -44,6 +44,8 @@ public final class WingmanConfig {
     /** Host: friends may refit the ship they picked while the host is docked at a market (the host accepts each refit). */
     public boolean friendRefit = true;
     /** Host: after a friend's refit accepted under the refit screen is done, that screen opens again on the ship. */
+    /** An officer the host links to a friend may level as far as a player character (the game's own per-officer cap). */
+    public boolean linkedOfficerLevelCap = true;
     public boolean friendRefitReopen = false; // off: accepting a friend's refit leaves the host where they were
     /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */
     public boolean hostTethering = false;
@@ -162,6 +164,7 @@ public final class WingmanConfig {
             c.campaignLobby = j.optBoolean("campaignLobby", c.campaignLobby);
             c.friendRefit = j.optBoolean("friendRefit", c.friendRefit);
             c.friendRefitReopen = j.optBoolean("friendRefitReopen", c.friendRefitReopen);
+            c.linkedOfficerLevelCap = j.optBoolean("linkedOfficerLevelCap", c.linkedOfficerLevelCap);
             c.hostTethering = j.optBoolean("hostTethering", c.hostTethering);
             c.rememberShip = j.optBoolean("rememberShip", c.rememberShip);
             c.playerTags = j.optBoolean("playerTags", c.playerTags);
@@ -224,6 +227,7 @@ public final class WingmanConfig {
         if ("campaignLobby".equals(key)) return String.valueOf(campaignLobby);
         if ("friendRefit".equals(key)) return String.valueOf(friendRefit);
         if ("friendRefitReopen".equals(key)) return String.valueOf(friendRefitReopen);
+        if ("linkedOfficerLevelCap".equals(key)) return String.valueOf(linkedOfficerLevelCap);
         if ("hostTethering".equals(key)) return String.valueOf(hostTethering);
         if ("rememberShip".equals(key)) return String.valueOf(rememberShip);
         if ("playerTags".equals(key)) return String.valueOf(playerTags);
@@ -282,6 +286,7 @@ public final class WingmanConfig {
             else if ("campaignLobby".equals(key)) campaignLobby = yes(value);
             else if ("friendRefit".equals(key)) friendRefit = yes(value);
             else if ("friendRefitReopen".equals(key)) friendRefitReopen = yes(value);
+            else if ("linkedOfficerLevelCap".equals(key)) linkedOfficerLevelCap = yes(value);
             else if ("hostTethering".equals(key)) hostTethering = yes(value);
             else if ("rememberShip".equals(key)) rememberShip = yes(value);
             else if ("playerTags".equals(key)) playerTags = yes(value);

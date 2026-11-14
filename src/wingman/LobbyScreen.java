@@ -501,6 +501,7 @@ final class LobbyScreen {
         // Your ship
         Roster.Member mine = v.roster == null ? null : v.roster.pickOf(v.me);
         String yours = mine == null ? "Not picked yet. Pick one here, or choose in the battle." : Roster.label(mine);
+        if (OfficerChoice.pending()) yours += "\n\n" + OfficerChoice.line();
         float yoursH = Style.BAR_H + 22f + Style.height(yours, body, pw - 14f) + 6f;
         Style.window(x, top - yoursH, w, yoursH, "YOUR SHIP", "");
         Style.callout(yours, mine == null ? Panel.WARN : Panel.GOOD, px, top - Style.BAR_H - 12f, pw);

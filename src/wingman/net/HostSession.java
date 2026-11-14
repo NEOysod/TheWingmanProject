@@ -65,6 +65,9 @@ public final class HostSession {
          * host's game restarting, asks again. After scardwell15's pull request #1.
          */
         public volatile boolean trustedRefits;
+        /** The skill this player picked for their linked officer's level-up (game thread takes it), and what was last offered. */
+        public volatile String officerPick;
+        public String officerOffered = "";
         /** The player's own keys for mods' LunaLib settings ("mod/field" -> key code), as their game told us. */
         public volatile java.util.Map<String, Integer> lunaKeys;
 
@@ -577,6 +580,9 @@ public final class HostSession {
                     }
                     else if (p.type == Msg.REFIT_REQUEST) {
                         if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
+                    }
+                    else if (p.type == Msg.OFFICER_PICK) {
+                        try { String id = Msg.readUtf(p.data); if (id.length() <= 100) pl.officerPick = id; } catch (Throwable t) { /* garbled */ }
                     }
                     else if (p.type == Msg.WISH) {
                         synchronized (pl.wishes) { // each change kept, in order, for the game thread (WishList)

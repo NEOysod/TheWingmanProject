@@ -278,6 +278,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             // host for everything afresh when it starts.
             Conn out = link.getConn();
             if (out != null) for (byte[] w : WishView.takeOutgoing()) out.send(Msg.WISH, w); // wish list changes made here
+            if (out != null) for (String sk : OfficerChoice.takeOutgoing()) out.send(Msg.OFFICER_PICK, Msg.utf(sk)); // our officer's skill picks
             Conn c = link.getConn();
             Conn.Packet p;
             int read = 0;
@@ -364,6 +365,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                             note(r.text.replace('\n', ' '), r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.RECEIVED ? Panel.GOOD : Panel.WARN);
                         }
                     } catch (java.io.IOException e) { /* skipped */ }
+                } else if (p.type == Msg.OFFICER_LEVEL) { // our linked officer can level up: the skills offered
+                    OfficerChoice.onMessage(p.data);
                 } else if (p.type == Msg.WISH_LIST) { // everyone's wish lists, for the wish list window
                     WishView.onList(p.data);
                 } else if (p.type == Msg.LOBBY) { // who else is there
@@ -544,6 +547,10 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         if (lobby.page == LobbyScreen.REFIT) {                                         // the refit screen takes every key
             refitAction(lobby.refit.key(key, ch, ctrl, shift));
             return;
+        }
+        if (key >= 2 && key <= 9 && OfficerChoice.pending()) {                       // 1..8: our officer's skill
+            String officer = OfficerChoice.officer, skill = key - 2 < OfficerChoice.skills.size() ? OfficerChoice.skills.get(key - 2) : null;
+            if (skill != null && OfficerChoice.pick(key - 2)) { note("Sent to the host: " + OfficerChoice.name(skill) + " for " + officer + ".", Panel.GOOD); return; }
         }
         if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
@@ -757,6 +764,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
     private void disconnect() {
         if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
         ClientLink.get().disconnect();
+        OfficerChoice.forget();
         Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: disconnected from the host");
         connectedRaw = null;
         welcomed = false;

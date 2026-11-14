@@ -65,6 +65,12 @@ and in a campaign friends can connect as soon as you load your save, while you a
    (setting "Reopen the refit screen after a friend's refit"). An accepted refit
    is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
    paid, story points spent. Whether a hull mod suits the ship is for you to judge.
+   Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
+   **Officers for friends:** press **Ctrl+Shift+L** on the campaign map, pick a friend (Left/Right) and one of
+   your officers (Up/Down), and press **Enter**. That officer then captains whichever ship the friend picks
+   (the officer already on it swaps over). When it can level up, the friend picks its skill in their lobby with
+   the number keys. Setting "Friends' officers level like a player" lets a linked officer reach a player's max
+   level. Enter again (or Delete) unlinks it and puts its level cap back. Saves load fine without Wingman.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
    player as loading, choosing a ship, or flying one and ready or not. Press **Enter** to start once everyone
@@ -220,7 +226,9 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
 | Lobby (joiner, title screen) | R | Refit the ship you picked (while the host is docked at a market) |
 | Refit screen (joiner) | Mouse (keys also: Up/Down, Left/Right, Enter, Delete, B, S, Z, Ctrl+Enter) | Click a ring or tile, then a card; buttons for the rest; the wheel scrolls |
-| Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D) | Friends' refits: accept / deny |
+| Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D), T | Friends' refits: accept / deny; trust that friend |
+| Campaign map (host) | **Ctrl+Shift+L** | Officer links: give a friend one of your officers |
+| Lobby (joiner, title screen) | 1 to 8 | Pick your officer's next skill (when it can level up) |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |

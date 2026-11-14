@@ -1,5 +1,23 @@
 # Changelog
 
+## Next (on the test branch)
+
+Same protocol: an older joiner just doesn't get the new hull-size and officer messages.
+
+- **Trusted refits** (host): in the friend refit panel (Ctrl+Shift+R), T trusts that player's refits: from then on they
+  are done as they arrive, without asking. Every check still runs; a refit that fails one waits or is refused as
+  usual. For that connection only: a reconnect asks again.
+- **Arma Armatura and other hull-size changes:** a mech that takes off or lands changes its hull size mid-battle; joiners
+  now get the same size (0.98.5a's setHullSize), so both copies count ships and fighters alike and stop resyncing.
+- **Diable Avionics' Virtuous:** taking a selector hull mod off in a friend's refit steps the ship to the next hull
+  config, weapon kit or head, as Diable's own hull mod does.
+- **Officers for friends** (host): Ctrl+Shift+L on the campaign map links one of your officers to a connected
+  friend. That officer then captains whichever ship the friend picks (the ship's old officer swaps to the one left),
+  and when it can level up the friend picks its skill in the lobby (numbers 1-8, from the game's own choices; the
+  host's game levels it up). A linked officer may level as far as a player character (host setting, on). Save-safe:
+  the link is a plain tag and the cap is the game's own per-officer setting, so saves load fine without Wingman.
+- These four after scardwell15's pull request #1.
+
 ## 0.9.3-beta
 
 Protocol 61. For Starsector 0.98.5a-RC5 only: the game internals Wingman uses were renamed in the update, so it
@@ -46,14 +64,6 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   handful of players: more players means more bandwidth and more work for the host's PC.
 - Accepting a friend's refit no longer opens the refit screen on that ship afterwards (host setting "Reopen the
   refit screen after a friend's refit", now off by default).
-- **Trusted refits** (host): in the friend refit panel (Ctrl+Shift+R), T trusts that player's refits: from then on they
-  are done as they arrive, without asking. Every check still runs; a refit that fails one waits or is refused as
-  usual. For that connection only: a reconnect asks again.
-- **Arma Armatura and other hull-size changes:** a mech that takes off or lands changes its hull size mid-battle; joiners
-  now get the same size (0.98.5a's setHullSize), so both copies count ships and fighters alike and stop resyncing.
-- **Diable Avionics' Virtuous:** taking a selector hull mod off in a friend's refit steps the ship to the next hull
-  config, weapon kit or head, as Diable's own hull mod does.
-- These three after scardwell15's pull request #1.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta

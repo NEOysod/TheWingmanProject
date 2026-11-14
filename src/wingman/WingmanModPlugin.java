@@ -28,6 +28,7 @@ public class WingmanModPlugin extends BaseModPlugin {
             Global.getSector().addTransientScript(new Watch());
             Global.getSector().addTransientScript(new CampaignLobby());
             CampaignSettings.install(); // Ctrl+Shift+O on the campaign map
+            OfficerLinkPanel.install(); // Ctrl+Shift+L: officers linked to friends
             CampaignPlayerList.install(); // who is connected, top right of the campaign map
             FriendRefitPanel.install(); // friends' refits waiting for the host (Ctrl+Shift+R)
             WishListPanel.install(); // friends' wish lists, for the host to buy at markets
