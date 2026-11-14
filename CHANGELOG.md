@@ -34,6 +34,11 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   and joiners' copies of the host's orders, which before only undid a retreat).
 - The title menu is found by its field alone, so a renamed menu class after a game update no longer stops the
   lobby taking the whole screen.
+- **Launcher and Fast Rendering 1.0:** the .bat finds FR 1.0's `fr.bat` (in starsector-core, settings in
+  `fr.vmparams`) and adds the agent under FR's (and FR Resource Cache's) own agent lines. A Mikohime setup made
+  for FR's old class loader, which FR 1.0 no longer has, is noticed and skipped instead of failing to start.
+  Checked: every game class loads with FR 1.0, FR Resource Cache 0.6.1 and Wingman's agent together, and the
+  agent changes the same 460 classes as without them.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta

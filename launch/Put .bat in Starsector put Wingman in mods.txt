@@ -4,8 +4,8 @@ Installing Wingman
 2. Put "Start Starsector with Wingman agent.bat" in your Starsector folder
    (the one with starsector.exe and the mods folder in it, not in mods).
 3. Turn Wingman on in the game's mod list.
-4. Start the game with the .bat (or a desktop shortcut to it) instead of starsector.exe
-   or Mikohime's Miko_Rouge.bat.
+4. Start the game with the .bat (or a desktop shortcut to it) instead of starsector.exe,
+   Mikohime's Miko_Rouge.bat or Fast Rendering's fr.bat. It uses their settings.
 
 The .bat is optional: Wingman works without it. It adds Wingman's agent, which lets mods'
 "player ship" scripts work for every player's ship. It changes none of your game's files.
