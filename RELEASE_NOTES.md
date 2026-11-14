@@ -26,6 +26,12 @@ each fly a ship from the host's fleet, side by side, in real time.
 - **Launcher:** `Start Starsector with Wingman agent.bat` goes in the Starsector folder (it is in the zip beside
   the Wingman folder). Launch settings left from before a game update (Mikohime with Fast Rendering's `fr.jar`
   gone) are noticed, and the normal game is started instead.
+- **Joiners' controls are read from the game itself** (0.98.5a's ship command queue): the fire key works wherever
+  it is bound, and every press counts, however short. Older ways stay as the fallback.
+- **Mods' battle scripts that crash a joiner's game run guarded next time:** Wingman notes which mod's battle script
+  was in the error the game closed on; from then on, on that PC, an error in it switches it off for that battle with a
+  "Co-op:" message instead of closing the game. Listed in the CO-OP panel; F5 undoes it.
+- Clearing a ship's own order (PvP captains, and joiners' copies of the host's orders) uses the game's own way.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI` (see Wingman PvP).
 - Protocol 61.
 

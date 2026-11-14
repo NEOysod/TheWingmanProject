@@ -207,7 +207,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 | CO-OP panel | F1 | How-to pages |
 | CO-OP panel | F2 | Mod compatibility report |
 | CO-OP panel | **F3** | **Settings** |
-| CO-OP panel | F5 | Switch crashed-out mod systems back on (only shown when there are any) |
+| CO-OP panel | F5 | Switch crashed-out mod systems back on, and guarded mod scripts back to normal (only shown when there are any) |
 | CO-OP panel | Esc | Close |
 | Battle (anyone) | **Ctrl+Shift+O** | **Settings** |
 | Campaign map | **Ctrl+Shift+O** | **Settings** (the campaign waits while the page is open) |
@@ -366,6 +366,9 @@ no campaign loaded, in which every ship except your own is a puppet the host mov
   mirrored on that PC from the next launch on. Ships still move and take damage correctly; only its effects
   are missing (an objective still shows with its own name and look, but does nothing on that PC). The CO-OP panel lists what was
   switched off this way, and **F5** switches it all back on.
+- If a mod's **battle script** (a battle-wide script, not a ship's) was in the error that closed a joiner's game,
+  it runs **guarded** on that PC from then on: if it hits an error again, it is switched off for that battle with a
+  "Co-op:" message, and the battle goes on. The CO-OP panel lists these too; **F5** puts them back to normal.
 - Battle objectives whose scripts need the campaign's data (Secrets of the Frontier's reinforcement
   beacons; the asteroid and credit-cache objectives from its Extra Combat Objectives add-on) run on a joiner's
   PC using the stand-in campaign (see below). Those that need the campaign world itself (the add-on's

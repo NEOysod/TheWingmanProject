@@ -20,6 +20,20 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
 - **Launcher:** `Start Starsector with Wingman agent.bat` now sits in the zip beside the Wingman folder and goes
   in the Starsector folder. Launch settings left from before a game update (Mikohime with Fast Rendering's
   `fr.jar` gone) are noticed, and the normal game is started instead.
+- **Joiners' controls from the game's own commands.** A joiner's ship now reports what the game told it to do
+  (`ShipAPI.getCommands2`, new in 0.98.5a, read by an advance listener before the ship carries the commands out):
+  fire on any key it is bound to, and every press, however short. Without it (paused, or an older game) the
+  controls are worked out from the mouse and the ship's state, as before.
+- **Mods' battle scripts guarded after a crash.** While a joiner's battle runs, the mods' battle scripts in it are
+  known (`CombatEngineAPI.getPlugins`, new in 0.98.5a) and Wingman listens to the game's log. When the game logs the
+  error it closes on and one of those scripts is in it, the script is noted; from the next battle on that PC it runs
+  wrapped, so an error switches it off for the battle with a "Co-op:" message instead of closing the game. Only
+  scripts that crashed are wrapped (a wrapped script can't be found by its class, which some mods rely on). The
+  CO-OP panel lists them; F5 puts them back to normal, with the ship systems.
+- Clearing a ship's own order uses the game's `cancelDirectOrdersForMember2` (PvP captains' orders on the host,
+  and joiners' copies of the host's orders, which before only undid a retreat).
+- The title menu is found by its field alone, so a renamed menu class after a game update no longer stops the
+  lobby taking the whole screen.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta
