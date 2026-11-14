@@ -13,6 +13,7 @@ import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
 import com.fs.starfarer.api.input.InputEventAPI;
 
+import wingman.api.Pvp;
 import wingman.net.BattleInfo;
 import wingman.net.ClientLink;
 import wingman.net.Conn;
@@ -288,7 +289,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     form.status = "Connected to " + in.readUTF() + "'s game.";
                     form.statusColor = Panel.GOOD;
                     welcomed = true;
-                    if (!lobbyShown) { lobbyShown = true; lobbyOpen = true; open = true; } // the lobby is where joiners wait
+                    if (!lobbyShown && !Pvp.active()) { lobbyShown = true; lobbyOpen = true; open = true; } // the lobby is where joiners wait (not in a PvP match: its own lobby was that)
                 } else if (p.type == Msg.REJECT) {
                     form.status = "The host refused the connection: " + Msg.readUtf(p.data).replace('\n', ' ');
                     form.statusColor = Panel.BAD;
@@ -333,7 +334,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         if (roster.hostState == 1) closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
                         else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed. Your plan for that ship is kept.");
                     }
-                    if (!lobbyShown && roster.hostState == 0) { // the first time on the campaign map: show the lobby by itself
+                    if (!lobbyShown && roster.hostState == 0 && !Pvp.active()) { // the first time on the campaign map: show the lobby by itself
                         lobbyShown = true;
                         lobbyOpen = true;
                         open = true;

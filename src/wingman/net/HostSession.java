@@ -103,6 +103,13 @@ public final class HostSession {
     }
 
     private static HostSession active;
+    /** Players an add-on's match needs room for (PvP: up to 8): the cap is at least this, whatever the settings say. */
+    public static volatile int playersAtLeast;
+
+    /** The player cap raised (or set back) for a running session, never below playersAtLeast. */
+    public void raiseCap(int max) {
+        this.maxPlayers = Math.max(2, Math.max(max, playersAtLeast));
+    }
 
     /** Returns the running session, (re)starting it if the port changed or nothing is running. */
     public static synchronized HostSession getOrStart(int port, int maxPlayers, int snapshotRate, String hostName)
@@ -123,7 +130,7 @@ public final class HostSession {
             active = null;
         }
         if (active == null) active = new HostSession(port);
-        active.maxPlayers = Math.max(2, maxPlayers);
+        active.maxPlayers = Math.max(2, Math.max(maxPlayers, playersAtLeast));
         active.snapshotRate = snapshotRate;
         active.hostName = hostName;
         active.hostMods = hostMods;

@@ -47,6 +47,7 @@ import com.fs.starfarer.api.loading.WeaponGroupSpec;
 import com.fs.starfarer.api.loading.WeaponGroupType;
 
 import wingman.net.ClientLink;
+import wingman.api.Pvp;
 import wingman.net.Conn;
 import wingman.net.DamageState;
 import wingman.net.InputState;
@@ -648,6 +649,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         // At our own edge of the map (the bottom), flying a ship: offer to retreat with it.
         retreatOffered = own != null && !autopilot && own.owner == 0 && alertTitle == null
+                && !Pvp.active() // (no retreat in a PvP match)
                 && own.ship.getLocation().y < -engine.getMapHeight() / 2f + 600f;
     }
 
@@ -717,7 +719,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     /**
      * Leave the battle the way the results screen's "Continue" would, without showing that screen: the battle's
-     * end-of-combat work, then back to the title screen. Uses the game's internals (0.98a-RC8); false if they
+     * end-of-combat work, then back to the title screen. Uses the game's internals (0.98.5a); false if they
      * aren't as expected, and the battle is then ended the usual way (with the results screen).
      */
     private boolean straightOut() {
@@ -1089,7 +1091,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 alertLines.add("Fix the difference, then restart the game and this mission.");
                 break;
             case Msg.FLEET:
-                CampaignStandIn.onFleet(wingman.net.FleetInfo.decode(p.data));
+                CampaignStandIn.onFleet(viewed(wingman.net.FleetInfo.decode(p.data)));
                 break;
             case Msg.REPORT:
                 AfterAction.onReport(p.data);
@@ -1234,7 +1236,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 break;
             case Msg.ORDERS:
-                orders.onOrders(wingman.net.Orders.decode(p.data));
+                orders.onOrders(viewed(wingman.net.Orders.decode(p.data)));
                 break;
             case Msg.LOBBY:
                 lobby = Lobby.decode(p.data);
@@ -1321,6 +1323,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 In in = Msg.reader(p.data);
                 int id = in.readInt(), side = in.readByte();
                 if (side != 0 && side != 1 && side != 100) break;
+                side = Pvp.view(side);
                 Puppet pp = puppets.get(id);
                 if (pp == null) break;
                 pp.owner = side;
@@ -1330,7 +1333,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             }
             case Msg.SPAWN:
-                spawn(ShipSpawn.decode(p.data));
+                spawn(viewed(ShipSpawn.decode(p.data)));
                 if (!hintShown && !puppets.isEmpty()) {
                     hintShown = true;
                     Ui.say(engine, "Co-op: target a friendly ship and use Transfer Command to take control of it.");
@@ -3598,7 +3601,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         p.weaponIndex = in.readShort();
         p.projId = in.readUTF();
         p.scripted = in.readBoolean();
-        p.owner = in.readByte();
+        p.owner = Pvp.view(in.readByte());
         p.x = in.readFloat(); p.y = in.readFloat(); p.facing = in.readFloat();
         p.vx = in.readFloat(); p.vy = in.readFloat();
         p.flown = in.readFloat(); p.maxFlight = in.readFloat(); p.arming = in.readFloat();
@@ -4267,7 +4270,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int scriptEndsSeen, scriptEndsLocal, scriptEndsPlain, tendedTold;
     private final Set<String> plainEndWarned = new HashSet<String>();
     /** Classes of ship system that teleport the ship: learned from the game's own teleporters as they are met. */
-    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.int"));
+    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.null"));
 
     /**
      * Does this system move the ship by teleporting it? Such a system works out where it is going at the
@@ -4400,6 +4403,25 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) {
             return hostAngle;
         }
+    }
+
+    // PvP: a joiner on side 1 sees the battle the other way round (their side is 0 here); see Pvp.view.
+    private static ShipSpawn viewed(ShipSpawn s) {
+        s.owner = Pvp.view(s.owner);
+        return s;
+    }
+
+    private static wingman.net.FleetInfo viewed(wingman.net.FleetInfo f) {
+        f.owner = Pvp.view(f.owner);
+        return f;
+    }
+
+    private static wingman.net.Orders viewed(wingman.net.Orders o) {
+        for (int i = 0; i < o.objectiveOwners.length; i++) {
+            int flag = o.objectiveOwners[i] & 0x80; // (the top bit isn't the side)
+            o.objectiveOwners[i] = Pvp.view(o.objectiveOwners[i] & 0x7F) | flag;
+        }
+        return o;
     }
 
     /**

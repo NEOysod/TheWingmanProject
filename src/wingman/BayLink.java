@@ -31,7 +31,7 @@ final class BayLink {
 
     /** The bay class's field holding its wing's deployed-member record (an obfuscated name: O-grave, o-circumflex twice, o00).
      * Written as escapes: the build reads sources as cp1252, which turned the plain letters into other ones. */
-    private static final String FIELD = "\u00d2\u00f4\u00f4o00";
+    private static final String FIELD = "\u00f50\u00f5o00"; // (0.98.5a; found by its type if the name differs)
     private static boolean broken;
     private static MethodHandle setter;
     private static int linked;

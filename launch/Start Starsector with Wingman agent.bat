@@ -5,7 +5,7 @@ rem It changes none of the game's files: each time, it reads your launch setting
 rem vmparams), adds the agent to a copy of them and starts the game. Works with Fast Rendering.
 setlocal
 set "PS1="
-rem next to this file (the copy in the mod's launch folder), else in any mod under Starsector\mods
+rem in any mod under Starsector\mods (or next to this file)
 if exist "%~dp0WingmanLaunch.ps1" set "PS1=%~dp0WingmanLaunch.ps1"
 if not defined PS1 for /d %%D in ("%~dp0mods\*") do if not defined PS1 if exist "%%~D\launch\WingmanLaunch.ps1" set "PS1=%%~D\launch\WingmanLaunch.ps1"
 if not defined PS1 goto notfound

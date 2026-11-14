@@ -4,7 +4,7 @@ How the mod works, part by part, for anyone reading or changing the code. Player
 `docs/USER_GUIDE.md`; what changed between versions is in `CHANGELOG.md`.
 
 Everything in `src/wingman/net/` is tested without the game (`test/NetTest.java`, `test/AttackTest.java`).
-Everything that touches the game is compiled against the 0.98a-RC8 API and tested by playing.
+Everything that touches the game is compiled against the 0.98.5a-RC5 API and tested by playing.
 
 ---
 
@@ -21,7 +21,7 @@ copy, which produces the right look, while positions, hull, flux, armor, deaths 
 
 Three constraints shape almost every detail:
 
-1. **The sandbox.** Starsector's script loader (`com.fs.starfarer.loading.scripts.B`, 0.98a-RC8) refuses
+1. **The sandbox.** Starsector's script loader (`com.fs.starfarer.loading.scripts.ScriptClassLoader`, 0.98.5a-RC5) refuses
    most of `java.io` (only `IOException`, `InputStream`, `OutputStream` are used), `java.lang.reflect`, the
    `java.nio.file` file classes, `javax.script` and `java.util.prefs`. `java.lang.invoke` is not refused;
    Wingman uses `MethodHandles` for three private members of the game's (`MessageTap`'s message feed, `Backdrop`'s
@@ -1319,7 +1319,7 @@ Needs the agent on the host.
   plugin is made afresh each time the title screen loads.
 - **The lobby** (`LobbyScreen`; F4; opens by itself on connecting, and on the report after a battle): a screen of
   its own. `TitleMenu` moves the game's menu and logo aside (they are drawn over anything of ours) by calling the
-  private `titleWidget`'s `hide()`/`show()` through `MethodHandles` (0.98a-RC8: class `Oo` + 254 `O`s); if that
+  private `titleWidget`'s `hide()`/`show()` through `MethodHandles` (0.98.5a-RC5: a class named `com.fs.starfarer.title.Object`); if that
   fails the old corner box is used. Page FLEET: the host's fleet (size tag, name, CR, who picked it), a card for the
   marked ship (hull sprite, designation, size, CR, officer and personality, weapons and wings, hull mods, whether
   it can be picked), your ship, the players and their picks, the last battle in a line. Page LAST BATTLE (Tab): the
@@ -1334,7 +1334,7 @@ Needs the agent on the host.
   works the same way, and the mission shows its own join form when not connected.
 - **`JoinSetup`:** the battlefield for the mission: the last `BATTLE_INFO` when connected, else it connects and asks
   (up to 2.5 s to connect, 3 s for the answer). Also `kindToMake` (8.2) and `prepareCampaign` (8.3).
-- **`TitleLauncher`** is the one class using game internals (0.98a-RC8 names: `TitleScreenState`, `SpecStore`,
+- **`TitleLauncher`** uses game internals through `java.lang.invoke` (0.98.5a-RC5 names: `TitleScreenState`, `SpecStore`,
   `missionAccepted`), wrapped in `catch (Throwable)`. The mission list comes from a static method named `new`,
   which Java source can't call: the build compiles against a stub `SpecStore.coopNew()` (`tools/stub/`, never
   packaged) and `tools/PatchNew` renames that constant-pool entry to `new` in the compiled class (refusing unless it
@@ -1478,3 +1478,19 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
   `wingman_settings.json`, `dist/README.md` as README, `RELEASE_NOTES.md`, `LICENSE`, `NOTICE`.
 - **Release checklist:** `debugLog` false in `WingmanConfig` and `wingman_settings.json`; version in `mod_info.json`,
   README titles and release notes; `Msg.PROTOCOL_VERSION` raised whenever a message's layout changes; changelog.
+
+### After a game update
+
+The game's internal (scrambled) names change with every release. `test/InternalsCheck.java` lists every one Wingman
+finds by name at run time and checks it against a copy of the game:
+
+    ./build.sh /path/to/starsector-core
+    javac -d build/test test/InternalsCheck.java
+    java -noverify -cp build/test InternalsCheck /path/to/starsector-core jars/Wingman.jar
+
+`-noverify` is needed as the game needs it: its scrambled names aren't legal otherwise. What the compiler can't
+catch is there (private fields, classes named in strings); what it can (direct calls) fails the build instead.
+`agent/test/run.sh` runs the agent's own test, and `agent/test/AgentCheck.java` runs its patcher over whole jars.
+0.98a -> 0.98.5a moved: the objective spec class, the mission and mission-spec classes (now in a package named like
+a class, `title.Object`, so `TitleLauncher` finds them by name), the title menu's class, the launch bay class and
+its five private fields, the message line class, and the teleporter system class.

@@ -35,7 +35,7 @@ final class ObjectiveMirror {
         if (broken || ownEffect == null || ownEffect.isEmpty()) return false;
         if (changed.containsKey(type)) { changedAt = System.currentTimeMillis(); return true; }
         try {
-            com.fs.starfarer.loading.specs.oOOo spec = spec(type);
+            com.fs.starfarer.loading.specs.supersuper spec = spec(type);
             if (spec == null) return false;
             spec.\u00d300000(EFFECT);
             changed.put(type, ownEffect);
@@ -54,7 +54,7 @@ final class ObjectiveMirror {
         if (changed.isEmpty()) return;
         for (Map.Entry<String, String> e : changed.entrySet()) {
             try {
-                com.fs.starfarer.loading.specs.oOOo spec = spec(e.getKey());
+                com.fs.starfarer.loading.specs.supersuper spec = spec(e.getKey());
                 if (spec != null) spec.\u00d300000(e.getValue());
             } catch (Throwable t) {
                 Global.getLogger(ObjectiveMirror.class).error("Wingman: could not put objective kind '" + e.getKey()
@@ -69,7 +69,7 @@ final class ObjectiveMirror {
         if (!changed.isEmpty() && System.currentTimeMillis() - changedAt > 15000) restore();
     }
 
-    private static com.fs.starfarer.loading.specs.oOOo spec(String type) {
-        return (com.fs.starfarer.loading.specs.oOOo) com.fs.starfarer.loading.SpecStore.o00000(com.fs.starfarer.loading.specs.oOOo.class, type);
+    private static com.fs.starfarer.loading.specs.supersuper spec(String type) {
+        return (com.fs.starfarer.loading.specs.supersuper) com.fs.starfarer.loading.SpecStore.o00000(com.fs.starfarer.loading.specs.supersuper.class, type);
     }
 }

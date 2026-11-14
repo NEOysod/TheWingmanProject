@@ -108,6 +108,27 @@ if ($launcherBat) {
     if (-not (Test-Path $argsPath)) { Fail "found $(Split-Path -Leaf $launcherBat), but not its settings file $argsFile." }
 
     $lines = [System.IO.File]::ReadAllLines($argsPath)
+    # Settings left over from before a game update name jars the update removed (Fast Rendering's fr.jar):
+    # the game can't start from them. Then the normal game is started instead.
+    $stale = @()
+    foreach ($ln in $lines) {
+        $t = $ln.Trim()
+        if (-not ($t.StartsWith('-classpath ') -or $t.StartsWith('-cp '))) { continue }
+        foreach ($entry in ($t -replace '^-(classpath|cp)\s+', '').Split(';')) {
+            $e = $entry.Trim().Trim('"').Replace('\\', '\')
+            if ($e -and -not $e.Contains('*') -and -not (Test-Path (Join-Path $core $e))) { $stale += $e }
+        }
+    }
+    if ($stale.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Wingman launcher: $(Split-Path -Leaf $launcherBat) names files this game doesn't have ($($stale -join ', '))." -ForegroundColor Yellow
+        Write-Host "They are from before a game update. Starting the normal game instead; set that launcher up again for this game version to use it."
+        Write-Host ""
+        $launcherBat = $null
+    }
+}
+
+if ($launcherBat) {
     $newLines = Add-Agent $lines
     $outName = 'Miko_Wingman.txt'
     $outPath = Join-Path (Split-Path -Parent $argsPath) $outName

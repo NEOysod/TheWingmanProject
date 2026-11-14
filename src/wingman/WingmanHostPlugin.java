@@ -16,6 +16,9 @@ import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.characters.MutableCharacterStatsAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
 import com.fs.starfarer.api.combat.AutofireAIPlugin;
+import wingman.api.Pvp;
+import wingman.api.WingmanAPI;
+import wingman.net.OrderRequest;
 import com.fs.starfarer.api.combat.BaseEveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.FighterWingAPI;
@@ -252,12 +255,35 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         AgentGate.start(this);
         stats.start(engine, cfg.playerName);
         CampaignLobby.battleStarted(session, cfg);
+        listenForOrders();
         return true;
     }
 
     // ---- for Wingman's agent (see AgentLink) ----
 
     /** Co-op is running in the battle being played. */
+    public static CombatEngineAPI liveEngineForApi() { return liveEngine; }
+
+    public static int livePhaseForApi() { return livePhase; }
+
+    /** PvP: a captain's order from a joiner's PC, given here for their side (only a captain's, once the battle is on). */
+    private void listenForOrders() {
+        if (orderListener != null) WingmanAPI.unlisten(OrderRequest.CHANNEL, orderListener);
+        orderListener = new WingmanAPI.Listener() {
+            @Override
+            public void onMessage(String name, int playerId, byte[] data) {
+                if (disabled || engine != Global.getCombatEngine() || !Pvp.active() || readyPhase == 0) return; // (not during the ready check)
+                if (!Pvp.isCaptain(name)) return;
+                try {
+                    orders.apply(engine, Pvp.sideOf(name), OrderRequest.decode(data), byId);
+                } catch (java.io.IOException e) {
+                    Global.getLogger(WingmanHostPlugin.class).warn("Wingman PvP: a damaged order from " + name + " was ignored");
+                }
+            }
+        };
+        WingmanAPI.listen(OrderRequest.CHANNEL, orderListener);
+    }
+
     boolean agentLive() { return started && !disabled && session != null && engine == Global.getCombatEngine(); }
     HostSession session() { return session; }
     Integer idOf(ShipAPI s) { return s == null ? null : ids.get(s); }
@@ -324,6 +350,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
 
     private void step() {
         prof.begin();
+        liveEngine = engine;
+        livePhase = readyPhase;
         for (String line : session.pump()) Ui.say(engine, "Co-op: " + line);
         wingman.api.WingmanAPI.deliver();
         markPilots();
@@ -590,6 +618,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
      * to its own AI to finish leaving; the player goes back to watching.
      */
     private void handleRetreats() {
+        if (Pvp.active()) return; // no retreat in a PvP match
         for (HostSession.Player p : session.getPlayers()) {
             ShipAPI s = (ShipAPI) p.ship;
             int flags = p.input.flags, before = p.retreatFlags;
@@ -1874,6 +1903,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
      * who syncs), so a joiner's copy points its guns at the same missile or fighter instead of by the angle alone.
      */
     private final Map<Long, Long> aims = new HashMap<Long, Long>();
+
+    /** The battle Wingman is hosting and its ready-check phase, for the API (WingmanAPI.hostBattlePhase). */
+    static volatile CombatEngineAPI liveEngine;
+    static volatile int livePhase = -1;
+    /** PvP: orders from joiners who are captains (OrderRequest on the API channel), given on the host. */
+    private static WingmanAPI.Listener orderListener;
     private float aimsAt = -1f;
     private boolean aimsBroken;
     private int aimChanges;
@@ -2330,8 +2365,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 p.conn.send(Msg.NOTICE, Msg.utf("Your controls stopped working on the host for that ship (an error, see the host's log). Take another ship."));
                 Ui.say(engine, "Co-op: " + p.name + "'s controls failed on their ship; it is back with its own AI (see starsector.log).");
             }
-            if (s == null || (!pilotFailed && ids.containsKey(s) && s != hostShip && s.getOwner() == 0)) continue;
-            if (!pilotFailed && s != hostShip && ids.containsKey(s) && s.getOwner() != 0) {
+            int side = Pvp.sideOf(p.name); // (0 outside PvP)
+            if (s == null || (!pilotFailed && ids.containsKey(s) && s != hostShip && s.getOwner() == side)) continue;
+            if (!pilotFailed && s != hostShip && ids.containsKey(s) && s.getOwner() != side) {
                 p.conn.send(Msg.NOTICE, Msg.utf("Your ship went over to the other side. Take another ship."));
             }
             if (s == hostShip) { p.ship = null; p.savedAI = null; } else releaseShip(p);
@@ -2361,7 +2397,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             for (Map.Entry<Integer, ShipAPI> e : byId.entrySet()) {
                 ShipAPI s = e.getValue();
                 if (s.getFleetMember() == null || !member.equals(s.getFleetMember().getId())) continue;
-                if (!s.isAlive() || s.isHulk() || s.getOwner() != 0) break;
+                if (!s.isAlive() || s.isHulk() || s.getOwner() != Pvp.sideOf(p.name)) break;
                 seated.add(key);
                 p.claim = e.getKey();
                 p.hasClaim = true; // handleClaims checks it like any request, and moves them in
@@ -2373,7 +2409,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
 
     /** Why this player can't have this ship (what they are told), or null if they can. */
     String refusal(HostSession.Player p, ShipAPI s, ShipAPI hostShip) {
-        if (s == null || s.getOwner() != 0 || (s.isFighter() && !linked(s, (ShipAPI) p.ship)) || s.isStationModule() || s.isDrone()) {
+        if (s == null || s.getOwner() != Pvp.sideOf(p.name) || (s.isFighter() && !linked(s, (ShipAPI) p.ship)) || s.isStationModule() || s.isDrone()) {
             // (A fighter only from the ship they fly: a mod may hand its pilot one, as UAF's Isenoria does.)
             return "That ship can't be flown.";
         }
@@ -2535,7 +2571,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private boolean backToCarrier(HostSession.Player p) {
         ShipAPI c = (ShipAPI) p.heldCarrier;
         Integer id = c == null ? null : ids.get(c);
-        if (c == null || id == null || !c.isAlive() || c.isHulk() || c.getOwner() != 0 || pilotOf(c) != null) return false;
+        if (c == null || id == null || !c.isAlive() || c.isHulk() || c.getOwner() != Pvp.sideOf(p.name) || pilotOf(c) != null) return false;
         ShipAPI f = (ShipAPI) p.ship;
         p.heldCarrier = null;
         try { if (f != null && f.isAlive() && !f.isHulk() && engine.isEntityInPlay(f)) ownAI(f); } catch (Throwable t) { /* gone */ }

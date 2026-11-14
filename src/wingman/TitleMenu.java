@@ -10,20 +10,15 @@ import com.fs.state.AppState;
 
 /**
  * Hides and shows the game's own title screen menu and logo, so the co-op lobby can have the whole screen (the
- * game draws them over anything of ours). Uses the game's internals (0.98a-RC8: the title screen's private
+ * game draws them over anything of ours). Uses the game's internals (0.98.5a: the title screen's private
  * "titleWidget", whose class has a scrambled name): if anything about them differs, hide() says no and the
  * lobby stays the smaller box in the corner.
  */
 final class TitleMenu {
     private TitleMenu() {}
 
-    /** The menu's class in 0.98a-RC8: "Oo" and 254 more capital O's. */
-    private static final String WIDGET_CLASS;
-    static {
-        StringBuilder sb = new StringBuilder("com.fs.starfarer.title.Oo");
-        for (int i = 0; i < 254; i++) sb.append('O');
-        WIDGET_CLASS = sb.toString();
-    }
+    /** The menu's class in 0.98.5a: a class named Object (in 0.98a it was "Oo" and 254 more capital O's). */
+    private static final String WIDGET_CLASS = "com.fs.starfarer.title.Object";
 
     private static MethodHandle getter, hide, show;
     private static boolean broken, hidden;
