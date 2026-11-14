@@ -412,7 +412,13 @@ pilots' ships, so a mod's player-only effect for them plays out on your screen a
 moving your camera, playing their interface sounds or drawing their status bars on your screen). It is optional;
 each player who adds it gets this on their own PC, and the host's matters most. It changes nothing on disk: it works on the mods' code in memory as the game loads it, and only while co-op runs.
 
-To turn it on, add one setting to the game's launch settings, with the game closed. Find `-Xms` (the memory setting) and put the setting just before it, with a space after it:
+**The easy way (Windows):** put `Start Starsector with Wingman agent.bat` (in the zip, next to the Wingman
+folder) in your Starsector folder and start the game with it. Each time, it reads your launch settings (the
+normal game's `vmparams`, Mikohime's `Miko_Rouge.bat`, or Fast Rendering 1.0's `fr.bat` in `starsector-core`),
+adds the agent to a copy of them and starts the game; your own files aren't changed. Settings left from before a
+game update, or set up for an older Fast Rendering, are noticed and skipped.
+
+**By hand:** add one setting to the game's launch settings, with the game closed. Find `-Xms` (the memory setting) and put the setting just before it, with a space after it:
 
 - **Windows:** in `vmparams` in the Starsector folder (next to `starsector.exe`; open it with Notepad):
   `-javaagent:..\mods\Wingman\jars\WingmanAgent.jar`
@@ -425,9 +431,13 @@ If you start the game with a custom Java launcher (a `.bat` file that runs `java
 newer-Java packs do), the settings are in that `.txt` file and `vmparams` isn't read: put
 `-javaagent:../mods/Wingman/jars/WingmanAgent.jar` on a line of its own at the top of the `.txt` file.
 
+**Fast Rendering 1.0 and later** (`fr.bat` and `fr.vmparams` in `starsector-core`) loads as an agent too: in
+`fr.vmparams`, put `-javaagent:../mods/Wingman/jars/WingmanAgent.jar` on its own line under
+`-javaagent:fr.jar` (and under FR Resource Cache's line, if you use it). Wingman's agent works with both.
+
 **If the game then won't start** and the console says *"the system class loader does not define the
 appendToClassPathForInstrumentation method"*, your launch settings replace Java's own class loader (a line
-`-Djava.system.class.loader=...`, as the Fast Rendering mod's setup has). Java refuses `-javaagent` then, but
+`-Djava.system.class.loader=...`, as Fast Rendering's setup did before 1.0). Java refuses `-javaagent` then, but
 Wingman can start its agent another way. Instead of the `-javaagent` line, make three changes in the same file:
 1. add `;../mods/Wingman/jars/WingmanAgent.jar` to the end of the `-classpath` list;
 2. add a line `--add-exports=java.instrument/sun.instrument=ALL-UNNAMED` (next to the other `--add-opens` lines);

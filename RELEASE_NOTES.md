@@ -32,6 +32,8 @@ each fly a ship from the host's fleet, side by side, in real time.
   was in the error the game closed on; from then on, on that PC, an error in it switches it off for that battle with a
   "Co-op:" message instead of closing the game. Listed in the CO-OP panel; F5 undoes it.
 - Clearing a ship's own order (PvP captains, and joiners' copies of the host's orders) uses the game's own way.
+- **Fast Rendering 1.0** (and FR Resource Cache): the .bat launcher finds `fr.bat` and starts the game through
+  it with Wingman's agent; old Mikohime setups made for FR's old class loader are skipped.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI` (see Wingman PvP).
 - Protocol 61.
 
