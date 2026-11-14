@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 60;
+    public static final int PROTOCOL_VERSION = 61;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -97,6 +97,12 @@ public final class Msg {
     public static final byte REFIT_REQUEST = 65;
     /** host -> joiner: what became of the refit request (RefitResult): received, accepted, denied, refused, withdrawn. */
     public static final byte REFIT_RESULT = 66;
+    /** host -> joiner: where the joiner's point defense guns aim, by the host's game (PD aims). */
+    public static final byte AIMS = 67;
+    /** joiner -> host: a change to the joiner's wish list (WishMessage). */
+    public static final byte WISH = 68;
+    /** host -> joiner: every player's wish list and what is set aside for them (WishMessage.List). */
+    public static final byte WISH_LIST = 69;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

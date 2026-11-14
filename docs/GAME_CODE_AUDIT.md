@@ -1,6 +1,6 @@
 # Game code audit: where a joiner's ship is not the "player ship"
 
-Starsector 0.98a-RC8. Wingman runs a joiner's ship on the host as an ordinary AI ship, flown by `RemotePilotAI`.
+Starsector 0.98.5a-RC5. Wingman runs a joiner's ship on the host as an ordinary AI ship, flown by `RemotePilotAI`.
 The game treats the ship the local player flies (`CombatEngine.getPlayerShip()`, usually with no AI) differently
 in a number of places. Each of those is a place where a joiner's ship can behave differently from the same ship
 in single player, or from the joiner's own predicted copy (which *is* the player ship on their machine). That is

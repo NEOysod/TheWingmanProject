@@ -47,6 +47,7 @@ import com.fs.starfarer.api.loading.WeaponGroupSpec;
 import com.fs.starfarer.api.loading.WeaponGroupType;
 
 import wingman.net.ClientLink;
+import wingman.api.Pvp;
 import wingman.net.Conn;
 import wingman.net.DamageState;
 import wingman.net.InputState;
@@ -247,7 +248,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 return;
             }
         } catch (Throwable t) { /* the results screen, as before */ }
-        if (halted) return;
+        if (halted) {
+            // Co-op stopped: the copies of the host's ships are no longer looked after, and left running the game's
+            // own AI trips over them (fighters whose wing leader is gone crash it). Held paused until we leave.
+            try { if (!engine.isPaused()) engine.setPaused(true); } catch (Throwable ignored) { /* nothing more to do */ }
+            return;
+        }
         try {
             if (!ready) {
                 if (!prepare()) return;
@@ -278,6 +284,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     // Slow frames, for the log: always noted for a few seconds after a change of ship, otherwise only when the
     // co-op code itself took long. A handful per battle at most.
     private long lastFrameNanos, shipChangeNanos;
+    private int ventFailures;
     private int hitchLines;
     private static final int MAX_HITCH_LINES = 8;
 
@@ -553,7 +560,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             String brief = wingman.net.NetStats.report(120f);
             if (brief != null) {
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman traffic (joiner): " + brief
-                        + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : ""));
+                        + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : "")
+                        + (roundTrip >= 0f ? "; round trip " + Math.round(roundTrip * 1000f) + " ms" : "")
+                        + "; point defense pointed at its own target " + aimsUsed + " gun-frames, by the host's angle " + aimsDeclined);
+                aimsUsed = 0;
+                aimsDeclined = 0;
                 lateSum = 0f;
                 lateN = 0;
                 String agent = AgentGate.report();
@@ -638,6 +649,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         // At our own edge of the map (the bottom), flying a ship: offer to retreat with it.
         retreatOffered = own != null && !autopilot && own.owner == 0 && alertTitle == null
+                && !Pvp.active() // (no retreat in a PvP match)
                 && own.ship.getLocation().y < -engine.getMapHeight() / 2f + 600f;
     }
 
@@ -707,7 +719,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     /**
      * Leave the battle the way the results screen's "Continue" would, without showing that screen: the battle's
-     * end-of-combat work, then back to the title screen. Uses the game's internals (0.98a-RC8); false if they
+     * end-of-combat work, then back to the title screen. Uses the game's internals (0.98.5a); false if they
      * aren't as expected, and the battle is then ended the usual way (with the results screen).
      */
     private boolean straightOut() {
@@ -1079,7 +1091,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 alertLines.add("Fix the difference, then restart the game and this mission.");
                 break;
             case Msg.FLEET:
-                CampaignStandIn.onFleet(wingman.net.FleetInfo.decode(p.data));
+                CampaignStandIn.onFleet(viewed(wingman.net.FleetInfo.decode(p.data)));
                 break;
             case Msg.REPORT:
                 AfterAction.onReport(p.data);
@@ -1090,6 +1102,23 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.LUNA: // kept for a rejoin; this battle's were put in place as the mission was set up
                 LunaCopy.remember(p.data);
                 break;
+            case Msg.AIMS: { // point defense aims: what each autofiring weapon on the host aims at
+                In in = Msg.reader(p.data);
+                int n = in.readVarInt();
+                if (n < 0 || n > 100000) break;
+                for (int i = 0; i < n; i++) {
+                    int ship = in.readInt();
+                    int weapon = in.readByte() & 0xFF, kind = in.readByte() & 0xFF;
+                    int target = in.readInt();
+                    long key = ((long) ship << 8) | weapon;
+                    if (kind == 0) pdAims.remove(key);
+                    else pdAims.put(key, ((long) kind << 32) | (target & 0xFFFFFFFFL));
+                }
+                if (pdAims.size() > 4096) { // ships gone
+                    for (Iterator<Long> it = pdAims.keySet().iterator(); it.hasNext();) if (!puppets.containsKey((int) (it.next() >>> 8))) it.remove();
+                }
+                break;
+            }
             case Msg.CAMPAIGN: // kept for a rejoin; this battle's stand-in was set up from the one heard on the title screen
                 JoinSetup.rememberCampaign(p.data);
                 break;
@@ -1207,7 +1236,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 }
                 break;
             case Msg.ORDERS:
-                orders.onOrders(wingman.net.Orders.decode(p.data));
+                orders.onOrders(viewed(wingman.net.Orders.decode(p.data)));
                 break;
             case Msg.LOBBY:
                 lobby = Lobby.decode(p.data);
@@ -1224,6 +1253,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             case Msg.RESET:
                 hostPaused = false;
+                pdAims.clear();
                 Subsystems.reset();
                 toPlaceholder();
                 for (Puppet pp : puppets.values()) engine.removeEntity(pp.ship);
@@ -1293,6 +1323,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 In in = Msg.reader(p.data);
                 int id = in.readInt(), side = in.readByte();
                 if (side != 0 && side != 1 && side != 100) break;
+                side = Pvp.view(side);
                 Puppet pp = puppets.get(id);
                 if (pp == null) break;
                 pp.owner = side;
@@ -1302,7 +1333,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 break;
             }
             case Msg.SPAWN:
-                spawn(ShipSpawn.decode(p.data));
+                spawn(viewed(ShipSpawn.decode(p.data)));
                 if (!hintShown && !puppets.isEmpty()) {
                     hintShown = true;
                     Ui.say(engine, "Co-op: target a friendly ship and use Transfer Command to take control of it.");
@@ -1595,6 +1626,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     ackSeq = snap.pilotedSeq[pi];
                     ackAge = snap.pilotedAge[pi];
                     ackFresh = true;
+                    noteRoundTrip(now);
                     hostSysAmmo = snap.pilotedSysAmmo[pi];
                 }
                 lastSnapshotAt = System.currentTimeMillis();
@@ -3569,7 +3601,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         p.weaponIndex = in.readShort();
         p.projId = in.readUTF();
         p.scripted = in.readBoolean();
-        p.owner = in.readByte();
+        p.owner = Pvp.view(in.readByte());
         p.x = in.readFloat(); p.y = in.readFloat(); p.facing = in.readFloat();
         p.vx = in.readFloat(); p.vy = in.readFloat();
         p.flown = in.readFloat(); p.maxFlight = in.readFloat(); p.arming = in.readFloat();
@@ -3702,6 +3734,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private final Map<WeaponAPI, int[]> unconfirmed = new IdentityHashMap<WeaponAPI, int[]>();
     private final Map<WeaponAPI, Boolean> silenced = new IdentityHashMap<WeaponAPI, Boolean>();
     private int launchesHeld, launchesRefuted;
+
+    /**
+     * Point defense aims from the host (Msg.AIMS): for a weapon (key: ship id << 8 | weapon index), what its AI aims
+     * at there: 1 << 32 | a missile's id or 2 << 32 | a fighter's id. The copy points at that target itself, when
+     * it is within a few degrees of the host's angle, so its shots meet what they were fired at.
+     */
+    private final Map<Long, Long> pdAims = new HashMap<Long, Long>();
+    private int aimsUsed, aimsDeclined;
 
     private void noteLaunch(MissileAPI m) {
         try {
@@ -4054,7 +4094,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         MutableShipStatsAPI stats = ship.getMutableStats();
         stats.getHullDamageTakenMult().unmodify(NO_DAMAGE);
         stats.getArmorDamageTakenMult().unmodify(NO_DAMAGE);
-        engine.applyDamage(ship, ship.getLocation(), 10000000f, DamageType.HIGH_EXPLOSIVE, 0f, true, false, null);
+        // A small hit on a hull at almost nothing: it dies as from any hit, without a huge one's effects (and scripts
+        // that react to the damage done); the big one only if that didn't do it.
+        try {
+            ship.setHitpoints(Math.min(ship.getHitpoints(), 0.01f));
+            engine.applyDamage(ship, ship.getLocation(), 10f, DamageType.HIGH_EXPLOSIVE, 0f, true, false, null);
+        } catch (Throwable t) { /* the big one below */ }
+        if (ship.getHitpoints() > 0f) engine.applyDamage(ship, ship.getLocation(), 10000000f, DamageType.HIGH_EXPLOSIVE, 0f, true, false, null);
     }
 
     private void keepPlaceholderOutOfTheWay() {
@@ -4224,7 +4270,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int scriptEndsSeen, scriptEndsLocal, scriptEndsPlain, tendedTold;
     private final Set<String> plainEndWarned = new HashSet<String>();
     /** Classes of ship system that teleport the ship: learned from the game's own teleporters as they are met. */
-    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.int"));
+    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.null"));
 
     /**
      * Does this system move the ship by teleporting it? Such a system works out where it is going at the
@@ -4312,6 +4358,71 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private float reconX, reconY;
     private Puppet reconShip;
     private int reconChecks, reconMisses;
+    /** Our round trip to the host (seconds, smoothed; -1 until measured): from our controls' number coming back. */
+    private float roundTrip = -1f;
+
+    /** Our round trip, from a snapshot that says which of our controls the host last acted on (ackSeq, ackAge). */
+    private void noteRoundTrip(float now) {
+        int slot = ackSeq & 0xFF;
+        if ((seqNumber[slot] & 0xFFFF) != ackSeq) return;
+        float rt = now - seqClock[slot] - ackAge;
+        if (rt < 0f || rt > 3f) return;
+        roundTrip = roundTrip < 0f ? rt : roundTrip + (rt - roundTrip) * 0.1f;
+        input.rttMs = Math.round(roundTrip * 1000f);
+    }
+
+    /**
+     * The angle for a copy's weapon that the host's AI is aiming at a missile or fighter (pdAims): at that target
+     * here, led for the shot's flight, if within 25 degrees of the host's angle; else the host's angle.
+     */
+    private float aimAt(Puppet pp, int index, WeaponAPI w, float hostAngle) {
+        Long aim = pdAims.get(((long) pp.netId << 8) | index);
+        if (aim == null) return hostAngle;
+        try {
+            int kind = (int) (aim >>> 32), id = (int) aim.longValue();
+            CombatEntityAPI target = null;
+            if (kind == 1) { MissilePuppet mp = missiles.get(id); if (mp != null) target = mp.missile; }
+            else if (kind == 2) { Puppet f = puppets.get(id); if (f != null) target = f.ship; }
+            if (target == null || !engine.isEntityInPlay(target)) { aimsDeclined++; return hostAngle; }
+            Vector2f from = w.getLocation(), to = target.getLocation();
+            float dx = to.x - from.x, dy = to.y - from.y;
+            if (!w.isBeam()) {
+                float speed = w.getProjectileSpeed();
+                if (speed > 1f) {
+                    Vector2f tv = target.getVelocity(), sv = pp.ship.getVelocity();
+                    float t = Math.min(3f, (float) Math.sqrt(dx * dx + dy * dy) / speed);
+                    dx += (tv.x - sv.x) * t;
+                    dy += (tv.y - sv.y) * t;
+                }
+            }
+            float angle = (float) Math.toDegrees(Math.atan2(dy, dx));
+            float off = ((angle - hostAngle) % 360f + 540f) % 360f - 180f;
+            if (Math.abs(off) > 25f) { aimsDeclined++; return hostAngle; }
+            aimsUsed++;
+            return angle;
+        } catch (Throwable t) {
+            return hostAngle;
+        }
+    }
+
+    // PvP: a joiner on side 1 sees the battle the other way round (their side is 0 here); see Pvp.view.
+    private static ShipSpawn viewed(ShipSpawn s) {
+        s.owner = Pvp.view(s.owner);
+        return s;
+    }
+
+    private static wingman.net.FleetInfo viewed(wingman.net.FleetInfo f) {
+        f.owner = Pvp.view(f.owner);
+        return f;
+    }
+
+    private static wingman.net.Orders viewed(wingman.net.Orders o) {
+        for (int i = 0; i < o.objectiveOwners.length; i++) {
+            int flag = o.objectiveOwners[i] & 0x80; // (the top bit isn't the side)
+            o.objectiveOwners[i] = Pvp.view(o.objectiveOwners[i] & 0x7F) | flag;
+        }
+        return o;
+    }
 
     /**
      * Where the ship in our hands really is, compared like with like. The host says which of our controls the
@@ -4602,13 +4713,22 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (amount <= 0f) return;
 
         // Overload is the host's verdict for every ship, ours included. Venting we only copy for other ships.
-        boolean overloaded = (t.flags & Snapshot.F_OVERLOADED) != 0;
-        if (overloaded && !flux.isOverloaded()) flux.forceOverload(0f);
-        else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
-        if (!own) {
-            boolean venting = (t.flags & Snapshot.F_VENTING) != 0;
-            if (venting && !flux.isVenting() && !flux.isOverloaded()) flux.ventFlux();
-            else if (!venting && flux.isVenting()) flux.stopVenting();
+        // The game can refuse either on a ship it has only just made (its vent glow isn't set up until the ship
+        // has been drawn once, as after a refresh from the host): then it is simply tried again next frame.
+        try {
+            boolean overloaded = (t.flags & Snapshot.F_OVERLOADED) != 0;
+            if (overloaded && !flux.isOverloaded()) flux.forceOverload(0f);
+            else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
+            if (!own) {
+                boolean venting = (t.flags & Snapshot.F_VENTING) != 0;
+                if (venting && !flux.isVenting() && !flux.isOverloaded()) flux.ventFlux();
+                else if (!venting && flux.isVenting()) flux.stopVenting();
+            }
+        } catch (Throwable th) {
+            if (ventFailures++ == 0) {
+                Global.getLogger(WingmanClientPlugin.class).warn("Wingman: venting or overloading " + describe(pp)
+                        + " failed here (tried again next frame; further failures not logged)", th);
+            }
         }
 
         // On the ship we fly, the shield and the weapon group in our hand answer to our own controls so they
@@ -4653,7 +4773,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         for (int i = 0; i < pp.weapons.length; i++) {
             WeaponAPI w = pp.weapons[i];
             if (w == null || (inHand != null && inHand.contains(w))) continue;
-            if (angles != null && i < angles.length) w.setCurrAngle(hull + Snapshot.unpackAngle(angles[i]));
+            if (angles != null && i < angles.length) {
+                float angle = hull + Snapshot.unpackAngle(angles[i]);
+                w.setCurrAngle(pdAims.isEmpty() ? angle : aimAt(pp, i, w, angle));
+            }
             boolean firing = i < 64 && ((t.firing >>> i) & 1L) != 0;
             if (!firing && !silenced.isEmpty()) silenced.remove(w); // the host's weapon has stopped: a clean slate
             // Shot for shot. "Is firing" lasts longer than one shot and says nothing of how many, so a copy
@@ -4879,7 +5002,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 sysAwaiting = -1f;
                 return;
             }
-            if (clock - sysAwaiting < 0.8f) return;
+            // how long the host's answer can take: our round trip and a little more (0.8 s until it is known)
+            float wait = roundTrip < 0f ? 0.8f : Math.max(0.35f, Math.min(0.8f, roundTrip + 0.25f));
+            if (clock - sysAwaiting < wait) return;
             if (sysRetries == 0) {
                 sysRetries = 1;
                 sysResent++;
@@ -4892,6 +5017,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             sysAwaiting = -1f;
             sysUnconfirmed++;
             compat.odd("system:" + sys.getId());
+            undoSystemUse(sys, own);
             if (sysWarned.add(sys.getId())) {
                 Global.getLogger(WingmanClientPlugin.class).warn("Wingman guard: ship system '" + sys.getId() + "' on " + own.ship.getHullSpec().getHullId()
                         + " was used here twice over but never started on the host's ship (host stage " + own.target.system + ", host charges "
@@ -4900,6 +5026,24 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) {
             sysAwaiting = -1f;
         }
+    }
+
+    /** A use the host never acted on: our system back as the real one is (its charges, not cooling down if it is ready). */
+    private void undoSystemUse(ShipSystemAPI sys, Puppet own) {
+        try {
+            if (hostSysAmmo < 254 && sys.getMaxAmmo() > 0 && sys.getAmmo() != hostSysAmmo) {
+                sys.setAmmo(Math.min(hostSysAmmo, sys.getMaxAmmo()));
+                sysAmmoSetAt = clock;
+            }
+            if (own.target.system == ShipSystemAPI.SystemState.IDLE.ordinal()) {
+                if (sys.isActive() || sys.isOn()) sys.deactivate();
+                sys.setCooldownRemaining(0f);
+            }
+            sysAmmoOffFor = 0f;
+            sysCoolOffFor = 0f;
+            sysForcedAt = clock;
+            sysUndone++;
+        } catch (Throwable t) { /* it keeps its own state */ }
     }
 
     /**
@@ -4931,6 +5075,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } catch (Throwable t) { /* it keeps its own count */ }
     }
     private float sysCoolOffFor;
+    /** System uses the host never acted on, undone here so our copy doesn't show a system the real ship didn't use. */
+    private int sysUndone;
 
     private static final int[] NO_KEYS = new int[0];
     private int keysLogged;
@@ -5059,6 +5205,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         // What we tell the host when the fire button goes down, so the two logs can be compared.
         boolean firing = (f & InputState.FIRE) != 0;
+        if (firing && !wasFiring) input.fireTaps = (input.fireTaps + 1) & 0xFF; // each press counted, however short
         if (firing && !wasFiring && System.currentTimeMillis() - lastFireLog > 5000) {
             lastFireLog = System.currentTimeMillis();
             Dbg.info(WingmanClientPlugin.class, "Wingman fire: button down, sending group " + input.group

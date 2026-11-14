@@ -22,7 +22,7 @@ public class MessageSpy extends com.fs.starfarer.klass.C {
     public MessageSpy() { super(); }
 
     @Override
-    public com.fs.starfarer.klass.O0OO.C o00000(Object... parts) {
+    public com.fs.starfarer.klass.Object.O0OO o00000(Object... parts) {
         gameLine++;
         try {
             return super.o00000(parts);
@@ -32,7 +32,7 @@ public class MessageSpy extends com.fs.starfarer.klass.C {
     }
 
     @Override
-    public com.fs.starfarer.klass.O0OO.C o00000(int indent, Object... parts) {
+    public com.fs.starfarer.klass.Object.O0OO o00000(int indent, Object... parts) {
         Sink s = sink;
         if (gameLine == 0 && !ownLine && s != null) {
             boolean show = true;

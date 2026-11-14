@@ -27,7 +27,7 @@ final class Mods {
         }
     }
 
-    /** This copy of the game, e.g. "Starsector 0.98a-RC8". Host and joiners must be on the same one. */
+    /** This copy of the game, e.g. "Starsector 0.98.5a-RC5". Host and joiners must be on the same one. */
     static String gameVersion() {
         try {
             String v = Global.getSettings().getVersionString();

@@ -4,7 +4,7 @@ Co-op for Starsector battles. One player hosts a battle and up to three friends 
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong
 to the host.
 
-For Starsector **0.98a-RC8**. This is a **beta**: expect rough edges, and see
+For Starsector **0.98.5a-RC5**. This is a **beta**: expect rough edges, and see
 [Reporting a problem](#reporting-a-problem) when you hit one.
 
 **Contents**
@@ -29,7 +29,7 @@ For Starsector **0.98a-RC8**. This is a **beta**: expect rough edges, and see
 2. Enable **The Wingman Project** in the launcher.
 
 **Everyone needs the same things**
-- The same Starsector build (0.98a-RC8).
+- The same Starsector build (0.98.5a-RC5).
 - The same version of this mod as the host.
 - The same mods in the same versions as the host. Interface-only mods marked "utility" may differ. A joiner
   whose mods differ is refused and shown the list of differences.
@@ -525,5 +525,5 @@ battle with a `Co-op:` message and the game keeps running.
 - Wrecks stay whole by default (host setting "Wrecks stay whole"), so every screen shows the same wrecks. With it
   off, wrecks break up as normal, at the same moment everywhere, but a break line can come out a little
   different on a joiner's screen.
-- Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. If a game update breaks
+- Starting the battle from the CO-OP panel relies on game internals of 0.98.5a-RC5. If a game update breaks
   it, the Wingman: Join Game mission still works.

@@ -100,6 +100,8 @@ public final class WingmanConfig {
     public boolean damageReports = true;
     /** Joiner: fire each weapon as many times as the host's fired, not for as long as it "is firing". */
     public boolean shotCounts = true;
+    /** Host: a hit a joiner's raised shield stopped on their screen, but that landed here first, is given back. */
+    public boolean shieldGrace = true;
     /** Host: joiners must type this to get in. Empty = anyone who can reach the port may join. */
     public String password = "";
     /** Host: the largest ship a joiner may fly: FRIGATE, DESTROYER, CRUISER or CAPITAL_SHIP. */
@@ -188,6 +190,7 @@ public final class WingmanConfig {
             c.joinerSubsystems = j.optBoolean("joinerSubsystems", c.joinerSubsystems);
             c.damageReports = j.optBoolean("damageReports", c.damageReports);
             c.shotCounts = j.optBoolean("shotCounts", c.shotCounts);
+            c.shieldGrace = j.optBoolean("shieldGrace", c.shieldGrace);
             c.trimUnseen = j.optBoolean("trimUnseen", c.trimUnseen);
             c.password = j.optString("password", c.password).trim();
             c.maxShipSize = j.optString("maxShipSize", c.maxShipSize).trim().toUpperCase();
@@ -245,6 +248,7 @@ public final class WingmanConfig {
         if ("joinerSubsystems".equals(key)) return String.valueOf(joinerSubsystems);
         if ("damageReports".equals(key)) return String.valueOf(damageReports);
         if ("shotCounts".equals(key)) return String.valueOf(shotCounts);
+        if ("shieldGrace".equals(key)) return String.valueOf(shieldGrace);
         if ("password".equals(key)) return password;
         if ("maxShipSize".equals(key)) return maxShipSize;
         return null;
@@ -302,6 +306,7 @@ public final class WingmanConfig {
             else if ("joinerSubsystems".equals(key)) joinerSubsystems = yes(value);
             else if ("damageReports".equals(key)) damageReports = yes(value);
             else if ("shotCounts".equals(key)) shotCounts = yes(value);
+            else if ("shieldGrace".equals(key)) shieldGrace = yes(value);
             else if ("password".equals(key)) password = value;
             else if ("maxShipSize".equals(key)) maxShipSize = value.toUpperCase();
         } catch (NumberFormatException e) { /* not a number: the old value stands */ }

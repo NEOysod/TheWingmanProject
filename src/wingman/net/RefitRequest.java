@@ -15,6 +15,8 @@ import java.util.List;
 public final class RefitRequest {
     /** Where an item comes from or goes to, besides a submarket (by its id). */
     public static final String CARGO = "cargo", STORAGE = "storage";
+    /** Where an item comes from: wherever the host can get it at the time (a plan made away from a market). */
+    public static final String ANY = "any";
     public static final int MAX_CHANGES = 200, MAX_MODS = 100, MAX_NOTE = 160;
 
     /** One weapon slot (place: the slot id) or fighter bay (place: the bay's number from 0), and what goes in it. */
@@ -35,6 +37,8 @@ public final class RefitRequest {
     public int vents, caps;
     /** What the joiner was shown: credits to pay (negative: to receive) and story points to spend. */
     public int expectCredits, expectStoryPoints;
+    /** The weapon groups wanted, group 1 first; null leaves them as they are (new weapons placed by the game). */
+    public List<RefitData.Group> groups;
 
     /** The change for a slot or bay, or null. */
     public Change change(String place, boolean wing) {
@@ -85,6 +89,7 @@ public final class RefitRequest {
             o.writeVarInt(Math.max(0, Math.min(1000, caps)));
             o.writeInt(expectCredits);
             o.writeVarInt(Math.max(0, Math.min(1000, expectStoryPoints)));
+            if (groups != null) { o.writeByte(1); RefitData.writeGroups(o, groups); } // last: an older host reads up to here
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -116,6 +121,7 @@ public final class RefitRequest {
         r.expectCredits = in.readInt();
         r.expectStoryPoints = in.readVarInt();
         if (r.expectStoryPoints < 0 || r.expectStoryPoints > 1000) throw new IOException("impossible story points");
+        if (in.remaining() > 0 && in.readByte() == 1) r.groups = RefitData.readGroups(in);
         return r;
     }
 }

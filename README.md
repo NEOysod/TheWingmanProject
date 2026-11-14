@@ -4,7 +4,7 @@ Co-op multiplayer for Starsector battles. One player hosts a battle (a mission, 
 fight) and up to three friends join it, each flying a ship from the host's fleet. Combat only: the campaign
 itself stays single-player.
 
-For Starsector **0.98a-RC8**. Host and joiners must run the same game build.
+For Starsector **0.98.5a-RC5**. Host and joiners must run the same game build.
 
 **This is a beta.** It has been played mostly by two people. Expect rough edges; reports are welcome
 (see "If something goes wrong"). The first time you start the game with the mod, a short how-to opens on
@@ -128,7 +128,7 @@ The host's game is the only real battle; everyone else sees a live copy of it.
   driven by mod scripts can be a few frames early or late compared with the host.
 - Drones launched by a ship system are shown as the host's, like fighters.
 - The CO-OP button is also drawn over the Missions and Settings screens.
-- Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. Everything else uses the
+- Starting the battle from the CO-OP panel relies on game internals of 0.98.5a-RC5. Everything else uses the
   modding API only.
 
 ## If something goes wrong

@@ -1,7 +1,11 @@
 package wingman.net;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +49,13 @@ public final class RefitPlan {
     /** Problems with the ordnance points alone (the host replaces them with the game's own count). */
     public final List<String> opProblems = new ArrayList<String>();
     private final Names names;
+    /** What the plan wants that the host can't get here (item key -> how many): for the joiner's wish list. */
+    public final Map<String, Integer> wanted = new LinkedHashMap<String, Integer>();
+    /** Where each change's new item comes from and its old one goes, as worked out (a "from anywhere" made definite). */
+    private final Map<RefitRequest.Change, String> fromOf = new IdentityHashMap<RefitRequest.Change, String>();
+    private final Map<RefitRequest.Change, String> toOf = new IdentityHashMap<RefitRequest.Change, String>();
+    /** Changes whose item was to come from anywhere (RefitRequest.ANY). */
+    private final Set<RefitRequest.Change> wished = Collections.newSetFromMap(new IdentityHashMap<RefitRequest.Change, Boolean>());
 
     public RefitPlan(RefitData d, RefitRequest r) { this(d, r, IDS); }
 
@@ -59,10 +70,13 @@ public final class RefitPlan {
     public int net() { return buy - sell; }
 
     public boolean isEmpty() {
-        if (r.vents != d.vents || r.caps != d.caps || !r.addMods.isEmpty() || !r.removeMods.isEmpty() || !r.buildIn.isEmpty()) return false;
+        if (r.vents != d.vents || r.caps != d.caps || !r.addMods.isEmpty() || !r.removeMods.isEmpty() || !r.buildIn.isEmpty() || groupsChanged()) return false;
         for (RefitRequest.Change c : r.changes) if (!sameAsBefore(c)) return false;
         return true;
     }
+
+    /** The request rearranges the weapon groups (and the host sends them, so it can). */
+    public boolean groupsChanged() { return r.groups != null && d.groups != null && !RefitData.sameGroups(r.groups, d.groups); }
 
     /** The key of what is in that slot or bay now, or null if it is empty. */
     public String before(RefitRequest.Change c) {
@@ -73,6 +87,28 @@ public final class RefitPlan {
         }
         String w = d.weaponIn(c.place);
         return w == null ? null : RefitData.key(RefitData.WEAPON, w);
+    }
+
+    /** Where this change's new item comes from: as asked, or for "anywhere" the source chosen (still ANY if none has it). */
+    public String from(RefitRequest.Change c) {
+        String f = fromOf.get(c);
+        return f == null ? c.from : f;
+    }
+
+    /** Where this change's old item goes (cargo when not said). */
+    public String to(RefitRequest.Change c) {
+        String t = toOf.get(c);
+        return t != null ? t : c.to.isEmpty() ? RefitRequest.CARGO : c.to;
+    }
+
+    /** The change's item was asked for from anywhere. */
+    public boolean wished(RefitRequest.Change c) { return wished.contains(c); }
+
+    /** How many items the plan wants that can't be had here. */
+    public int wantedCount() {
+        int n = 0;
+        for (int k : wanted.values()) n += k;
+        return n;
     }
 
     public String after(RefitRequest.Change c) {
@@ -93,7 +129,56 @@ public final class RefitPlan {
 
     private boolean isSource(String id) { return RefitRequest.CARGO.equals(id) || RefitRequest.STORAGE.equals(id) || d.market(id) != null; }
 
+    /** How many of an item a source has for the host now (cargo less what is set aside for others; a usable market's stock). */
+    private int stock(String from, String key) {
+        if (RefitRequest.CARGO.equals(from)) return d.freeCargo(key);
+        if (RefitRequest.STORAGE.equals(from)) return d.hasStorage ? RefitData.count(d.storage, key) : 0;
+        RefitData.Market m = d.market(from);
+        return m != null && m.usable && !m.cantBuy.contains(key) ? RefitData.count(m.stock, key) : 0;
+    }
+
+    /**
+     * Items wanted from anywhere get a source: the first of cargo, storage, then the markets cheapest first, that
+     * still has one once what the plan puts in and takes out is counted. None: it stays ANY (wanted).
+     */
+    private void resolve() {
+        Map<String, Integer> put = new HashMap<String, Integer>(), taken = new HashMap<String, Integer>();
+        for (RefitRequest.Change c : r.changes) {
+            if (sameAsBefore(c)) continue;
+            String old = before(c);
+            if (old == null) continue;
+            String to = c.to.isEmpty() ? RefitRequest.CARGO : c.to;
+            toOf.put(c, to);
+            add(put, to + "|" + old, 1);
+        }
+        for (RefitRequest.Change c : r.changes) {
+            if (sameAsBefore(c)) continue;
+            final String now = after(c);
+            if (now == null) continue;
+            if (!RefitRequest.ANY.equals(c.from)) { add(taken, c.from + "|" + now, 1); continue; }
+            wished.add(c);
+            List<String> sources = new ArrayList<String>();
+            sources.add(RefitRequest.CARGO);
+            sources.add(RefitRequest.STORAGE);
+            List<RefitData.Market> markets = new ArrayList<RefitData.Market>(d.markets);
+            Collections.sort(markets, new Comparator<RefitData.Market>() {
+                public int compare(RefitData.Market a, RefitData.Market b) { return Float.compare(d.buyPrice(a, now), d.buyPrice(b, now)); }
+            });
+            for (RefitData.Market m : markets) sources.add(m.id);
+            String found = null;
+            for (String s : sources) if (has(put, taken, s, now)) { found = s; break; }
+            fromOf.put(c, found == null ? RefitRequest.ANY : found);
+            if (found != null) add(taken, found + "|" + now, 1);
+        }
+    }
+
+    private boolean has(Map<String, Integer> put, Map<String, Integer> taken, String from, String key) {
+        Integer in = put.get(from + "|" + key), out = taken.get(from + "|" + key);
+        return stock(from, key) + (in == null ? 0 : in) - (out == null ? 0 : out) >= 1;
+    }
+
     private void work() {
+        resolve();
         int op = 0;
         // Items each source must give (source|key -> count), and what the request puts into each first.
         Map<String, Integer> need = new LinkedHashMap<String, Integer>(), put = new LinkedHashMap<String, Integer>();
@@ -107,7 +192,7 @@ public final class RefitPlan {
             String place = (c.wing ? "f" : "w") + c.place;
             if (old != null) {
                 op -= cost(old);
-                String to = c.to.isEmpty() ? RefitRequest.CARGO : c.to;
+                String to = to(c);
                 RefitData.Market m = d.market(to);
                 if (RefitRequest.STORAGE.equals(to) && !d.hasStorage) missing(place, "The host has no storage here for " + names.item(old) + ".");
                 else if (m == null && !RefitRequest.CARGO.equals(to) && !RefitRequest.STORAGE.equals(to)) missing(place, names.item(old) + " was to be sold at a market that isn't here: choose where it goes.");
@@ -118,12 +203,18 @@ public final class RefitPlan {
             }
             if (now != null) {
                 op += cost(now);
-                if (!isSource(c.from)) { missing(place, names.item(now) + " isn't where the host is now (it came from " + names.source(c.from) + ")."); continue; }
-                add(need, c.from + "|" + now, 1);
-                List<String> t = takers.get(c.from + "|" + now);
-                if (t == null) takers.put(c.from + "|" + now, t = new ArrayList<String>());
+                String from = from(c);
+                if (RefitRequest.ANY.equals(from)) {
+                    add(wanted, now, 1);
+                    missing(place, names.item(now) + (d.market.isEmpty() ? " waits for a market (the host isn't at one)." : " isn't to be had at " + d.market + "."));
+                    continue;
+                }
+                if (!isSource(from)) { missing(place, names.item(now) + " isn't where the host is now (it came from " + names.source(from) + ")."); continue; }
+                add(need, from + "|" + now, 1);
+                List<String> t = takers.get(from + "|" + now);
+                if (t == null) takers.put(from + "|" + now, t = new ArrayList<String>());
                 t.add(place);
-                RefitData.Market m = d.market(c.from);
+                RefitData.Market m = d.market(from);
                 if (m != null) buy += d.buyPrice(m, now);
             }
         }
@@ -131,11 +222,12 @@ public final class RefitPlan {
             int bar = e.getKey().indexOf('|');
             String from = e.getKey().substring(0, bar), key = e.getKey().substring(bar + 1);
             RefitData.Market m = d.market(from);
-            int have = RefitRequest.CARGO.equals(from) ? RefitData.count(d.cargo, key)
+            int have = RefitRequest.CARGO.equals(from) ? d.freeCargo(key)
                     : RefitRequest.STORAGE.equals(from) ? RefitData.count(d.storage, key) : RefitData.count(m.stock, key);
             Integer back = put.get(e.getKey());
             have += back == null ? 0 : back;
-            String where = RefitRequest.CARGO.equals(from) ? "the host's cargo" : RefitRequest.STORAGE.equals(from) ? "storage" : m.name;
+            String where = RefitRequest.CARGO.equals(from) ? (RefitData.count(d.heldForOthers, key) > 0 ? "the host's cargo (less what is set aside for others)" : "the host's cargo")
+                    : RefitRequest.STORAGE.equals(from) ? "storage" : m.name;
             boolean bad = true;
             if (m != null && !m.usable) problems.add(m.name + " is shut to the host: " + m.reason);
             else if (m != null && m.cantBuy.contains(key)) problems.add(m.name + " won't sell " + names.item(key) + ".");
@@ -162,6 +254,7 @@ public final class RefitPlan {
         }
         if (new HashSet<String>(r.buildIn).size() != r.buildIn.size()) problems.add("A hull mod is built in twice.");
 
+        if (r.groups != null && RefitData.trimmed(r.groups).size() > 7) problems.add("Weapon groups: " + RefitData.trimmed(r.groups).size() + ", at most 7.");
         if (r.vents < 0 || (d.maxVents > 0 && r.vents > d.maxVents)) problems.add("Flux vents: " + r.vents + ", at most " + d.maxVents + ".");
         if (r.caps < 0 || (d.maxCaps > 0 && r.caps > d.maxCaps)) problems.add("Flux capacitors: " + r.caps + ", at most " + d.maxCaps + ".");
         op += (r.vents - d.vents) + (r.caps - d.caps);

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.3-beta
+
+Protocol 61. For Starsector 0.98.5a-RC5 only: the game internals Wingman uses were renamed in the update, so it
+no longer runs on 0.98a. The host and every joiner update the game and Wingman together.
+
+- **Starsector 0.98.5a.** Every game internal Wingman looks up was mapped again; `test/InternalsCheck` checks
+  them all against a game install, so the next update is quicker to follow.
+- **Wish lists.** Joiners wish for weapons and wings; the host sees every list (WISH LISTS on the campaign map),
+  buys what a market has with one click, and what is bought is set aside in cargo for that player.
+- **Saved refits:** up to 3 per ship, loaded again at this or another market. The refit screen's sections fold.
+- **Refit screen:** weapon groups can be changed; a Stats section shows flux, shields, weapon flux and damage,
+  and what the plan changes; weapon cards show damage, flux, range and type; long market and item names fit.
+- **Shields forgive the delay** (host setting): a shot a joiner's shield stopped on their screen is given back
+  if it hit their hull on the host first. Point defense on joiners' screens aims at the host's targets. Short
+  fire taps are no longer lost; a ship system use the host never acted on is undone.
+- **Fixed:** a joiner freezing on joining with Second in Command and a large fleet; venting a freshly rebuilt
+  ship stopping co-op (and the crash after it); the agent's hooks left in after a battle that ended badly.
+- **Launcher:** `Start Starsector with Wingman agent.bat` now sits in the zip beside the Wingman folder and goes
+  in the Starsector folder. Launch settings left from before a game update (Mikohime with Fast Rendering's
+  `fr.jar` gone) are noticed, and the normal game is started instead.
+- **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
+
 ## 0.9.2-beta
 
 Protocol 60, as before. The host and every joiner should update together (the agent changed too).

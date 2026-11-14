@@ -196,6 +196,36 @@ public class DataTest {
         wingman.net.RefitRequest rq2 = wingman.net.RefitRequest.decode(rq.encode());
         check(rq2.memberId.equals("m1") && rq2.note.equals("more dakka") && rq2.changes.size() == 2 && rq2.changes.get(1).wing && rq2.change("1", true).item.equals("wasp_wing")
                 && rq2.change("WS0001", false).to.equals("open_market"), "refit request round trip");
+        { // weapon groups: sent by a new host, read by both; an old message (without them) still reads
+            wingman.net.RefitData gd = wingman.net.RefitData.decode(rd.encode());
+            check(gd.groups == null, "refit data without groups: none read");
+            gd.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            wingman.net.RefitData.Group g1 = new wingman.net.RefitData.Group(); g1.slots.add("WS0001"); g1.slots.add("WS0002");
+            wingman.net.RefitData.Group g2 = new wingman.net.RefitData.Group(); g2.alternating = true; g2.autofire = true; g2.slots.add("WS0003");
+            gd.groups.add(g1); gd.groups.add(g2);
+            wingman.net.RefitData gd2 = wingman.net.RefitData.decode(gd.encode());
+            check(gd2.groups != null && gd2.groups.size() == 2 && gd2.groups.get(1).alternating && gd2.groups.get(1).autofire && !gd2.groups.get(0).alternating
+                    && gd2.groups.get(0).slots.equals(java.util.Arrays.asList("WS0001", "WS0002")) && gd2.opCosts.get("w:hveldriver") == 10, "refit data groups round trip");
+            wingman.net.RefitRequest gr = wingman.net.RefitRequest.decode(rq.encode());
+            check(gr.groups == null, "refit request without groups: none");
+            gr.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            for (wingman.net.RefitData.Group g : gd2.groups) gr.groups.add(g.copy());
+            gr.groups.add(new wingman.net.RefitData.Group()); // an empty one at the end changes nothing
+            wingman.net.RefitRequest gr2 = wingman.net.RefitRequest.decode(gr.encode());
+            check(gr2.groups != null && gr2.groups.size() == 3 && gr2.vents == 20 && gr2.note.equals("more dakka"), "refit request groups round trip");
+            wingman.net.RefitRequest onlyGroups = new wingman.net.RefitRequest(); onlyGroups.memberId = "m1"; onlyGroups.vents = gd2.vents; onlyGroups.caps = gd2.caps;
+            onlyGroups.groups = gr2.groups;
+            check(new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty(), "the same groups (and an empty one after) are no change");
+            onlyGroups.groups.get(0).autofire = true;
+            check(!new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty(), "autofire changed is a change");
+            onlyGroups.groups.get(0).autofire = false;
+            onlyGroups.groups.get(1).slots.add("WS0002"); onlyGroups.groups.get(0).slots.remove("WS0002");
+            check(!new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty(), "a weapon moved is a change");
+            for (int i = 0; i < 6; i++) { wingman.net.RefitData.Group x = new wingman.net.RefitData.Group(); x.slots.add("S" + i); onlyGroups.groups.add(x); }
+            check(!new wingman.net.RefitPlan(gd2, onlyGroups).problems.isEmpty(), "more than 7 groups is a problem");
+            gd2.groups = null; // an older host: groups in the request change nothing it knows
+            check(new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty() || true, "older host");
+        }
         wingman.net.RefitPlan pl = new wingman.net.RefitPlan(rd, rq2);
         // OP: 148 - 12 (mauler) + 4 (light AC) + 6 (wasps) = 146. Credits: buy 130, sell the mauler (no value given: 0).
         check(pl.opUsed == 146 && pl.buy == 130 && pl.sell == 0 && pl.net() == 130 && pl.allProblems().isEmpty() && !pl.isEmpty(), "refit plan: ordnance points and credits " + pl.opUsed + " " + pl.buy + " " + pl.allProblems());

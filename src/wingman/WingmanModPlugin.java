@@ -22,6 +22,7 @@ public class WingmanModPlugin extends BaseModPlugin {
 
     @Override
     public void onGameLoad(boolean newGame) {
+        FriendRefit.forgetCampaign("The host loaded another save.");
         ObjectiveMirror.restore(); // a campaign's battles get every objective's own script
         try {
             Global.getSector().addTransientScript(new Watch());
@@ -29,6 +30,8 @@ public class WingmanModPlugin extends BaseModPlugin {
             CampaignSettings.install(); // Ctrl+Shift+O on the campaign map
             CampaignPlayerList.install(); // who is connected, top right of the campaign map
             FriendRefitPanel.install(); // friends' refits waiting for the host (Ctrl+Shift+R)
+            WishListPanel.install(); // friends' wish lists, for the host to buy at markets
+            WishList.install();
         } catch (Throwable t) {
             Global.getLogger(WingmanModPlugin.class).warn("Wingman: could not watch the campaign for battles ending; "
                     + "joiners may have to leave a finished battle themselves", t);

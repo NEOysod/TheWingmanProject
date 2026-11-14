@@ -45,6 +45,8 @@ public final class CampaignStandIn {
     /** Where the stand-in fleet is, and the empty star system made for it (null if it is in hyperspace). */
     private static LocationAPI place;
     private static StarSystemAPI madeSystem;
+    /** The sector had no current location (the title screen's) and the stand-in's place was made it. */
+    private static boolean currentSet;
     private static long installedAt;
     /** The larger copy (see CampaignCopy) in use, and what of it was put into things that outlive the battle. */
     private static CampaignCopy copy;
@@ -175,6 +177,12 @@ public final class CampaignStandIn {
             at.addEntity(f);
             f.setLocation(0f, 0f);
             place = at;
+            // Scripts also ask the sector where the player is (Second in Command's officer generator does, on every
+            // fleet's stats update); on the title screen that is nowhere, and they fail, slowly and over and over.
+            if (sector.getCurrentLocation() == null) {
+                sector.setCurrentLocation(at);
+                currentSet = true;
+            }
         } catch (Throwable t) {
             Global.getLogger(CampaignStandIn.class).warn("Wingman: the stand-in fleet could not be given a place; scripts that ask where "
                     + "the player fleet is may fail", t);
@@ -225,9 +233,16 @@ public final class CampaignStandIn {
     private static void addReserves(CampaignFleetAPI fleet, java.util.List<wingman.net.FleetInfo.Reserve> reserves) {
         if (reserves.isEmpty()) return;
         int added = 0;
+        long started = System.currentTimeMillis();
+        // The ships already here, read once: reading the fleet's list makes the game bring every ship's stats up to
+        // date, and doing that after each ship added (as before) cost seconds with mods whose hull mods do a lot then.
+        java.util.Set<String> here = new java.util.HashSet<String>();
+        try {
+            for (FleetMemberAPI m : fleet.getFleetData().getMembersListCopy()) here.add(m.getId());
+        } catch (Throwable t) { /* a mod's hull mod failed in that update: treat the fleet as empty */ }
         for (wingman.net.FleetInfo.Reserve r : reserves) {
             try {
-                if (!r.id.isEmpty() && memberWithId(fleet, r.id) != null) continue; // already here
+                if (!r.id.isEmpty() && !here.add(r.id)) continue; // already here
                 com.fs.starfarer.api.combat.ShipHullSpecAPI spec = Global.getSettings().getHullSpec(r.hullId);
                 if (spec == null) continue;
                 com.fs.starfarer.api.combat.ShipVariantAPI v = Global.getSettings().createEmptyVariant(r.hullId + "_wingman_reserve", spec);
@@ -248,8 +263,9 @@ public final class CampaignStandIn {
                 if (reservesFailed++ == 0) Global.getLogger(CampaignStandIn.class).warn("Wingman: a ship of one of the host's fleets could not be copied for its stand-in", t);
             }
         }
-        if (added > 0 && reservesAdded++ < 6) Global.getLogger(CampaignStandIn.class).info("Wingman: " + added + " ships of a host fleet ("
-                + fleet.getNameWithFaction() + ") copied into its stand-in, for scripts that look over the whole fleet");
+        long took = System.currentTimeMillis() - started;
+        if (added > 0 && (reservesAdded++ < 6 || took > 1000)) Global.getLogger(CampaignStandIn.class).info("Wingman: " + added + " ships of a host fleet ("
+                + fleet.getNameWithFaction() + ") copied into its stand-in, for scripts that look over the whole fleet (" + took + " ms)");
     }
 
     private static FleetMemberAPI memberWithId(CampaignFleetAPI fleet, String id) {
@@ -430,6 +446,10 @@ public final class CampaignStandIn {
         relationsBefore.clear();
         copy = null;
         fleets.clear();
+        try {
+            if (sector != null && currentSet && sector.getCurrentLocation() == place) sector.setCurrentLocation(null);
+        } catch (Throwable t) { /* gone with the sector */ }
+        currentSet = false;
         try {
             if (place != null && player != null) place.removeEntity(player);
         } catch (Throwable t) { /* gone with the sector */ }

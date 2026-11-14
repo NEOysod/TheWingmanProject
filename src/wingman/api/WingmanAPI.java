@@ -9,9 +9,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.fs.starfarer.api.GameState;
 import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.combat.CombatEngineAPI;
 import com.fs.starfarer.api.combat.ShipAPI;
 
 import wingman.Hosting;
+import wingman.SavedJoinAccess;
+import wingman.WingmanHostPlugin;
 import wingman.WingmanConfig;
 import wingman.net.ClientLink;
 import wingman.net.HostSession;
@@ -71,7 +74,7 @@ public final class WingmanAPI {
     public static String version() { return Hosting.buildId(); }
 
     /** This PC has a host session open (players may connect). */
-    public static boolean isHosting() { return HostSession.active() != null; }
+    public static boolean isHosting() { return HostSession.active() != null && !isJoined(); } // (a session left open while joined elsewhere isn't hosting)
 
     /** This PC is connected to a host as a joiner. */
     public static boolean isJoined() { return ClientLink.get().getState() == ClientLink.State.CONNECTED; }
@@ -166,8 +169,78 @@ public final class WingmanAPI {
         List<String> lines = Collections.emptyList();
         HostSession s = HostSession.active();
         if (s != null && Global.getCurrentState() != GameState.COMBAT) lines = s.pump();
+        if (isJoined() && Global.getCurrentState() == GameState.CAMPAIGN) drainJoinerLink(); // (joined from the campaign: see join)
         deliver();
         return lines;
+    }
+
+    // ---- for add-ons that run their own matches (Wingman PvP) ----
+
+    private static volatile String refusal = "";
+
+    /** The ready-check phase of the battle Wingman is hosting right now (0 ready check, 2 playing), or -1 if none. */
+    public static int hostBattlePhase() {
+        CombatEngineAPI e = WingmanHostPlugin.liveEngineForApi();
+        return e != null && e == Global.getCombatEngine() && Global.getCurrentState() == GameState.COMBAT ? WingmanHostPlugin.livePhaseForApi() : -1;
+    }
+
+    /** Wingman's saved join details: { address, name, password }. */
+    public static String[] savedJoin() {
+        SavedJoinAccess.Values v = SavedJoinAccess.load();
+        return new String[] { v.address, v.name, v.password };
+    }
+
+    /**
+     * Connect to a host from anywhere (the campaign too), as Wingman's join screen does; blank values use the
+     * saved ones, then the settings'. What was used is saved. Follow it with joinState().
+     */
+    public static void join(String address, String name, String password) {
+        SavedJoinAccess.Values saved = SavedJoinAccess.load();
+        WingmanConfig cfg = config();
+        String addr = address != null && !address.trim().isEmpty() ? address.trim() : saved.address;
+        if (addr.isEmpty()) addr = cfg.hostAddress;
+        String who = name != null && !name.trim().isEmpty() ? name.trim() : (saved.name.isEmpty() ? cfg.playerName : saved.name);
+        String pass = password == null ? saved.password : password;
+        SavedJoinAccess.save(addr, who, pass);
+        ClientLink.get().connect(SavedJoinAccess.hostOf(addr), SavedJoinAccess.portOf(addr, cfg.port), who, SavedJoinAccess.mods(),
+                SavedJoinAccess.gameVersion(), pass);
+    }
+
+    /** Joined from the campaign, nobody else reads the link: a refusal is kept here (for joinState), the rest dropped. */
+    private static void drainJoinerLink() {
+        wingman.net.Conn c = ClientLink.get().getConn();
+        if (c == null) return;
+        int n = 0;
+        wingman.net.Conn.Packet p;
+        while (n++ < 500 && (p = c.poll()) != null) {
+            if (p.type == Msg.REJECT) refusal = Msg.readUtf(p.data).replace('\n', ' ');
+        }
+    }
+
+    /** "idle", "connecting", "connected", or "failed: " and why. */
+    public static String joinState() {
+        switch (ClientLink.get().getState()) {
+            case CONNECTING:
+                refusal = "";
+                return "connecting";
+            case CONNECTED:
+                return "connected";
+            case FAILED:
+                if (Global.getCurrentState() == GameState.CAMPAIGN) drainJoinerLink();
+                return "failed: " + (refusal.isEmpty() ? ClientLink.get().getError() : "the host refused: " + refusal);
+            default:
+                return "idle";
+        }
+    }
+
+    /** Disconnect from the host. */
+    public static void leave() { ClientLink.get().disconnect(); }
+
+    /** Room for at least this many players in the host's session (a PvP match of 4 v 4 needs 8). */
+    public static void setPlayersAtLeast(int n) {
+        HostSession.playersAtLeast = Math.max(0, Math.min(16, n));
+        HostSession s = HostSession.active();
+        if (s != null) s.raiseCap(config().maxPlayers);
     }
 
     // ---- messages ----
@@ -196,7 +269,7 @@ public final class WingmanAPI {
      */
     public static boolean send(String channel, byte[] data) {
         byte[] m = ModChannel.encode(channel, data);
-        HostSession s = HostSession.active();
+        HostSession s = isJoined() ? null : HostSession.active();
         if (s != null) {
             if (s.getPlayers().isEmpty()) return false;
             for (HostSession.Player p : s.getPlayers()) p.conn.send(Msg.MOD, m);

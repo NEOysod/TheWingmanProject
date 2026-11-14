@@ -1,4 +1,4 @@
-# The Wingman Project 0.9.2-beta — Release Notes
+# The Wingman Project 0.9.3-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,27 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.9.3-beta
+
+- **For Starsector 0.98.5a-RC5.** It does not run on 0.98a: the game's internals it uses were renamed. Everyone
+  updates the game and Wingman together.
+- **Wish lists:** joiners wish for weapons and wings; the host sees every list (WISH LISTS on the campaign map),
+  buys what a market has with one click, and what is bought is set aside in cargo for that player.
+- **Saved refits:** up to 3 per ship, loaded again here or at another market; the refit screen's sections fold.
+- **Refit screen:** weapon groups can be changed (a section with its own editor); a Stats section shows flux,
+  shields, weapon flux and damage with what the plan changes; weapon cards show damage, flux, range and type;
+  long market and item names stay on one line.
+- **Shields forgive the delay** (host setting): a shot a joiner's raised shield stopped on their own screen is
+  given back if it hit their hull on the host first. Point defense on joiners' screens aims at the host's targets.
+  Short fire taps are no longer lost; a ship system use the host never acted on is undone.
+- **Fixes:** a joiner freezing on joining with Second in Command and a large fleet; venting a freshly rebuilt
+  ship stopping co-op (and the crash after it); the agent's hooks left in after a battle that ended badly.
+- **Launcher:** `Start Starsector with Wingman agent.bat` goes in the Starsector folder (it is in the zip beside
+  the Wingman folder). Launch settings left from before a game update (Mikohime with Fast Rendering's `fr.jar`
+  gone) are noticed, and the normal game is started instead.
+- **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI` (see Wingman PvP).
+- Protocol 61.
 
 ## New in 0.9.2-beta
 

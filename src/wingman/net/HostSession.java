@@ -50,6 +50,8 @@ public final class HostSession {
         public String refitAsk;
         /** Friend refit: the latest refit request from this player (Msg.REFIT_REQUEST, undecoded), waiting for the game thread. */
         public byte[] refitRequest;
+        /** Wish list changes from this player (WishMessage), oldest first; the game thread takes them. */
+        public final java.util.List<byte[]> wishes = new java.util.ArrayList<byte[]>();
         public int built, skipped;
         /** This player came back on a new connection, and this is the old one being cleared away. */
         public boolean replaced;
@@ -101,6 +103,13 @@ public final class HostSession {
     }
 
     private static HostSession active;
+    /** Players an add-on's match needs room for (PvP: up to 8): the cap is at least this, whatever the settings say. */
+    public static volatile int playersAtLeast;
+
+    /** The player cap raised (or set back) for a running session, never below playersAtLeast. */
+    public void raiseCap(int max) {
+        this.maxPlayers = Math.max(2, Math.max(max, playersAtLeast));
+    }
 
     /** Returns the running session, (re)starting it if the port changed or nothing is running. */
     public static synchronized HostSession getOrStart(int port, int maxPlayers, int snapshotRate, String hostName)
@@ -121,7 +130,7 @@ public final class HostSession {
             active = null;
         }
         if (active == null) active = new HostSession(port);
-        active.maxPlayers = Math.max(2, maxPlayers);
+        active.maxPlayers = Math.max(2, Math.max(maxPlayers, playersAtLeast));
         active.snapshotRate = snapshotRate;
         active.hostName = hostName;
         active.hostMods = hostMods;
@@ -143,6 +152,8 @@ public final class HostSession {
             p.shipNetId = -1;
             p.ship = null;
             p.savedAI = null; // nothing of the finished battle is kept (an AI holds its ship, and the ship its battle)
+            p.heldCarrier = null;
+            p.subsystemPresses.clear();
             p.ready = false;
         }
     }
@@ -558,6 +569,11 @@ public final class HostSession {
                     }
                     else if (p.type == Msg.REFIT_REQUEST) {
                         if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
+                    }
+                    else if (p.type == Msg.WISH) {
+                        synchronized (pl.wishes) { // each change kept, in order, for the game thread (WishList)
+                            if (p.data.length <= 16 * 1024 && pl.wishes.size() < 20) pl.wishes.add(p.data);
+                        }
                     }
                     else if (p.type == Msg.MOD) {
                         long now = System.currentTimeMillis();

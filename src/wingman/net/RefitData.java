@@ -61,6 +61,11 @@ public final class RefitData {
     public float credits;
     public int storyPoints;
     public List<Item> cargo = new ArrayList<Item>();
+    /** In the host's cargo, set aside for this joiner's wish list; and set aside for other players (not free to use). */
+    public List<Item> setAside = new ArrayList<Item>(), heldForOthers = new ArrayList<Item>();
+
+    /** How many of an item in the host's cargo aren't set aside for someone else. */
+    public int freeCargo(String key) { return Math.max(0, count(cargo, key) - count(heldForOthers, key)); }
     public boolean hasStorage;
     public List<Item> storage = new ArrayList<Item>();
     public List<Market> markets = new ArrayList<Market>();
@@ -73,6 +78,62 @@ public final class RefitData {
     public Map<String, Integer> modCosts = new LinkedHashMap<String, Integer>();
     /** Hull mods that can't be built in (tagged no_build_in). */
     public List<String> noBuildIn = new ArrayList<String>();
+    /**
+     * The ship's weapon groups as the host has them, in order (group 1 first); null from a host whose Wingman
+     * doesn't send them (written last, so either side reads the other's message).
+     */
+    public List<Group> groups;
+
+    /** A weapon group: its weapon slots, linked or alternating, and whether it starts on autofire. */
+    public static final class Group {
+        public boolean alternating, autofire;
+        public List<String> slots = new ArrayList<String>();
+        public Group copy() { Group g = new Group(); g.alternating = alternating; g.autofire = autofire; g.slots.addAll(slots); return g; }
+        public boolean same(Group o) { return o != null && alternating == o.alternating && autofire == o.autofire && slots.equals(o.slots); }
+    }
+
+    /** Most groups sent; the game's own keys go to 7. */
+    public static final int MAX_GROUPS = 10;
+
+    public static void writeGroups(Out o, List<Group> l) throws IOException {
+        int n = Math.min(l.size(), MAX_GROUPS);
+        o.writeVarInt(n);
+        for (int i = 0; i < n; i++) {
+            Group g = l.get(i);
+            o.writeByte((g.alternating ? 1 : 0) | (g.autofire ? 2 : 0));
+            writeStrings(o, g.slots, MAX_SLOTS, 100);
+        }
+    }
+
+    public static List<Group> readGroups(In in) throws IOException {
+        int n = count(in, MAX_GROUPS, "weapon groups");
+        List<Group> l = new ArrayList<Group>();
+        for (int i = 0; i < n; i++) {
+            Group g = new Group();
+            int f = in.readByte();
+            g.alternating = (f & 1) != 0;
+            g.autofire = (f & 2) != 0;
+            readStrings(in, g.slots, MAX_SLOTS, 100, "slots");
+            l.add(g);
+        }
+        return l;
+    }
+
+    /** The groups without empty ones at the end (the same loadout either way). */
+    public static List<Group> trimmed(List<Group> l) {
+        List<Group> out = new ArrayList<Group>();
+        if (l == null) return out;
+        for (Group g : l) out.add(g);
+        while (!out.isEmpty() && out.get(out.size() - 1).slots.isEmpty()) out.remove(out.size() - 1);
+        return out;
+    }
+
+    public static boolean sameGroups(List<Group> a, List<Group> b) {
+        List<Group> x = trimmed(a), y = trimmed(b);
+        if (x.size() != y.size()) return false;
+        for (int i = 0; i < x.size(); i++) if (!x.get(i).same(y.get(i))) return false;
+        return true;
+    }
 
     public static String key(int kind, String id) { return (kind == WING ? "f:" : "w:") + id; }
 
@@ -167,6 +228,9 @@ public final class RefitData {
             writeInts(o, opCosts, MAX_VALUES);
             writeInts(o, modCosts, MAX_MODS);
             writeStrings(o, noBuildIn, MAX_MODS, 100);
+            writeItems(o, setAside);
+            writeItems(o, heldForOthers);
+            if (groups != null) writeGroups(o, groups); // last: a host without groups stops before this
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -256,12 +320,15 @@ public final class RefitData {
         readInts(in, d.opCosts, MAX_VALUES);
         readInts(in, d.modCosts, MAX_MODS);
         readStrings(in, d.noBuildIn, MAX_MODS, 100, "hull mods");
+        readItems(in, d.setAside);
+        readItems(in, d.heldForOthers);
+        if (in.remaining() > 0) d.groups = readGroups(in); // (a host without groups stops here)
         return d;
     }
 
     /** Every item of one key the host could fit: in cargo, in storage, and for sale in usable submarkets. */
     public int available(String key) {
-        int n = count(cargo, key) + count(storage, key);
+        int n = freeCargo(key) + count(storage, key);
         for (Market m : markets) if (m.usable && !m.cantBuy.contains(key)) n += count(m.stock, key);
         return n;
     }

@@ -11,7 +11,7 @@ part before you host.
 
 ## What you need
 
-- Starsector **0.98a-RC8**, the same build for everyone.
+- Starsector **0.98.5a-RC5**, the same build for everyone.
 - The **same mods, in the same versions**, as the host. Interface-only "utility" mods may differ. If yours
   differ, you're told exactly what to fix.
 - A way to reach the host's PC: the same home network, a virtual LAN (Radmin VPN, Tailscale, ZeroTier), or
@@ -26,8 +26,18 @@ part before you host.
 
 **Optional: Wingman's agent (on each PC that wants it; the host's matters most).** Lets mods' "player ship"
 scripts (UAF's fighter take-over, abilities aimed at the cursor, and the like) work for every player's ship on
-every PC, not only for your own. With the game closed, find `-Xms` in the
-game's launch settings and put this just before it, followed by a space:
+every PC, not only for your own.
+
+**Windows, easiest:** the zip has `Start Starsector with Wingman agent.bat` next to the `Wingman` folder. Put
+it in your Starsector folder (the one with `starsector.exe` and `mods` in it, not in `mods`), and start the game
+with it (or a desktop shortcut to it)
+instead of `starsector.exe` or Mikohime's `Miko_Rouge.bat`. It changes none of your game's files: each time, it
+reads your launch settings (the normal ones, or Mikohime's), adds the agent and starts the game. It works with Fast
+Rendering and keeps working after Mikohime's configurator rewrites its files. A new Wingman version doesn't need a
+new copy of it: it uses the launcher in whichever Wingman folder is in `mods`.
+
+**Or by hand:** with the game closed, find `-Xms` in the game's launch settings and put this just before it,
+followed by a space:
 - Windows, in `vmparams` (Starsector folder): `-javaagent:..\mods\Wingman\jars\WingmanAgent.jar`
 - Linux, in `starsector.sh`: `-javaagent:./mods/Wingman/jars/WingmanAgent.jar`
 - Mac: `-javaagent:` and the full path to `mods/Wingman/jars/WingmanAgent.jar`

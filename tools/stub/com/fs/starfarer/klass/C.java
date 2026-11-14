@@ -5,7 +5,7 @@ package com.fs.starfarer.klass;
 public class C {
     public C() {}
     /** The game's own lines (ship destroyed, objective taken...): indent 0. */
-    public com.fs.starfarer.klass.O0OO.C o00000(java.lang.Object... parts) { return null; }
+    public com.fs.starfarer.klass.Object.O0OO o00000(java.lang.Object... parts) { return null; }
     /** Every line; CombatUIAPI.addMessage(indent, parts) comes straight here. */
-    public com.fs.starfarer.klass.O0OO.C o00000(int indent, java.lang.Object... parts) { return null; }
+    public com.fs.starfarer.klass.Object.O0OO o00000(int indent, java.lang.Object... parts) { return null; }
 }

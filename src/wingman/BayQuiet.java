@@ -18,17 +18,17 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * battle. So a bay's pending replacement is cleared here, the way the game itself clears it when a fighter is
  * finished, without anything being launched: the request, its timer, the sparks, and any queued requests.
  *
- * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.A.C), set through
+ * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.oOOO.B, as of 0.98.5a), set through
  * java.lang.invoke, which the script sandbox allows. Their names are obfuscated with accented letters, written as
  * escapes. If they can't be reached, the sparks show as before, with one log line.
  */
 final class BayQuiet {
     private BayQuiet() {}
 
-    private static final String PENDING = "O\u00f5\u00f4o00";        // the replacement under way (CombatFleetManager-side record)
-    private static final String TIMER = "\u00d6\u00f4\u00f4o00";      // its build timer
-    private static final String SPARKS = "String.String$interface"; // the "being built" effect
-    private static final String QUEUED = "super.String$interface";  // further replacements asked for
+    private static final String PENDING = "\u00d8O\u00f5o00";        // the replacement under way (CombatFleetManager-side record)
+    private static final String TIMER = "oO\u00f5o00";      // its build timer
+    private static final String SPARKS = "class.void$interface"; // the "being built" effect
+    private static final String QUEUED = "new.void$interface";  // further replacements asked for
     private static boolean broken;
     private static MethodHandle getPending, setPending, setTimer, setSparks, setQueued;
     static int cleared;
@@ -56,9 +56,9 @@ final class BayQuiet {
 
     private static boolean ready(Class<?> bayClass) throws Throwable {
         ClassLoader cl = bayClass.getClassLoader();
-        Class<?> pending = Class.forName("com.fs.starfarer.combat.ai.M$Oo", false, cl);
+        Class<?> pending = Class.forName("com.fs.starfarer.combat.ai.N$Oo", false, cl);
         Class<?> timer = Class.forName("com.fs.starfarer.util.IntervalTracker", false, cl);
-        Class<?> sparks = Class.forName("com.fs.starfarer.renderers.fx.oOOO", false, cl);
+        Class<?> sparks = Class.forName("com.fs.starfarer.renderers.fx.super", false, cl);
         MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                 MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
         MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(bayClass, MethodHandles.lookup());
