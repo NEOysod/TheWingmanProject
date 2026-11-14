@@ -4,7 +4,9 @@
 #   - A launcher .bat that runs java.exe @<settings file>: Mikohime (Miko_Rouge.bat + Miko_Simple.txt), Fast
 #     Rendering 1.0 (starsector-core\fr.bat + fr.vmparams), or another: writes a copy of the settings with the
 #     agent next to them (Miko_Simple_Wingman.txt, fr_Wingman.vmparams) and starts the game the way that .bat does.
-#   - The normal game (vmparams + jre): starts jre\bin\java.exe with vmparams' settings plus the agent.
+#   - The normal game (vmparams + jre): starts jre\bin\java.exe with vmparams' settings plus the agent (or, without
+#     vmparams, starsector-core\starsector.bat's).
+#   - If none of that works (no Java, no agent jar, settings it can't read): starsector.exe, without the agent.
 # A setup that replaces Java's class loader (-Djava.system.class.loader=..., as Fast Rendering before 1.0 did)
 # can't take -javaagent; for those it uses wingman.agent.Launch instead (see docs/USER_GUIDE.md, the agent).
 # Re-running Mikohime's configurator needs nothing more: the copy is made fresh from its file on every launch.
@@ -21,6 +23,18 @@ function Fail([string]$msg) {
     Write-Host "Wingman launcher: $msg" -ForegroundColor Red
     Write-Host "Your game files were not changed. You can still start the game the usual way."
     exit 1
+}
+
+# The last resort: the game the plain way (starsector.exe), without the agent.
+function Start-Vanilla([string]$why) {
+    Write-Host ""
+    Write-Host "Wingman launcher: $why" -ForegroundColor Yellow
+    $exe = Join-Path $root 'starsector.exe'
+    if (-not (Test-Path $exe)) { Fail "and there is no starsector.exe in $root to start the game with instead." }
+    Write-Host "Starting the game the normal way (starsector.exe), without Wingman's agent. Wingman itself still works."
+    if ($DryRun) { Write-Host "Would run (in $root): $exe"; exit 0 }
+    Start-Process -FilePath $exe -WorkingDirectory $root
+    exit 0
 }
 
 # ---- where things are ----
@@ -45,7 +59,7 @@ if (-not $modDir) {
         Where-Object { Test-Path (Join-Path $_.FullName 'jars\WingmanAgent.jar') } | Select-Object -First 1
     if ($found) { $modDir = $found.FullName }
 }
-if (-not $modDir) { Fail "can't find jars\WingmanAgent.jar in any folder under Starsector\mods." }
+if (-not $modDir) { Start-Vanilla "can't find jars\WingmanAgent.jar in any folder under Starsector\mods." }
 $modName = Split-Path -Leaf $modDir
 # The game runs from starsector-core, so paths in its settings start there.
 $agentRel = "../mods/$modName/jars/WingmanAgent.jar"
@@ -67,7 +81,7 @@ function Add-Agent([string[]]$items) {
         $t = $list[$k].Trim()
         if ($t -eq '-classpath' -or $t -eq '-cp' -or $t.StartsWith('-classpath ') -or $t.StartsWith('-cp ')) { $cpAt = $k; break }
     }
-    if ($cpAt -lt 0) { Fail "the launch settings have no -classpath setting, so Wingman can't tell where to add the agent." }
+    if ($cpAt -lt 0) { throw "the launch settings have no -classpath setting, so Wingman can't tell where to add the agent." }
 
     $ownLoader = @($live | Where-Object { $_ -match '-Djava\.system\.class\.loader=' }).Count -gt 0
     if (-not $ownLoader) {
@@ -84,7 +98,7 @@ function Add-Agent([string[]]$items) {
     }
     $mainAt = -1
     for ($k = $list.Count - 1; $k -ge 0; $k--) { if ($list[$k].Trim() -eq $gameMain) { $mainAt = $k; break } }
-    if ($mainAt -lt 0) { Fail "the launch settings don't end with $gameMain, so Wingman can't start the game after its agent." }
+    if ($mainAt -lt 0) { throw "the launch settings don't end with $gameMain, so Wingman can't start the game after its agent." }
     $list[$mainAt] = 'wingman.agent.Launch'
     $list.Insert($cpAt, $exportsArg)
     return ,$list.ToArray()
@@ -182,7 +196,15 @@ foreach ($bat in $candidates) {
 }
 
 if ($launcherBat) {
-    $newLines = Add-Agent $lines
+    $newLines = $null
+    try { $newLines = Add-Agent $lines } catch {
+        Write-Host ""
+        Write-Host "Wingman launcher: $(Split-Path -Leaf $launcherBat): $($_.Exception.Message) Starting the normal game instead." -ForegroundColor Yellow
+        $launcherBat = $null
+    }
+}
+
+if ($launcherBat) {
     # A copy of the settings with the agent, next to them: Miko_Simple_Wingman.txt, fr_Wingman.vmparams...
     $leaf = Split-Path -Leaf $argsFile
     $ext = [System.IO.Path]::GetExtension($leaf)
@@ -204,21 +226,36 @@ if ($launcherBat) {
 }
 
 # ---- the normal game: vmparams + jre ----
-$vmparams = Join-Path $root 'vmparams'
-if (-not (Test-Path $vmparams)) { Fail "found neither a Mikohime launcher nor the game's vmparams file in $root." }
+# No Mikohime, Fast Rendering or other launcher (or none that can start this game): the game's own settings, from
+# vmparams, or failing that starsector-core\starsector.bat, with the agent. If neither will do, starsector.exe.
 $java = $null
 foreach ($p in @('jre\bin\java.exe', 'starsector-core\jre\bin\java.exe', 'jre\bin\javaw.exe')) {
     $c = Join-Path $root $p
     if (Test-Path $c) { $java = $c; break }
 }
-if (-not $java) { Fail "can't find the game's Java (jre\bin\java.exe in the Starsector folder)." }
+if (-not $java) { Start-Vanilla "can't find the game's Java (jre\bin\java.exe in the Starsector folder)." }
 
-$text = ([System.IO.File]::ReadAllText($vmparams)) -replace '[\r\n]+', ' '
-$tokens = @([regex]::Matches($text, '"[^"]*"|\S+') | ForEach-Object { $_.Value })
-if ($tokens.Count -gt 0 -and $tokens[0] -match 'java[w]?(\.exe)?"?$') { $tokens = @($tokens | Select-Object -Skip 1) }
-$tokens = Add-Agent $tokens
-$argLine = ($tokens -join ' ')
-if ($DryRun) { Write-Host "Would run (in $core): $java $argLine"; exit 0 }
-Write-Host "Starting Starsector with Wingman's agent..."
-$proc = Start-Process -FilePath $java -ArgumentList $argLine -WorkingDirectory $core -NoNewWindow -PassThru -Wait
-exit $proc.ExitCode
+$sources = @()
+$vmparams = Join-Path $root 'vmparams'
+if (Test-Path $vmparams) { $sources += $vmparams }
+$coreBat = Join-Path $core 'starsector.bat'
+if (Test-Path $coreBat) { $sources += $coreBat }
+$why = "found no launch settings to add the agent to (no vmparams in $root)."
+foreach ($src in $sources) {
+    $text = [System.IO.File]::ReadAllText($src)
+    if ($src.EndsWith('.bat')) {
+        $m = [regex]::Match($text, '(?m)^.*java[w]?\.exe"?\s.*$')
+        if (-not $m.Success) { continue }
+        $text = $m.Value
+    }
+    $text = $text -replace '[\r\n]+', ' '
+    $tokens = @([regex]::Matches($text, '"[^"]*"|\S+') | ForEach-Object { $_.Value })
+    if ($tokens.Count -gt 0 -and $tokens[0] -match 'java[w]?(\.exe)?"?$') { $tokens = @($tokens | Select-Object -Skip 1) }
+    try { $tokens = Add-Agent $tokens } catch { $why = "$(Split-Path -Leaf $src): $($_.Exception.Message)"; continue }
+    $argLine = ($tokens -join ' ')
+    if ($DryRun) { Write-Host "Would run (in $core, from $(Split-Path -Leaf $src)): $java $argLine"; exit 0 }
+    Write-Host "Starting Starsector with Wingman's agent..."
+    $proc = Start-Process -FilePath $java -ArgumentList $argLine -WorkingDirectory $core -NoNewWindow -PassThru -Wait
+    exit $proc.ExitCode
+}
+Start-Vanilla $why
