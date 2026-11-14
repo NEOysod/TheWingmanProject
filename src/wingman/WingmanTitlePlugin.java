@@ -113,7 +113,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             "Your addresses are listed in the CO-OP panel. Read one out to your friends.",
             "Connected friends see your fleet and pick their ships; your message feed shows who picked what. Deploy those ships if you want them flown.",
             "After you deploy, everyone chooses a ship, then the ready check. Enter starts once everyone is ready; Ctrl+Enter starts regardless.",
-            "Players are numbered: you are P1, joiners P2, P3, P4. Ctrl+Shift+2 removes P2, and so on. Ctrl+Shift+T takes back the ship you have targeted.",
+            "Players are numbered: you are P1, joiners P2, P3, P4. Ctrl+Shift+2 removes P2, and so on up to P9; Ctrl+Shift+K removes whoever flies the ship you have targeted. Ctrl+Shift+T takes back the ship you have targeted.",
             "Only you can give fleet orders, pause, or change the battle speed.",
         },
         {

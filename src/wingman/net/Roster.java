@@ -59,8 +59,8 @@ public final class Roster {
             w.out.writeUTF(cap(hostName, 40));
             w.out.writeByte(hostState);
             w.out.writeUTF(cap(maxShipSize, 20));
-            w.out.writeByte(Math.min(players.size(), 16));
-            for (int i = 0; i < players.size() && i < 16; i++) {
+            w.out.writeByte(Math.min(players.size(), HostSession.MAX_PLAYERS));
+            for (int i = 0; i < players.size() && i < HostSession.MAX_PLAYERS; i++) {
                 w.out.writeUTF(cap(players.get(i).name, 40));
                 w.out.writeByte(players.get(i).slot);
             }
@@ -107,7 +107,7 @@ public final class Roster {
         r.hostState = in.readByte() & 0xFF;
         r.maxShipSize = in.readUTF();
         int np = in.readByte() & 0xFF;
-        if (np > 16) throw new IOException("too many players");
+        if (np > HostSession.MAX_PLAYERS) throw new IOException("too many players");
         for (int i = 0; i < np; i++) {
             Player p = new Player();
             p.name = HostSession.cleanName(in.readUTF());

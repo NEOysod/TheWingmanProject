@@ -43,8 +43,9 @@ final class Settings {
                 "On: every battle you start can be joined. Off: the mod does nothing in your own battles."));
         ITEMS.add(new Item(0, "password", "Join password", HOST, true, null,
                 "Type it here; friends type the same into their CO-OP panel. Empty: anyone who can reach this PC may join."));
-        ITEMS.add(new Item(0, "maxPlayers", "Players, host included", HOST, false, new String[] { "2", "3", "4", "5", "6", "8" },
-                "4 is what the mod is built and tuned for. More players means more bandwidth."));
+        ITEMS.add(new Item(0, "maxPlayers", "Players, host included", HOST, false, new String[] { "2", "3", "4", "5", "6", "8", "10", "12", "16", "24", "32", "64" },
+                "4 is what the mod is built and tuned for. More players means more bandwidth and more work for the host's PC. "
+                + "Any number up to 255 can be typed into wingman_settings.json."));
         ITEMS.add(new Item(0, "maxShipSize", "Largest ship a joiner may fly", HOST, true, new String[] { "FRIGATE", "DESTROYER", "CRUISER", "CAPITAL_SHIP" },
                 "CAPITAL_SHIP means no limit."));
         ITEMS.add(new Item(0, "readyCheck", "Ready check before a battle", HOST, false, YES_NO,

@@ -264,6 +264,8 @@ public final class HostSession {
     static final int STRANGER_MAX_RATE = 300;
     /** Connections not yet let in, in all and from one PC. */
     static final int MAX_STRANGERS = 16, MAX_STRANGERS_PER_PC = 4;
+    /** The most players a game can have, host included: as many as the messages can number (a player's P number is one byte). */
+    public static final int MAX_PLAYERS = 255;
     /** A connection that hasn't sent one whole message in this long is closed. */
     static final long SILENT_LIMIT_MS = 5000;
     private final List<Conn> strangers = new ArrayList<Conn>();
@@ -486,7 +488,7 @@ public final class HostSession {
                 if (old != null) pl.slot = old.slot;
                 else { // the lowest number nobody has
                     pl.slot = 2;
-                    for (boolean taken = true; taken; ) {
+                    for (boolean taken = true; taken && pl.slot < MAX_PLAYERS; ) {
                         taken = false;
                         for (Player q : players) if (q.slot == pl.slot) { taken = true; pl.slot++; break; }
                     }

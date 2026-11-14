@@ -238,7 +238,7 @@ public final class WingmanAPI {
 
     /** Room for at least this many players in the host's session (a PvP match of 4 v 4 needs 8). */
     public static void setPlayersAtLeast(int n) {
-        HostSession.playersAtLeast = Math.max(0, Math.min(16, n));
+        HostSession.playersAtLeast = Math.max(0, Math.min(HostSession.MAX_PLAYERS, n));
         HostSession s = HostSession.active();
         if (s != null) s.raiseCap(config().maxPlayers);
     }
