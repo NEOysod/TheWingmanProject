@@ -222,8 +222,16 @@ final class HostOrders {
          } else if (var3.kind == 4) {
             DeployedFleetMemberAPI var13 = member(var5, var2, (ShipAPI)var4.get(var3.ship));
             if (var13 != null) {
-               if ("SEARCH_AND_DESTROY".equals(var3.shipOrder) || var3.shipOrder.isEmpty()) {
+               if ("SEARCH_AND_DESTROY".equals(var3.shipOrder)) {
                   var6.orderSearchAndDestroy(var13, false);
+               } else if (var3.shipOrder.isEmpty()) {
+                  // The captain took the ship's own order off: the game's way of doing that (new in 0.98.5a),
+                  // or, failing that, search and destroy as before.
+                  try {
+                     var6.cancelDirectOrdersForMember2(var13);
+                  } catch (Throwable var14) {
+                     var6.orderSearchAndDestroy(var13, false);
+                  }
                }
             }
          } else {

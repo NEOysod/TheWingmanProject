@@ -82,6 +82,10 @@ final class SystemWatch {
     }
     /** Systems found "in use" when the game started: blocked just now, to be told to the player once. */
     final List<String> newlyBlocked = new ArrayList<String>();
+    /** Mods' battle scripts (EveryFrameCombatPlugins, by class) that crashed this PC's game last time, now guarded. */
+    final List<String> newlyGuarded = new ArrayList<String>();
+    private final Set<String> guarded = new HashSet<String>();
+    private final Set<String> guardedNew = new HashSet<String>();
     private boolean broken;
 
     static synchronized SystemWatch get() {
@@ -101,6 +105,8 @@ final class SystemWatch {
                 if (line.charAt(0) == 'T') trusted.add(id);
                 else if (line.charAt(0) == 'B') blocked.add(id);
                 else if (line.charAt(0) == 'P') { blocked.add(id); newlyBlocked.add(id); changed = true; }
+                else if (line.charAt(0) == 'G') guarded.add(id);
+                else if (line.charAt(0) == 'N') { guarded.add(id); newlyGuarded.add(id); changed = true; }
             }
             if (changed) save();
         } catch (Throwable t) {
@@ -115,10 +121,33 @@ final class SystemWatch {
         return out;
     }
 
-    /** Give every blocked system a fresh chance (the CO-OP panel's reset key). */
+    /** Mods' battle scripts run guarded on this PC (see PluginGuard), by class, in name order. */
+    List<String> guardedIds() {
+        List<String> out = new ArrayList<String>(guarded);
+        java.util.Collections.sort(out);
+        return out;
+    }
+
+    boolean isGuarded(String pluginClass) { return guarded.contains(pluginClass); }
+
+    /**
+     * A mod's battle script was in the error that is closing the game: run it guarded from the next battle on.
+     * Written at once, as the game is going down.
+     */
+    synchronized void guardFromNow(String pluginClass) {
+        if (pluginClass == null || guarded.contains(pluginClass)) return;
+        guarded.add(pluginClass);
+        guardedNew.add(pluginClass);
+        save();
+    }
+
+    /** Give every blocked system and guarded script a fresh chance (the CO-OP panel's reset key). */
     void reset() {
         blocked.clear();
         newlyBlocked.clear();
+        guarded.clear();
+        guardedNew.clear();
+        newlyGuarded.clear();
         objectivesTrying.clear();
         broken = false;
         save();
@@ -169,6 +198,7 @@ final class SystemWatch {
             for (String id : blocked) sb.append("B ").append(id).append('\n');
             for (String id : trying.keySet()) sb.append("P ").append(id).append('\n');
             for (String id : objectivesTrying) sb.append("P ").append(id).append('\n');
+            for (String id : guarded) sb.append(guardedNew.contains(id) ? "N " : "G ").append(id).append('\n');
             Global.getSettings().writeTextFileToCommon(FILE, sb.toString());
         } catch (Throwable t) {
             broken = true; // can't keep notes: carry on without the safety net rather than block systems

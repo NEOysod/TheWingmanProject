@@ -454,11 +454,23 @@ final class ClientOrders {
                   } else if ("SEARCH_AND_DESTROY".equals(var21)) {
                      var4.orderSearchAndDestroy(var38, false);
                   } else {
-                     if (!"RETREAT".equals(var40)) {
-                        continue;
+                     // The host's ship has no order of its own any more: take ours off the game's way (new in
+                     // 0.98.5a); without it, only a retreat is undone, by search and destroy, as before.
+                     boolean cancelled = false;
+                     try {
+                        var4.cancelDirectOrdersForMember2(var38);
+                        cancelled = true;
+                     } catch (Throwable var41) {
+                        // older game
                      }
 
-                     var4.orderSearchAndDestroy(var38, false);
+                     if (!cancelled) {
+                        if (!"RETREAT".equals(var40)) {
+                           continue;
+                        }
+
+                        var4.orderSearchAndDestroy(var38, false);
+                     }
                      if (!this.previousShipOrders.contains(var35)) {
                         var8 = true;
                      }

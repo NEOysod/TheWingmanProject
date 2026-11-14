@@ -470,10 +470,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     for (String line : report) if (!line.isEmpty()) Global.getLogger(WingmanTitlePlugin.class).info("Wingman   " + line);
                     e.consume();
                 }
-                else if (e.getEventValue() == 63 && !SystemWatch.get().blockedIds().isEmpty()) { // F5: switch crashed-out systems back on
-                    int n = SystemWatch.get().blockedIds().size();
+                else if (e.getEventValue() == 63 && (!SystemWatch.get().blockedIds().isEmpty() || !SystemWatch.get().guardedIds().isEmpty())) { // F5: switch crashed-out systems back on, unguard scripts
+                    int n = SystemWatch.get().blockedIds().size(), g = SystemWatch.get().guardedIds().size();
                     SystemWatch.get().reset();
-                    form.status = n + " ship system" + (n == 1 ? " is" : "s are") + " mirrored again. If the game crashes on one, it will be switched off again.";
+                    form.status = (n > 0 ? n + " ship system" + (n == 1 ? " is" : "s are") + " mirrored again" : "")
+                            + (n > 0 && g > 0 ? ", and " : "") + (g > 0 ? g + " mod battle script" + (g == 1 ? " runs" : "s run") + " as normal again" : "")
+                            + ". If the game crashes on one, Wingman steps in again.";
                     form.statusColor = Panel.GOOD;
                     e.consume();
                 }
@@ -840,6 +842,18 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             if (off.size() > 6) names.append(", and ").append(off.size() - 6).append(" more");
             d.section("Notices");
             d.callout("Switched off on this PC after a possible crash, so not shown when the host uses them: " + names + ".  F5: switch them back on.", Panel.WARN);
+        }
+        List<String> guardedScripts = SystemWatch.get().guardedIds();
+        if (!guardedScripts.isEmpty()) {
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < guardedScripts.size() && i < 4; i++) {
+                String c = guardedScripts.get(i);
+                names.append(i == 0 ? "" : ", ").append(c.substring(c.lastIndexOf('.') + 1));
+            }
+            if (guardedScripts.size() > 4) names.append(", and ").append(guardedScripts.size() - 4).append(" more");
+            if (off.isEmpty()) d.section("Notices");
+            d.callout("Mod battle scripts that crashed this PC's game, now guarded in your battles (an error switches one off instead of closing the game): "
+                    + names + ".  F5: back to normal.", Panel.WARN);
         }
         String main = canJoin ? (hostLine.isEmpty() ? "JOIN WHEN IT STARTS" : "JOIN THE BATTLE") : form.address.length() == 0 ? "SAVE NAME"
                 : state == ClientLink.State.CONNECTING ? "CONNECTING..." : "CONNECT";

@@ -173,6 +173,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** Hulls a mod's script failed to build here (logged once each). */
     private final java.util.Set<String> spawnErrors = new java.util.HashSet<String>();
     private final SystemWatch watch = SystemWatch.get();
+    private boolean guardNoticeShown;
     private boolean halted;
     private final List<MissilePuppet> recentBuilt = new ArrayList<MissilePuppet>();
     private boolean leaving, everUpdated, stallAlerted, helmHintsShown, watchNoticeShown;
@@ -231,6 +232,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     @Override
     public void init(CombatEngineAPI engine) {
         this.engine = engine;
+        CommandTap.off(); // (a ship of the last battle)
         engine.getCustomData().put(WingmanHostPlugin.CLIENT_FLAG, Boolean.TRUE);
         CampaignStandIn.giveContext(engine); // "the fleets in this battle", for scripts that ask the context
         saveRememberedShip(); // (left last time before the battle ended)
@@ -641,6 +643,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (leaveAtMillis > 0 && nowMs >= leaveAtMillis) { leaveBattle(false); return; }
         watch.tick();
+        PluginGuard.scan(engine);
+        if (!guardNoticeShown && !watch.newlyGuarded.isEmpty()) {
+            guardNoticeShown = true;
+            Ui.say(engine, "Co-op: the game closed last time on an error in these mods' battle scripts: " + watch.newlyGuarded
+                    + ". On this PC they now run guarded: if one hits an error again, it is switched off for that battle instead of"
+                    + " closing the game. To undo this, open the CO-OP panel on the title screen and press F5.");
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman: mods' battle scripts guarded here after a crash: " + watch.newlyGuarded);
+        }
         if (!watchNoticeShown && !watch.newlyBlocked.isEmpty()) {
             watchNoticeShown = true;
             Ui.say(engine, "Co-op: the game closed last time while these mod ship systems were first in use, so they are no longer "
@@ -691,6 +701,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         leaveAtMillis = 0;
         watch.objectivesSurvived();
         watch.battleEnded();
+        CommandTap.off();
+        PluginGuard.battleEnded();
         MissedLookups.log(CampaignStandIn.copyInUse());
         CampaignStandIn.remove();
         LunaCopy.restore();
@@ -5175,8 +5187,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         try {
             commandUi = engine.getCombatUI() != null && engine.getCombatUI().isShowingCommandUI();
         } catch (Throwable t) { /* older API */ }
-        boolean button = Mouse.isButtonDown(0);
-        if (!commandUi && !engine.isPaused() && button) f |= InputState.FIRE;
+        CommandTap tap = CommandTap.on(s);
+        if (tap != null && tap.live()) {
+            // The game's own commands to our ship: the fire key wherever it is bound, and every press.
+            if (tap.takeFire() && !commandUi) f |= InputState.FIRE;
+            if (tap.takeVent()) f |= InputState.VENT;
+        } else {
+            boolean button = Mouse.isButtonDown(0);
+            if (!commandUi && !engine.isPaused() && button) f |= InputState.FIRE;
+        }
         ShieldAPI shield = s.getShield();
         if (shield != null ? shield.isOn() : s.isPhased()) f |= InputState.DEFENSE;
         if (s.getSystem() != null && (s.getSystem().isActive() || s.getSystem().isOn())) f |= InputState.SYSTEM;

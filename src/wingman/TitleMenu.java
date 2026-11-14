@@ -10,15 +10,13 @@ import com.fs.state.AppState;
 
 /**
  * Hides and shows the game's own title screen menu and logo, so the co-op lobby can have the whole screen (the
- * game draws them over anything of ours). Uses the game's internals (0.98.5a: the title screen's private
- * "titleWidget", whose class has a scrambled name): if anything about them differs, hide() says no and the
+ * game draws them over anything of ours). Uses the game's internals: the title screen's private field
+ * "titleWidget" and its hide() and show(). The widget's class has a scrambled name that changes with game updates,
+ * so it is taken from the field itself, not named here. If anything about them differs, hide() says no and the
  * lobby stays the smaller box in the corner.
  */
 final class TitleMenu {
     private TitleMenu() {}
-
-    /** The menu's class in 0.98.5a: a class named Object (in 0.98a it was "Oo" and 254 more capital O's). */
-    private static final String WIDGET_CLASS = "com.fs.starfarer.title.Object";
 
     private static MethodHandle getter, hide, show;
     private static boolean broken, hidden;
@@ -30,7 +28,8 @@ final class TitleMenu {
         if (getter != null) return true;
         try {
             Class<?> title = com.fs.starfarer.title.TitleScreenState.class;
-            Class<?> widget = Class.forName(WIDGET_CLASS, false, title.getClassLoader());
+            // The field's own type (0.98.5a: com.fs.starfarer.title.Object; 0.98a: "Oo" and 254 more capital O's).
+            Class<?> widget = title.getDeclaredField("titleWidget").getType();
             // MethodHandles.privateLookupIn (Java 9 on) is looked up by name so this builds for Java 8 too.
             MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                     MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
