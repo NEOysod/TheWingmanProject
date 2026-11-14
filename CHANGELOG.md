@@ -44,6 +44,8 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   the settings (2 to 64) or in wingman_settings.json. Player colours come round again after P16, and
   **Ctrl+Shift+K** removes whoever flies the targeted ship, for players past the number keys' P9. Untested beyond a
   handful of players: more players means more bandwidth and more work for the host's PC.
+- Accepting a friend's refit no longer opens the refit screen on that ship afterwards (host setting "Reopen the
+  refit screen after a friend's refit", now off by default).
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta
