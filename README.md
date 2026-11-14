@@ -1,7 +1,7 @@
 # Wingman PvP
 
-Player-versus-player battles for [The Wingman Project](https://github.com/NEOysod/thewingmanproject), a co-op
-multiplayer mod for Starsector 0.98a.
+Player-versus-player battles for [The Wingman Project](https://github.com/NEOysod/TheWingmanProject), a co-op
+multiplayer mod for Starsector 0.98.5a. Public beta test.
 
 - Needs The Wingman Project with PvP support, the same version on every PC, and the same mod list everywhere
   (Wingman checks it).

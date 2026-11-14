@@ -2,7 +2,7 @@
     "id": "wingman_pvp",
     "name": "Wingman PvP",
     "author": "NEOysod",
-    "version": "0.1.1-alpha",
+    "version": "0.1.1-beta",
     "description": "Player-versus-player battles for The Wingman Project. Pick Multiplayer PvP Battles at any bar, host or join, set up teams of up to 4 in the lobby and fight with the fleets from your own saves. Nothing in anyone's save changes.",
     "gameVersion": "0.98.5a",
     "dependencies": [
