@@ -8,7 +8,7 @@ each fly a ship from the host's fleet, side by side, in real time.
 
 ---
 
-## New in 0.9.3-beta (test builds)
+## New in 0.9.3-beta
 
 - **For Starsector 0.98.5a-RC5.** It does not run on 0.98a: the game's internals it uses were renamed. Everyone
   updates the game and Wingman together.
