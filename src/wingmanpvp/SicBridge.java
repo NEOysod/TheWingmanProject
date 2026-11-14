@@ -3,7 +3,10 @@ package wingmanpvp;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.CampaignFleetAPI;
 import com.fs.starfarer.api.characters.PersonAPI;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,7 +16,8 @@ import java.util.List;
  * from each ship's fleet when the ship is made. So a team fights with its captain's executive officers if the battle
  * fleet holds an SCData with them: the other team's fleet gets one made here (and is tagged so the mod doesn't give it
  * random NPC ones), and the host's fleet has the host's swapped for the captain's for the battle, put back after.
- * All by name: without the mod nothing happens, and any failure leaves the battle as it would have been.
+ * All by name, through method handles (the game's script sandbox refuses java.lang.reflect): without the mod
+ * nothing happens, and any failure leaves the battle as it would have been.
  */
 final class SicBridge {
    private SicBridge() {
@@ -32,17 +36,48 @@ final class SicBridge {
    }
 
    private static Class<?> cls(String n) throws ClassNotFoundException {
-      return Class.forName(n, true, Global.getSettings().getScriptClassLoader());
+      ClassLoader l = SicBridge.class.getClassLoader();
+      try { l = Global.getSettings().getScriptClassLoader(); } catch (Throwable t) { /* outside the game (tests) */ }
+      return Class.forName(n, true, l);
    }
 
-   private static Object call(Object on, String name, Object... args) throws Exception {
-      Class<?> c = on instanceof Class ? (Class<?>) on : on.getClass();
-      for (Method m : c.getMethods()) {
-         if (m.getName().equals(name) && m.getParameterTypes().length == args.length) {
-            return m.invoke(on instanceof Class ? null : on, args);
-         }
+   /** For tests: are all of Second in Command's methods this needs there, as named? */
+   static void checkNames() throws Throwable { new H(); }
+
+   private static final MethodHandles.Lookup L = MethodHandles.lookup();
+
+   /** The mod's methods this needs, looked up once (exact signatures, as Second in Command 2.1 has them). */
+   private static final class H {
+      final MethodHandle playerData, activeOfficers, assignedSlot, init, addOfficer, setInSlot, getInSlot, newData,
+            aptitudeId, person, skillIds, addSkill, newOfficer, aptitudeSpec, skillSpec;
+
+      H() throws Throwable {
+         Class<?> utils = cls("second_in_command.SCUtils"), data = cls("second_in_command.SCData");
+         Class<?> officer = cls("second_in_command.specs.SCOfficer"), store = cls("second_in_command.specs.SCSpecStore");
+         Class<?> aptSpec = cls("second_in_command.specs.SCAptitudeSpec"), skSpec = cls("second_in_command.specs.SCSkillSpec");
+         playerData = L.findStatic(utils, "getPlayerData", MethodType.methodType(data));
+         activeOfficers = L.findVirtual(data, "getActiveOfficers", MethodType.methodType(List.class));
+         assignedSlot = L.findVirtual(data, "getOfficersAssignedSlot", MethodType.methodType(Integer.class, officer));
+         init = L.findVirtual(data, "init", MethodType.methodType(void.class));
+         addOfficer = L.findVirtual(data, "addOfficerToFleet", MethodType.methodType(void.class, officer));
+         setInSlot = L.findVirtual(data, "setOfficerInSlot", MethodType.methodType(void.class, int.class, officer));
+         getInSlot = L.findVirtual(data, "getOfficerInSlot", MethodType.methodType(officer, int.class));
+         newData = L.findConstructor(data, MethodType.methodType(void.class, CampaignFleetAPI.class));
+         aptitudeId = L.findVirtual(officer, "getAptitudeId", MethodType.methodType(String.class));
+         person = L.findVirtual(officer, "getPerson", MethodType.methodType(PersonAPI.class));
+         skillIds = L.findVirtual(officer, "getActiveSkillIDs", MethodType.methodType(Set.class));
+         addSkill = L.findVirtual(officer, "addSkill", MethodType.methodType(void.class, String.class));
+         newOfficer = L.findConstructor(officer, MethodType.methodType(void.class, PersonAPI.class, String.class));
+         aptitudeSpec = L.findStatic(store, "getAptitudeSpec", MethodType.methodType(aptSpec, String.class));
+         skillSpec = L.findStatic(store, "getSkillSpec", MethodType.methodType(skSpec, String.class));
       }
-      throw new NoSuchMethodException(c.getName() + "." + name);
+   }
+
+   private static H h;
+
+   private static H h() throws Throwable {
+      if (h == null) h = new H();
+      return h;
    }
 
    /** The player's executive officers in their slots (in the campaign, at the captain's end). */
@@ -52,21 +87,22 @@ final class SicBridge {
          return out;
       }
       try {
-         Object data = call(cls("second_in_command.SCUtils"), "getPlayerData");
-         for (Object o : (List<?>) call(data, "getActiveOfficers")) {
-            Object slot = call(data, "getOfficersAssignedSlot", o);
+         H m = h();
+         Object data = m.playerData.invoke();
+         for (Object o : (List<?>) m.activeOfficers.invoke(data)) {
+            Object slot = m.assignedSlot.invoke(data, o);
             if (!(slot instanceof Integer) || (Integer) slot < 0 || (Integer) slot >= FleetPack.MAX_EXECS) {
                continue;
             }
             FleetPack.Exec e = new FleetPack.Exec();
             e.slot = (Integer) slot;
-            e.aptitudeId = String.valueOf(call(o, "getAptitudeId"));
+            e.aptitudeId = String.valueOf(m.aptitudeId.invoke(o));
             try {
-               e.name = ((PersonAPI) call(o, "getPerson")).getNameString();
+               e.name = ((PersonAPI) m.person.invoke(o)).getNameString();
             } catch (Throwable t) {
                e.name = "";
             }
-            for (Object id : (Iterable<?>) call(o, "getActiveSkillIDs")) {
+            for (Object id : (Iterable<?>) m.skillIds.invoke(o)) {
                if (e.skills.size() < FleetPack.MAX_EXEC_SKILLS) {
                   e.skills.add(String.valueOf(id));
                }
@@ -101,9 +137,7 @@ final class SicBridge {
       }
       Saved saved = null;
       try {
-         Class<?> store = cls("second_in_command.specs.SCSpecStore");
-         Class<?> dataCls = cls("second_in_command.SCData");
-         Class<?> officerCls = cls("second_in_command.specs.SCOfficer");
+         H m = h();
          PersonAPI me = Global.getSector().getPlayerPerson();
          if (player) {
             saved = new Saved();
@@ -117,20 +151,20 @@ final class SicBridge {
                fleet.removeScript((com.fs.starfarer.api.EveryFrameScript) old);
             }
          }
-         Object data = dataCls.getConstructor(CampaignFleetAPI.class).newInstance(fleet);
+         Object data = m.newData.invoke(fleet);
          fleet.getMemoryWithoutUpdate().set(KEY, data);
          if (player) {
             me.getMemoryWithoutUpdate().set(KEY, data);
             saved.made = data;
          }
-         call(data, "init");
+         m.init.invoke(data);
          if (player && data instanceof com.fs.starfarer.api.EveryFrameScript) {
             // The host's own SCData stays the fleet's script; this one only has to be found for the battle.
             fleet.removeScript((com.fs.starfarer.api.EveryFrameScript) data);
          }
          int n = 0;
          for (FleetPack.Exec e : execs) {
-            if (call(store, "getAptitudeSpec", e.aptitudeId) == null) {
+            if (m.aptitudeSpec.invoke(e.aptitudeId) == null) {
                notes.add("Second in Command: " + captain + "'s aptitude " + e.aptitudeId + " isn't in this game, left out.");
                continue;
             }
@@ -142,14 +176,14 @@ final class SicBridge {
             } catch (Throwable t) {
                // a name doesn't matter in a battle
             }
-            Object o = officerCls.getConstructor(PersonAPI.class, String.class).newInstance(p, e.aptitudeId);
+            Object o = m.newOfficer.invoke(p, e.aptitudeId);
             for (String id : e.skills) {
-               if (call(store, "getSkillSpec", id) != null) {
-                  call(o, "addSkill", id);
+               if (m.skillSpec.invoke(id) != null) {
+                  m.addSkill.invoke(o, id);
                }
             }
-            call(data, "addOfficerToFleet", o);
-            call(data, "setOfficerInSlot", e.slot, o);
+            m.addOfficer.invoke(data, o);
+            m.setInSlot.invoke(data, e.slot, o);
             n++;
          }
          if (n > 0) {
@@ -171,8 +205,8 @@ final class SicBridge {
          if (s.made != null) {
             for (int i = 0; i < FleetPack.MAX_EXECS; i++) {
                try {
-                  if (call(s.made, "getOfficerInSlot", i) != null) {
-                     call(s.made, "setOfficerInSlot", i, null);
+                  if (h().getInSlot.invoke(s.made, i) != null) {
+                     h().setInSlot.invoke(s.made, i, null);
                   }
                } catch (Throwable t) {
                   break;
