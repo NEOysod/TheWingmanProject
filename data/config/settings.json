@@ -1,0 +1,5 @@
+{
+    "plugins": {
+        "wingman_pvp_battle": "wingmanpvp.PvpBattlePlugin"
+    }
+}
