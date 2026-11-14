@@ -32,7 +32,7 @@ public final class BattleReport {
         public float damageDealt, shieldDamageDealt, damageTaken;
     }
 
-    public static final int MAX_LOST = 12, MAX_PILOTS = 16;
+    public static final int MAX_LOST = 12, MAX_PILOTS = HostSession.MAX_PLAYERS;
 
     private static String cap(String s, int n) { return s == null ? "" : s.length() > n ? s.substring(0, n) : s; }
 

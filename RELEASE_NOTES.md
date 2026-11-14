@@ -34,6 +34,8 @@ each fly a ship from the host's fleet, side by side, in real time.
 - Clearing a ship's own order (PvP captains, and joiners' copies of the host's orders) uses the game's own way.
 - **Fast Rendering 1.0** (and FR Resource Cache): the .bat launcher finds `fr.bat` and starts the game through
   it with Wingman's agent; old Mikohime setups made for FR's old class loader are skipped.
+- **No player cap of 16 any more** (up to 255; settings offer up to 64). Ctrl+Shift+K removes the player flying
+  the targeted ship.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI` (see Wingman PvP).
 - Protocol 61.
 

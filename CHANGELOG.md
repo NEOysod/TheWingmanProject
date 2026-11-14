@@ -42,6 +42,10 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
 - **The launcher always starts the game:** with no Mikohime, Fast Rendering or other launcher it uses the normal
   game's settings (vmparams, or starsector-core's starsector.bat); if the agent can't be added (no Java, no agent
   jar, settings it can't read) it starts starsector.exe without it, and says why.
+- **No 16-player cap any more:** a game can have up to 255 players (as many as its messages can number), set in
+  the settings (2 to 64) or in wingman_settings.json. Player colours come round again after P16, and
+  **Ctrl+Shift+K** removes whoever flies the targeted ship, for players past the number keys' P9. Untested beyond a
+  handful of players: more players means more bandwidth and more work for the host's PC.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta

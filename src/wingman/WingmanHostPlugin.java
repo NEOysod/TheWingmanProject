@@ -2,6 +2,7 @@ package wingman;
 
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -670,6 +671,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         Ui.say(engine, "Co-op: removed " + p.name + ". They cannot rejoin until you restart the game.");
     }
 
+    /** Ctrl+Shift+K: remove the player flying the targeted ship (any P number, past the number keys' P9). */
+    private void kickTargeted() {
+        ShipAPI mine = engine.getPlayerShip();
+        ShipAPI target = mine == null ? null : mine.getShipTarget();
+        HostSession.Player p = target == null ? null : pilotOf(target);
+        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press Ctrl+Shift+K to remove that player."); return; }
+        kick(p.slot);
+    }
+
     /** Ctrl+Shift+T: take the targeted ship back from the player flying it. */
     private void takeBack() {
         ShipAPI mine = engine.getPlayerShip();
@@ -793,12 +803,13 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the settings page failed", t);
         }
         if (!session.getPlayers().isEmpty()) {
-            for (InputEventAPI e : events) { // host controls: Ctrl+Shift+number removes a player, Ctrl+Shift+T takes a ship back
+            for (InputEventAPI e : events) { // host controls: Ctrl+Shift+number removes a player (Ctrl+Shift+K: the one flying the targeted ship), Ctrl+Shift+T takes a ship back
                 if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown()) continue;
                 int key = e.getEventValue();
                 try {
                     if (key >= 2 && key <= 10) { kick(key - 1); e.consume(); }
                     else if (key == 20) { takeBack(); e.consume(); }
+                    else if (key == 37) { kickTargeted(); e.consume(); } // K
                 } catch (Throwable t) {
                     Global.getLogger(WingmanHostPlugin.class).warn("Wingman: host control failed", t);
                 }
@@ -849,11 +860,24 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         lines.add("P1  " + lobby.hostName + " (host):  " + lobby.expected + " ships in the battle");
         colors.add(Panel.TEXT);
         int loading = 0, choosing = 0, readyN = 0;
-        for (Lobby.Entry e : lobby.players) {
-            lines.add(lobby.describe(e));
+        // A big game: those still to get ready come first, and at most 12 lines (the counts below cover everyone).
+        List<Lobby.Entry> shown = new ArrayList<Lobby.Entry>(lobby.players);
+        if (shown.size() > 12) {
+            Collections.sort(shown, new java.util.Comparator<Lobby.Entry>() {
+                public int compare(Lobby.Entry a, Lobby.Entry b) { return Boolean.compare(a.ready, b.ready); }
+            });
+        }
+        int listed = 0;
+        for (Lobby.Entry e : shown) {
             boolean chose = !e.ship.isEmpty() || e.watching;
             if (!lobby.isSynced(e)) loading++; else if (!chose) choosing++; else if (e.ready) readyN++;
+            if (listed++ >= 12) continue;
+            lines.add(lobby.describe(e));
             colors.add(!lobby.isSynced(e) ? Panel.WARN : e.skipped > 0 ? Panel.BAD : !chose ? Panel.WARN : e.ready ? Panel.GOOD : Panel.TEXT);
+        }
+        if (shown.size() > 12) {
+            lines.add("...and " + (shown.size() - 12) + " more");
+            colors.add(Panel.DIM);
         }
         if (!lobby.players.isEmpty()) {
             lines.add("1. Loading: " + loading + "     2. Choosing a ship: " + choosing + "     3. Ready: " + readyN + " of " + lobby.players.size());
@@ -865,7 +889,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             colors.add(Panel.DIM);
             footer = "Enter: start without waiting";
         } else if (lobby.allReady()) {
-            footer = "Everyone is ready.  Enter: start the battle     Ctrl+Shift+2...: remove that player";
+            footer = "Everyone is ready.  Enter: start the battle     Ctrl+Shift+2...: remove that player (K: the targeted ship's)";
         } else {
             if (waitNoted) {
                 lines.add("Waited over a minute. Ctrl+Enter starts now; anyone still loading catches up as the battle runs.");

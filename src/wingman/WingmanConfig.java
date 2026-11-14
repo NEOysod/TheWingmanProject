@@ -333,7 +333,11 @@ public final class WingmanConfig {
         if (c.password.length() > 32) c.password = c.password.substring(0, 32); // the join form takes 32
         if (!(c.syncTolerance >= 0f)) c.syncTolerance = 1f;
         c.syncTolerance = Math.min(4f, c.syncTolerance);
-        c.maxPlayers = Math.max(2, Math.min(16, c.maxPlayers));
+        if (c.maxPlayers > wingman.net.HostSession.MAX_PLAYERS) {
+            Global.getLogger(WingmanConfig.class).warn("Wingman: maxPlayers " + c.maxPlayers + " is more than a game can number; using "
+                    + wingman.net.HostSession.MAX_PLAYERS);
+        }
+        c.maxPlayers = Math.max(2, Math.min(wingman.net.HostSession.MAX_PLAYERS, c.maxPlayers));
         c.snapshotRate = Math.max(5, Math.min(60, c.snapshotRate));
         if (c.port < 1024 || c.port > 65535) c.port = 24816;
     }

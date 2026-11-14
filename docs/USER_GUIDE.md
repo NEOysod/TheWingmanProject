@@ -73,8 +73,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
 **What only the host can do**
 - Give fleet orders. Joiners see them but cannot give any.
 - Pause, and change the battle speed.
-- Remove a player: **Ctrl+Shift+** their number (Ctrl+Shift+2 removes P2). They cannot rejoin until you
-  restart the game.
+- Remove a player: **Ctrl+Shift+** their number (Ctrl+Shift+2 removes P2, up to P9), or target the ship they
+  fly and press **Ctrl+Shift+K** (any player). They cannot rejoin until you restart the game.
 - Take a ship back from a player: target it and press **Ctrl+Shift+T**.
 - Limit how large a ship joiners may fly ("Largest ship a joiner may fly" in the settings).
 
@@ -214,6 +214,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Battle (anyone) | F3 | Hide / show the player tags and outlines |
 | Battle (host) | Enter / Ctrl+Enter | Start after the ready check / start without waiting |
 | Battle (host) | Ctrl+Shift+2…9 | Remove that player (by their P number) |
+| Battle (host) | Ctrl+Shift+K | Remove the player flying the targeted ship (any P number) |
 | Battle (host) | Ctrl+Shift+T | Take back the targeted ship |
 | Lobby (joiner, title screen) | Up / Down, F, Delete | Choose a ship in the host's fleet; pick it; drop your pick |
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
@@ -253,7 +254,7 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Show my addresses in battle | off | Host: also show your addresses in the message feed when a battle starts. |
 | Friends can join my battles | on | Off: the mod does nothing in your own battles. |
 | Join password | none | Joiners must type the same one. After 3 wrong tries from one PC, it must wait 30 seconds. |
-| Players, host included | 4 | 4 is what the mod is built for. More means more bandwidth. |
+| Players, host included | 4 | 4 is what the mod is built for. The settings offer up to 64; any number up to 255 can be typed into `wingman_settings.json`. More means more bandwidth and more work for the host's PC. |
 | Largest ship a joiner may fly | CAPITAL_SHIP | CAPITAL_SHIP means no limit. |
 | Ready check before a battle | on | Hold the battle while everyone chooses a ship, then until everyone is ready. |
 | Friends can connect on the campaign map | on | Friends connect as soon as you load a save, see your fleet and pick their ships. Off: only once a battle starts. |

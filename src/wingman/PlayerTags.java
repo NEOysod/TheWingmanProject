@@ -17,7 +17,7 @@ import com.fs.starfarer.api.ui.LabelAPI;
  * Drawn on the screen, not in the world, so the tag stays the same size at any zoom.
  */
 final class PlayerTags {
-    /** One colour per player, as many as a game can have (16), told apart from each other and from the HUD's. */
+    /** One colour per player for the first 16 (after that they come round again), told apart from each other and from the HUD's. */
     private static final Color[] COLORS = {
         new Color(110, 255, 120),  // P1: green
         new Color(90, 170, 255),   // P2: blue
@@ -65,7 +65,7 @@ final class PlayerTags {
     private boolean broken;
 
     static Color color(int slot) {
-        return slot >= 1 && slot <= COLORS.length ? COLORS[slot - 1] : COLORS[COLORS.length - 1];
+        return slot >= 1 ? COLORS[(slot - 1) % COLORS.length] : COLORS[COLORS.length - 1]; // past P16 the colours come round again
     }
 
     /**

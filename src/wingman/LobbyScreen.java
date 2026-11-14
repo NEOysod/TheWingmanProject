@@ -518,9 +518,14 @@ final class LobbyScreen {
         float y = Style.window(x, pTop - pH, w, pH, "PLAYERS", v.roster == null ? "" : String.valueOf(1 + v.roster.players.size())) - 8f;
         if (v.roster != null) {
             y = player(1, v.roster.hostName + "  (host)", null, false, px, y, pw, pTop - pH);
+            int shownN = 0;
             for (Roster.Player p : v.roster.players) {
-                if (y < pTop - pH + 30f) break;
+                if (y < pTop - pH + 50f) {
+                    text("...and " + (v.roster.players.size() - shownN) + " more", body, Panel.DIM, px, y, pw);
+                    break;
+                }
                 y = player(p.slot, p.name, v.roster.pickOf(p.name), p.name.equalsIgnoreCase(v.me), px, y, pw, pTop - pH);
+                shownN++;
             }
         }
     }
@@ -575,7 +580,13 @@ final class LobbyScreen {
         for (int i = 0; i < head.length; i++) text(head[i], Style.SMALL_FONT, Style.DIM, px + 8f + col[i] * (pw - 16f), y - (rowH - sh) / 2f, (pw - 16f) * 0.2f);
         y -= rowH;
         int rowN = 0;
+        int fits = Math.max(3, (int) ((y - (top - h) - 200f) / rowH)); // leaving room for the losses under it
         for (BattleReport.Pilot p : r.pilots) {
+            if (rowN >= fits && r.pilots.size() > fits) {
+                text("...and " + (r.pilots.size() - rowN) + " more pilots", body, Panel.DIM, px + 8f, y - (rowH - bh) / 2f, pw);
+                y -= rowH;
+                break;
+            }
             if (rowN++ % 2 == 1) fill(px, y - rowH, pw, rowH, new Color(255, 255, 255, 6));
             String[] cells = { "", p.name, p.ship.isEmpty() ? "-" : p.ship, status(p.status), String.valueOf(p.kills),
                     String.valueOf(p.fighterKills), num(p.damageDealt) + (p.shieldDamageDealt > 0 ? " (+" + num(p.shieldDamageDealt) + " shields)" : ""), num(p.damageTaken) };
