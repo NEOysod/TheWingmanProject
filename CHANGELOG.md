@@ -46,6 +46,14 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   handful of players: more players means more bandwidth and more work for the host's PC.
 - Accepting a friend's refit no longer opens the refit screen on that ship afterwards (host setting "Reopen the
   refit screen after a friend's refit", now off by default).
+- **Trusted refits** (host): in the friend refit panel (Ctrl+Shift+R), T trusts that player's refits: from then on they
+  are done as they arrive, without asking. Every check still runs; a refit that fails one waits or is refused as
+  usual. For that connection only: a reconnect asks again.
+- **Arma Armatura and other hull-size changes:** a mech that takes off or lands changes its hull size mid-battle; joiners
+  now get the same size (0.98.5a's setHullSize), so both copies count ships and fighters alike and stop resyncing.
+- **Diable Avionics' Virtuous:** taking a selector hull mod off in a friend's refit steps the ship to the next hull
+  config, weapon kit or head, as Diable's own hull mod does.
+- These three after scardwell15's pull request #1.
 - **For add-ons:** `wingman.api.Pvp` and more of `WingmanAPI`, used by Wingman PvP.
 
 ## 0.9.2-beta

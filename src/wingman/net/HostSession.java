@@ -59,6 +59,12 @@ public final class HostSession {
         public int slot;
         /** This player's next position update must be one in full: they are new, or missed the last one. */
         public boolean needKey = true;
+        /**
+         * The host trusts this player's refits: they are done as they arrive, without the host's yes (every check
+         * still runs, and a refit that fails one is refused as usual). For this connection only: a reconnect, or the
+         * host's game restarting, asks again. After scardwell15's pull request #1.
+         */
+        public volatile boolean trustedRefits;
         /** The player's own keys for mods' LunaLib settings ("mod/field" -> key code), as their game told us. */
         public volatile java.util.Map<String, Integer> lunaKeys;
 

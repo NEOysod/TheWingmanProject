@@ -730,25 +730,45 @@ final class FriendRefit {
         }
         boolean replaced = pending.remove(p.id) != null;
         pending.put(p.id, pd);
+        if (p.trustedRefits) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " done without asking (trusted): " + pd.ship);
+            if (autoAccept(pd)) return;
+            send(p, new RefitResult(RefitResult.RECEIVED, "The host trusts your refits: it will be done at the next market."));
+            return;
+        }
         send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
         CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
     }
 
     /** Each second: requests that can't be done any more are withdrawn; the others are checked again. */
     private static void keepPending(HostSession s, WingmanConfig cfg) {
-        for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
-            Pending pd = it.next();
-            if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
+        for (Pending pd : new ArrayList<Pending>(pending.values())) { // (a copy: accepting or withdrawing changes the map)
+            if (pending.get(pd.player.id) != pd) continue;
+            if (playerById(s, pd.player.id) != pd.player) { pending.remove(pd.player.id); continue; }
             // Away from a market a request waits (it is checked again at the next one); it is withdrawn only when the
             // ship can't be refitted at all any more.
             String why = refusalToPlan(pd.player, pd.request.memberId, cfg);
             if (why != null) {
-                it.remove();
+                pending.remove(pd.player.id);
                 send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
                 continue;
             }
             check(pd, member(pd.request.memberId));
+            if (pd.player.trustedRefits && !pd.acceptOnClose && pd.problems.isEmpty()) autoAccept(pd);
         }
+    }
+
+    /**
+     * A trusted player's refit done without the host's yes, as the host's own accept would: at once, or under a
+     * refit screen once it closes. False when it has to wait (not docked, or a check fails: then it stays pending).
+     */
+    static boolean autoAccept(Pending pd) {
+        if (!pd.problems.isEmpty() || dockedMarket() == null) return false;
+        com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
+        if (ui != null && ui.getCurrentCoreTab() != null) { acceptOnClose(pd); return true; }
+        String why = accept(pd);
+        if (why == null) CampaignLobby.say("Co-op: " + pd.player.name + "'s refit of " + pd.ship + " was done (you trust their refits).");
+        return why == null;
     }
 
     /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
@@ -822,6 +842,7 @@ final class FriendRefit {
         for (String id : r.removeMods) v.removeMod(id);
         for (String id : r.addMods) v.addMod(id);
         for (String id : r.buildIn) v.addPermaMod(id, true);
+        ModRefit.afterHullMods(v); // other mods' loadout switches (a Diable Virtuous selector taken off, say)
         v.setNumFluxVents(r.vents);
         v.setNumFluxCapacitors(r.caps);
         if (r.groups != null) {

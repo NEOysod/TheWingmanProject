@@ -1344,6 +1344,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Dbg.info(WingmanClientPlugin.class, "Wingman: " + describe(pp) + " is now on side " + side + " (as on the host)");
                 break;
             }
+            case Msg.HULL_SIZE: {
+                // A mod changed a ship's hull size on the host (a mech landing or taking off): the same here, so the
+                // two copies count ships and fighters alike.
+                In in = Msg.reader(p.data);
+                int id = in.readInt(), size = in.readByte();
+                if (size < 0 || size >= ShipAPI.HullSize.values().length) break;
+                Puppet pp = puppets.get(id);
+                if (pp == null) break;
+                applyHullSize(pp.ship, size);
+                if (pp.info != null) pp.info.hullSize = size;
+                Dbg.info(WingmanClientPlugin.class, "Wingman: " + describe(pp) + " is now a " + ShipAPI.HullSize.values()[size] + " hull (as on the host)");
+                break;
+            }
             case Msg.SPAWN:
                 spawn(viewed(ShipSpawn.decode(p.data)));
                 if (!hintShown && !puppets.isEmpty()) {
@@ -2768,10 +2781,20 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // An allied ship (another fleet on the player's side) is marked so, as on the host: the game shows it as an
         // ally, and it can't be taken over (the host refuses that too).
         if (sp.ally && ship != null) { try { ship.setAlly(true); } catch (Throwable t) { /* shown as the player's */ } }
+        applyHullSize(ship, sp.hullSize); // a size a mod gave it in battle on the host (ShipAPI.setHullSize, 0.98.5a)
         // Arma Armatura sends a strikecraft that needs repairs to a carrier by itself. Here that is the host's
         // decision (a LANDING message says when): its own off switch is set for good on every copy.
         try { if (ship != null) ship.getCustomData().put(WingmanHostPlugin.ARMAA_NO_REFIT, 1e9f); } catch (Throwable t) { /* no such mod: nothing to do */ }
         return ship;
+    }
+
+    /** A ship's hull size set as on the host, if a mod changed it there (setHullSize is new in 0.98.5a). */
+    private static void applyHullSize(ShipAPI ship, int ordinal) {
+        if (ship == null || ordinal < 0 || ordinal >= ShipAPI.HullSize.values().length) return;
+        try {
+            ShipAPI.HullSize want = ShipAPI.HullSize.values()[ordinal];
+            if (ship.getHullSize() != want) ship.setHullSize(want);
+        } catch (Throwable t) { /* shown at its hull's size */ }
     }
 
     /**

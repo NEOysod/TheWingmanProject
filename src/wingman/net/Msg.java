@@ -103,6 +103,7 @@ public final class Msg {
     public static final byte WISH = 68;
     /** host -> joiner: every player's wish list and what is set aside for them (WishMessage.List). */
     public static final byte WISH_LIST = 69;
+    public static final byte HULL_SIZE = 70;    // host -> joiner: int ship, byte hull size (a mod changed it in battle: a mech landing or taking off)
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

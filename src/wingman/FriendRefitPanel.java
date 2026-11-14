@@ -79,6 +79,14 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 else if (key == 205) at = (at + 1) % list.size();                              // Right
                 else if (key == 32) { deny(list.get(at)); break; }                             // D: deny (the list changed)
                 else if (key == 30) { if (accept(list.get(at))) break; }                       // A: accept
+                else if (key == 20) {                                                          // T: trust this player's refits, or stop
+                    FriendRefit.Pending pd = list.get(at);
+                    pd.player.trustedRefits = !pd.player.trustedRefits;
+                    if (pd.player.trustedRefits) {
+                        say("You trust " + pd.player.name + "'s refits: from now on they are done as they arrive (checks still run). T again to stop.", Panel.WARN);
+                        if (pd.problems.isEmpty() && FriendRefit.autoAccept(pd)) break;
+                    } else say(pd.player.name + "'s refits need your yes again.", Panel.GOOD);
+                }
             }
         } catch (Throwable t) {
             open = false;
@@ -314,8 +322,12 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         else if (pd.problems.isEmpty()) d.callout("All checks pass.", Panel.GOOD);
         else for (String p : pd.problems) d.callout(p, Panel.BAD);
         if (!pd.request.addMods.isEmpty()) d.line("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.", Panel.DIM);
+        d.section("Trust");
+        d.line(pd.player.trustedRefits ? "You trust " + pd.player.name + "'s refits: they are done as they arrive, without asking (checks still run)."
+                : "T trusts " + pd.player.name + "'s refits from now on: done as they arrive, without asking (checks still run). Until they reconnect.",
+                pd.player.trustedRefits ? Panel.WARN : Panel.DIM);
         if (!message.isEmpty()) d.callout(message, messageColor);
-        d.keys("A: accept     D: deny     " + (count > 1 ? "Left: previous     Right: next     " : "") + "Esc: close");
+        d.keys("A: accept     D: deny     T: " + (pd.player.trustedRefits ? "stop trusting" : "trust") + " their refits     " + (count > 1 ? "Left: previous     Right: next     " : "") + "Esc: close");
         return d;
     }
 

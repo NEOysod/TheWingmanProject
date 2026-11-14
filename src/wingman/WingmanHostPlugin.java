@@ -955,8 +955,49 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         byte[] msg = sp.encode();
         spawnMsgs.put(id, msg);
         sides.put(id, sp.owner);
+        sizes.put(id, hullSizeOf(s));
         session.broadcast(Msg.SPAWN, msg);
         return id;
+    }
+
+    /** Each ship's hull size as last reported (ShipAPI.HullSize ordinal). */
+    private final Map<Integer, Integer> sizes = new HashMap<Integer, Integer>();
+
+    private static int hullSizeOf(ShipAPI s) {
+        try { return s.getHullSize() == null ? -1 : s.getHullSize().ordinal(); } catch (Throwable t) { return -1; }
+    }
+
+    /** The ship's hull size if a mod has changed it from its hull's, else -1. */
+    private static int changedHullSize(ShipAPI s) {
+        try {
+            if (s.getHullSize() != null && s.getHullSpec() != null && s.getHullSize() != s.getHullSpec().getHullSize()) return s.getHullSize().ordinal();
+        } catch (Throwable t) { /* as its hull */ }
+        return -1;
+    }
+
+    /**
+     * A mod changed a ship's hull size in battle (Arma Armatura's mechs as they take off and land, some drone
+     * systems): joiners are told, and the description a late joiner gets says the size it is now. The game counts
+     * ships and fighters by hull size, so without this the two copies disagree for as long as the ship lives.
+     * After an idea in scardwell15's pull request #1.
+     */
+    private void checkHullSize(int id, ShipAPI s) {
+        int now = hullSizeOf(s);
+        Integer was = sizes.get(id);
+        if (now < 0 || (was != null && was == now)) return;
+        sizes.put(id, now);
+        try {
+            byte[] old = spawnMsgs.get(id);
+            if (old != null) {
+                ShipSpawn sp = ShipSpawn.decode(old);
+                sp.hullSize = changedHullSize(s);
+                spawnMsgs.put(id, sp.encode());
+            }
+        } catch (Throwable t) { /* a late joiner sees the hull's size until the HULL_SIZE below reaches it */ }
+        Msg.W w = new Msg.W();
+        try { w.out.writeInt(id); w.out.writeByte(now); } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+        session.broadcast(Msg.HULL_SIZE, w.done());
+        Dbg.info(WingmanHostPlugin.class, "Wingman: ship " + id + " (" + s.getHullSpec().getHullId() + ") is now a " + s.getHullSize() + " hull; joiners told");
     }
 
     /** The side each ship was last reported on. */
@@ -1020,7 +1061,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = e.getValue();
             boolean gone = !present.contains(s);
             boolean dead = !gone && (s.isHulk() || !s.isAlive());
-            if (!gone && !dead) { checkSide(e.getKey(), s); continue; }
+            if (!gone && !dead) { checkSide(e.getKey(), s); checkHullSize(e.getKey(), s); continue; }
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle (see below), unless
             // there are already more wrecks than are worth keeping track of.
             boolean part = false;
@@ -1241,6 +1282,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         sp.netId = id;
         sp.owner = s.getOwner();
         try { sp.ally = s.isAlly(); } catch (Throwable t) { /* not an ally */ }
+        sp.hullSize = changedHullSize(s);
         sp.hullId = s.getHullSpec().getHullId();
         sp.name = s.getName() == null ? "" : s.getName();
         sp.x = s.getLocation().x;

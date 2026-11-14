@@ -25,6 +25,8 @@ public final class ShipSpawn {
     public int vents, caps;
     /** An allied ship (owner 0, but another fleet's): shown and treated as an ally, not as the player's. */
     public boolean ally;
+    /** The ship's hull size (ShipAPI.HullSize ordinal) as it is now, if a mod changed it from its hull's (-1: the hull's). */
+    public int hullSize = -1;
     public float x, y, facing;
     /** Combat readiness, 0..1. */
     public float cr = 1f;
@@ -146,6 +148,7 @@ public final class ShipSpawn {
             if (captain != null) captain.write(w.out);
             w.out.writeInt(fleetKey);
             w.out.writeBoolean(ally);
+            w.out.writeByte(hullSize + 1); // (0: as its hull)
         } catch (IOException e) { throw new IllegalStateException(e); }
         return w.done();
     }
@@ -217,6 +220,10 @@ public final class ShipSpawn {
         if (in.readBoolean()) s.captain = Person.read(in);
         s.fleetKey = in.readInt();
         if (in.remaining() > 0) s.ally = in.readBoolean();
+        if (in.remaining() > 0) {
+            s.hullSize = (in.readByte() & 0xFF) - 1;
+            if (s.hullSize < -1 || s.hullSize >= com.fs.starfarer.api.combat.ShipAPI.HullSize.values().length) s.hullSize = -1;
+        }
         return s;
     }
 }
