@@ -32,8 +32,6 @@ no longer runs on 0.98a. The host and every joiner update the game and Wingman t
   CO-OP panel lists them; F5 puts them back to normal, with the ship systems.
 - Clearing a ship's own order uses the game's `cancelDirectOrdersForMember2` (PvP captains' orders on the host,
   and joiners' copies of the host's orders, which before only undid a retreat).
-- The title menu is found by its field alone, so a renamed menu class after a game update no longer stops the
-  lobby taking the whole screen.
 - **Launcher and Fast Rendering 1.0:** the .bat finds FR 1.0's `fr.bat` (in starsector-core, settings in
   `fr.vmparams`) and adds the agent under FR's (and FR Resource Cache's) own agent lines. A Mikohime setup made
   for FR's old class loader, which FR 1.0 no longer has, is noticed and skipped instead of failing to start.
