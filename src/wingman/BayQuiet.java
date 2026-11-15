@@ -56,7 +56,9 @@ final class BayQuiet {
 
     private static boolean ready(Class<?> bayClass) throws Throwable {
         ClassLoader cl = bayClass.getClassLoader();
-        Class<?> pending = Class.forName("com.fs.starfarer.combat.ai.N$Oo", false, cl);
+        Class<?> pending; // the replacement record: 0.98.5a-RC6 M$Oo, RC5 N$Oo
+        try { pending = Class.forName("com.fs.starfarer.combat.ai.M$Oo", false, cl); }
+        catch (ClassNotFoundException e) { pending = Class.forName("com.fs.starfarer.combat.ai.N$Oo", false, cl); }
         Class<?> timer = Class.forName("com.fs.starfarer.util.IntervalTracker", false, cl);
         Class<?> sparks = Class.forName("com.fs.starfarer.renderers.fx.super", false, cl);
         MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",

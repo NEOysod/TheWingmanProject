@@ -18,8 +18,8 @@ import com.fs.state.AppState;
 final class TitleMenu {
     private TitleMenu() {}
 
-    /** The menu's class in 0.98.5a: a class named Object (in 0.98a it was "Oo" and 254 more capital O's). Checked by test/InternalsCheck. */
-    private static final String WIDGET_CLASS = "com.fs.starfarer.title.Object";
+    /** The menu's class by game build, newest first: 0.98.5a-RC6 "C", RC5 "Object" (0.98a: "Oo" and 254 more capital O's). Checked by test/InternalsCheck. */
+    private static final String[] WIDGET_CLASSES = { "com.fs.starfarer.title.C", "com.fs.starfarer.title.Object" };
 
     private static MethodHandle getter, hide, show;
     private static boolean broken, hidden;
@@ -32,7 +32,12 @@ final class TitleMenu {
         try {
             Class<?> title = com.fs.starfarer.title.TitleScreenState.class;
             // By name: the game's script sandbox refuses java.lang.reflect (so not the field's own type).
-            Class<?> widget = Class.forName(WIDGET_CLASS, false, title.getClassLoader());
+            Class<?> widget = null;
+            ClassNotFoundException missing = null;
+            for (String n : WIDGET_CLASSES) {
+                try { widget = Class.forName(n, false, title.getClassLoader()); break; } catch (ClassNotFoundException e) { missing = e; }
+            }
+            if (widget == null) throw missing;
             // MethodHandles.privateLookupIn (Java 9 on) is looked up by name so this builds for Java 8 too.
             MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                     MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));

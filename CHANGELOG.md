@@ -4,6 +4,13 @@
 
 Same protocol: an older joiner just doesn't get the new hull-size and officer messages.
 
+- **Starsector 0.98.5a-RC6.** The hotfix renamed the game internals behind the full-screen lobby, starting the join
+  battle from the title screen, script messages in battle, matching wreck break-ups, held-back objectives, quiet
+  carrier bays and teleporting systems; all found again (RC5 names kept as the fallback). The build now reads the
+  battle message feed's names from the game itself (`tools/GameNames`). Host and joiners still need the same RC.
+- **Joiners' manual fire works again.** The fire key gives the game's "use selected group" command, not "fire", so
+  the joiner's game never saw it as fire once it read the command queue: the host's copy of the ship held fire.
+
 - **Trusted refits** (host): in the friend refit panel (Ctrl+Shift+R), T trusts that player's refits: from then on they
   are done as they arrive, without asking. Every check still runs; a refit that fails one waits or is refused as
   usual. For that connection only: a reconnect asks again.

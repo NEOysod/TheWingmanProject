@@ -26,7 +26,11 @@ final class TitleLauncher {
     private TitleLauncher() {}
 
     /** A mission's spec (its id, its script) and a mission prepared from one: scrambled names, 0.98.5a. */
-    private static final String MISSION_SPEC = "com.fs.starfarer.title.Object.N", MISSION = "com.fs.starfarer.title.Object.K";
+    /** The mission spec and mission classes by game build, newest first: 0.98.5a-RC6, RC5. */
+    private static final String[][] MISSION_CLASSES = {
+        { "com.fs.starfarer.title.ooOO.Oo0O", "com.fs.starfarer.title.ooOO.o0oO" },
+        { "com.fs.starfarer.title.Object.N", "com.fs.starfarer.title.Object.K" },
+    };
 
     /** Set when the join mission was started from here: back on the title screen, the game shows its missions list. */
     static volatile boolean launched;
@@ -49,8 +53,16 @@ final class TitleLauncher {
         try {
             ClassLoader cl = TitleScreenState.class.getClassLoader();
             Class<?> store = Class.forName("com.fs.starfarer.loading.SpecStore", false, cl);
-            Class<?> specClass = Class.forName(MISSION_SPEC, false, cl);
-            Class<?> missionClass = Class.forName(MISSION, false, cl);
+            Class<?> specClass = null, missionClass = null;
+            ClassNotFoundException missing = null;
+            for (String[] names : MISSION_CLASSES) {
+                try {
+                    specClass = Class.forName(names[0], false, cl);
+                    missionClass = Class.forName(names[1], false, cl);
+                    break;
+                } catch (ClassNotFoundException e) { specClass = null; missing = e; }
+            }
+            if (specClass == null) throw missing;
             MethodHandles.Lookup l = MethodHandles.publicLookup();
             MethodHandle list = l.findStatic(store, "new", MethodType.methodType(List.class));
             MethodHandle id = l.findVirtual(specClass, "\u00D500000", MethodType.methodType(String.class)); // the mission's id

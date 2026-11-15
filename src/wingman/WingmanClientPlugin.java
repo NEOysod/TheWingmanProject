@@ -4305,7 +4305,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int scriptEndsSeen, scriptEndsLocal, scriptEndsPlain, tendedTold;
     private final Set<String> plainEndWarned = new HashSet<String>();
     /** Classes of ship system that teleport the ship: learned from the game's own teleporters as they are met. */
-    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.null"));
+    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.int", "com.fs.starfarer.combat.systems.null")); // RC6, RC5
 
     /**
      * Does this system move the ship by teleporting it? Such a system works out where it is going at the
