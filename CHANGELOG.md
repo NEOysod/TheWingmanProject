@@ -8,6 +8,20 @@ Same protocol: an older joiner just doesn't get the new hull-size and officer me
   battle from the title screen, script messages in battle, matching wreck break-ups, held-back objectives, quiet
   carrier bays and teleporting systems; all found again (RC5 names kept as the fallback). The build now reads the
   battle message feed's names from the game itself (`tools/GameNames`). Host and joiners still need the same RC.
+- **Joiners upload far less.** Controls went up to 60 times a second while the mouse moved (holding a key at 60
+  FPS), and each change was sent three times over UDP: about 12 KB/s per joiner in the logs, more than the host sent.
+  Now a key or button change goes at once, the mouse and heading at most 30 times a second, and a change is repeated
+  once.
+- **Steady controls: less delay, no catch-up bursts.** The delay follows the 90th percentile of recent lateness (at
+  most 80 ms) instead of the worst arrival (up to 120 ms, as the logs showed), and changes gently, so a calmer link
+  no longer makes a burst of controls skipped.
+- **Back in your ship after a refresh.** After a resync the joiner sat back down only if the host's answer came after
+  the ship was rebuilt; otherwise they were left in the stand-in with no controls. Now it keeps trying for 15 s.
+- **One slow link no longer slows everyone.** When a joiner's link backs up, that joiner alone gets a bandwidth limit
+  (their updates trimmed to what matters most to them) and everyone keeps 30 updates a second; before, the rate
+  dropped for all.
+- **Updates packed once for many.** Joiners who hold the same updates get the same bytes, packed once (the host's
+  main cost per joiner). In tests: 38% fewer packs with 5 joiners, 1% more bytes.
 - **Joiners' manual fire works again.** The fire key gives the game's "use selected group" command, not "fire", so
   the joiner's game never saw it as fire once it read the command queue: the host's copy of the ship held fire.
 

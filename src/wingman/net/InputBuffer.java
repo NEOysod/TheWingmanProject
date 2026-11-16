@@ -13,11 +13,14 @@ import java.util.List;
  * <ul>
  * <li>Every set the joiner sends carries the joiner's clock and the two sets before it (redundant copies), so a
  * lost datagram is made good by the next one without waiting for a resend.</li>
- * <li>The host learns how late sets usually arrive (the quickest arrival is the base) and how much that varies
- * (the jitter), and plays each set at its joiner time + base + jitter: a small, steady delay in place of an
- * uneven one. The jitter allowance is measured over the last few seconds and kept between 0 and 120 ms.</li>
- * <li>At most one set a frame while on time, so a short tap lasts at least a frame; if the joiner has got more
- * than the allowance behind (the host hitched), it skips to the newest due set to catch up.</li>
+ * <li>The host learns how late sets usually arrive (the quickest arrival is the base) and how much that varies:
+ * the allowance is the 90th percentile of the last two seconds' lateness plus a few milliseconds, at most 80 ms.
+ * Each set is played at its joiner time + base + allowance: a small, steady delay in place of an uneven one. A
+ * rare late datagram (one in ten or fewer) doesn't raise the delay for everyone, it is just a little late.</li>
+ * <li>The allowance changes gently: up by at most 4 ms a frame, down by at most 1 ms a frame, so a change in the
+ * link never makes a burst of sets due at once (that is what "skipped to catch up" counted in 0.9.3).</li>
+ * <li>At most one set a frame while on time, so a short tap lasts at least a frame; a little behind (more than two
+ * frames), two a frame until caught up; far behind (the host hitched), it skips to the newest due set.</li>
  * </ul>
  * Edge presses (ship system, retreat) are counted in the controls, so nothing here can lose or double them.
  *
@@ -27,7 +30,9 @@ public final class InputBuffer {
     /** Copies of earlier sets sent with each one. */
     public static final int COPIES = 2;
     /** Most extra delay allowed for jitter, and how long a measuring window is. */
-    public static final int MAX_DELAY_MS = 120, WINDOW_MS = 3000;
+    public static final int MAX_DELAY_MS = 80, WINDOW_MS = 2000;
+    /** Lateness samples kept (two seconds of sets at up to 60 a second, roughly). */
+    private static final int SAMPLES = 128;
 
     private static final class Item {
         int seq, t;
@@ -41,7 +46,11 @@ public final class InputBuffer {
     private long lastPlayedAt;
     // (host ms - joiner ms) for the quickest arrival, this window and the last; and the largest lateness over that
     private long baseNow = Long.MAX_VALUE, basePrev = Long.MAX_VALUE, windowAt;
-    private int spreadNow, spreadPrev;
+    // Recent arrivals: when (host ms) and how far off (host ms - joiner ms), newest at sampleAt - 1
+    private final long[] sampleTime = new long[SAMPLES], sampleOff = new long[SAMPLES];
+    private int sampleAt, sampleCount;
+    /** The allowance being moved toward its target, ms. */
+    private float delay;
     /** For the log: sets that came only as a copy (their own datagram was lost), and catch-ups. */
     public int recovered, skipped, played;
     /** The delay being added right now, ms. */
@@ -94,11 +103,28 @@ public final class InputBuffer {
     }
 
     private void measure(long now, int t) {
-        if (now - windowAt > WINDOW_MS) { basePrev = baseNow; spreadPrev = spreadNow; baseNow = Long.MAX_VALUE; spreadNow = 0; windowAt = now; }
+        if (now - windowAt > WINDOW_MS) { basePrev = baseNow; baseNow = Long.MAX_VALUE; windowAt = now; }
         long off = now - t;
         if (off < baseNow) baseNow = off;
-        long late = off - base();
-        if (late > spreadNow) spreadNow = (int) Math.min(late, 10000);
+        sampleTime[sampleAt] = now;
+        sampleOff[sampleAt] = off;
+        sampleAt = (sampleAt + 1) % SAMPLES;
+        if (sampleCount < SAMPLES) sampleCount++;
+    }
+
+    /** The allowance the link needs: 90th percentile of the last two seconds' lateness, plus a margin. */
+    int target(long now) {
+        long base = base();
+        int n = 0;
+        int[] late = new int[sampleCount];
+        for (int i = 0; i < sampleCount; i++) {
+            if (now - sampleTime[i] > WINDOW_MS) continue;
+            late[n++] = (int) Math.max(0, Math.min(10000, sampleOff[i] - base));
+        }
+        if (n == 0) return 0;
+        java.util.Arrays.sort(late, 0, n);
+        int p90 = late[Math.min(n - 1, (int) Math.ceil(n * 0.9) - 1)];
+        return Math.min(MAX_DELAY_MS, p90 + 4);
     }
 
     private long base() { return Math.min(baseNow, basePrev); }
@@ -108,13 +134,21 @@ public final class InputBuffer {
         if (queue.isEmpty()) return;
         long base = base();
         if (base == Long.MAX_VALUE) return;
-        delayMs = Math.min(MAX_DELAY_MS, Math.max(spreadNow, spreadPrev));
+        int want = target(now);
+        if (want > delay) delay = Math.min(want, delay + 4f);
+        else delay = Math.max(want, delay - 1f);
+        delayMs = Math.round(delay);
         Item first = queue.get(0);
         long due = first.t + base + delayMs;
         if (due > now) return;
+        long behind = now - due;
         int take = 1;
-        // Behind by more than the allowance: catch up to the newest set that is due.
-        while (take < queue.size() && queue.get(take).t + base + delayMs <= now && now - due > delayMs + 20) take++;
+        if (behind > delayMs + 100) {
+            // Far behind (the host hitched): catch up to the newest set that is due.
+            while (take < queue.size() && queue.get(take).t + base + delayMs <= now) take++;
+        } else if (behind > 34 && queue.size() > 1 && queue.get(1).t + base + delayMs <= now) {
+            take = 2; // a little behind: two this frame (counted presses travel in every set, so none is lost)
+        }
         Item it = queue.get(take - 1);
         skipped += take - 1;
         for (int i = 0; i < take; i++) queue.remove(0);
@@ -125,5 +159,5 @@ public final class InputBuffer {
         played++;
     }
 
-    public void clear() { queue.clear(); any = false; }
+    public void clear() { queue.clear(); any = false; sampleCount = 0; sampleAt = 0; delay = 0f; delayMs = 0; baseNow = Long.MAX_VALUE; basePrev = Long.MAX_VALUE; }
 }

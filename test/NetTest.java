@@ -335,6 +335,8 @@ public class NetTest {
             bump(cs); host.broadcastUpdate(cs);
             k0 = waitFor(clients.get(0), Msg.SNAPSHOT_D, host); k1 = waitFor(clients.get(1), Msg.SNAPSHOT_D, host);
             check("after that, players are sent only the changes", k0 != null && k0.data[0] == 0 && k1 != null && k1.data[0] == 0);
+            check("players who hold the same update get the very same bytes, packed once (" + host.sharedSends + " shared)",
+                    java.util.Arrays.equals(k0.data, k1.data) && host.sharedSends >= 1);
             clients.get(1).send(Msg.NEED_KEY, Msg.EMPTY);
             long kEnd = System.currentTimeMillis() + 2000; boolean asked = false;
             while (System.currentTimeMillis() < kEnd && !asked) { host.pump(); for (HostSession.Player p : host.getPlayers()) if (p.needKey) asked = true; Thread.sleep(10); }
@@ -531,18 +533,52 @@ public class NetTest {
             InputState into = new InputState();
             List<Integer> seen = new ArrayList<Integer>();
             boolean onePerFrame = true;
+            int maxDelay = 0;
             for (long now = 5000; now < 6500; now += 16) {
                 for (int i = 0; i < arrivals.size(); i++) if (arriveAt.get(i) > now - 16 && arriveAt.get(i) <= now) buf.arrive(arrivals.get(i), now);
                 int before = buf.played;
                 buf.playOut(now, into);
                 if (buf.played - before > 1) onePerFrame = false;
+                maxDelay = Math.max(maxDelay, buf.delayMs);
                 if (buf.played > before) seen.add((int) into.mouseX);
             }
             boolean inOrder = true;
             for (int i = 1; i < seen.size(); i++) if (seen.get(i) <= seen.get(i - 1)) inOrder = false;
             check("steady controls: sets played in order, one a frame, lost ones made good from copies, a few skipped when late (" + seen.size() + " of 60, "
-                    + buf.recovered + " from copies, " + buf.delayMs + " ms added, " + buf.skipped + " skipped)",
-                    inOrder && onePerFrame && seen.size() + buf.skipped >= 58 && buf.skipped <= 4 && buf.recovered >= 10 && buf.delayMs <= InputBuffer.MAX_DELAY_MS);
+                    + buf.recovered + " from copies, " + buf.delayMs + " ms added, at most " + maxDelay + ", " + buf.skipped + " skipped)",
+                    inOrder && onePerFrame && seen.size() + buf.skipped >= 58 && buf.skipped <= 4 && buf.recovered >= 10 && maxDelay <= InputBuffer.MAX_DELAY_MS);
+        }
+
+        // steady controls: a steady link with one datagram in twenty very late keeps a small delay, and a link that
+        // calms down lowers it gently (no burst of sets skipped to catch up)
+        {
+            InputBuffer buf = new InputBuffer();
+            Random jr = new Random(9);
+            List<byte[]> sets = new ArrayList<byte[]>(); List<Integer> times = new ArrayList<Integer>();
+            InputState into = new InputState();
+            int calmDelay = -1, roughDelay = -1, skippedAfterCalm = 0;
+            java.util.TreeMap<Long, List<byte[]>> due = new java.util.TreeMap<Long, List<byte[]>>();
+            for (int i = 1; i <= 600; i++) { // a set every 33 ms for 20 s
+                InputState is = new InputState(); is.seq = i; is.mouseX = i;
+                sets.add(0, is.encode()); times.add(0, 1000 + i * 33);
+                while (sets.size() > InputBuffer.COPIES + 1) { sets.remove(sets.size() - 1); times.remove(times.size() - 1); }
+                long jitter = i < 300 ? jr.nextInt(60) : jr.nextInt(8);  // rough for 10 s, then calm
+                if (jr.nextInt(20) == 0) jitter += 150;                   // one in twenty very late
+                long at = 5000L + i * 33 + 40 + jitter;
+                List<byte[]> dl = due.get(at); if (dl == null) due.put(at, dl = new ArrayList<byte[]>());
+                dl.add(InputBuffer.bundle(sets, times));
+            }
+            for (long now = 5000; now < 26000; now += 16) {
+                for (List<byte[]> dl : due.subMap(now - 16, false, now, true).values()) for (byte[] b : dl) buf.arrive(b, now);
+                int sk = buf.skipped;
+                buf.playOut(now, into);
+                if (now > 5000 + 300 * 33 + 40) skippedAfterCalm += buf.skipped - sk;
+                if (now == 5000 + 16 * 600) roughDelay = buf.delayMs;
+                if (now == 5000 + 16 * 1250) calmDelay = buf.delayMs;
+            }
+            check("steady controls: rare very late datagrams don't raise the delay; a calmer link lowers it gently (rough " + roughDelay
+                    + " ms, calm " + calmDelay + " ms, " + skippedAfterCalm + " skipped while it came down)",
+                    roughDelay > 0 && roughDelay <= 70 && calmDelay < roughDelay && calmDelay <= 30 && skippedAfterCalm <= 3);
         }
 
         // ready check: a joiner's report reaches the host, and the lobby list round-trips

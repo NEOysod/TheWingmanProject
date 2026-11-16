@@ -66,7 +66,7 @@ import wingman.net.Snapshot;
 public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private static final String NO_DAMAGE = "wingman_puppet";
     private static final float HULL_TRICKLE = 0.0001f;
-    private static final float INPUT_RATE = 60f, INPUT_FLOOR = 15f;
+    private static final float INPUT_RATE = 60f, MOUSE_RATE = 30f, INPUT_FLOOR = 15f;
     private byte[] lastControls;
     private long lastInputSentNanos, lastAsteroidSweep;
     private int inputsSent;
@@ -177,7 +177,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private boolean halted;
     private final List<MissilePuppet> recentBuilt = new ArrayList<MissilePuppet>();
     private boolean leaving, everUpdated, stallAlerted, helmHintsShown, watchNoticeShown;
-    private long leaveAtMillis, retreatNowUntil, lastResyncAt;
+    private long leaveAtMillis, retreatNowUntil, lastResyncAt, reboardUntil;
     private boolean retreatOffered;
     /** What Enter does on the alert that is showing: 0 dismiss it, 1 leave the battle, 2 leave and rejoin. */
     private int alertAction;
@@ -505,6 +505,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         removeLocalStrays();
         prof.mark(1);
         takeRememberedShip();
+        reboard();
         watchPlayerShip(conn);
         sendSubsystems(conn);
         reportReady(conn);
@@ -594,29 +595,33 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             ownErrSum = 0f; ownErrN = 0; ownWorst = 0f; ownSnaps = 0;
         }
 
-        // Our controls are looked at every frame and sent at once when anything about them has changed (a key,
-        // the mouse, the heading), up to 60 times a second. While nothing changes they are repeated 15 times a second.
-        // (Both timers allow a few milliseconds' slack: frames don't land exactly on the tick, and waiting for
-        // the next frame each time would turn 15 a second into 10.)
-        // By UDP a set of controls can be lost on the way and is not sent again by the network, so a change is
-        // repeated in the next two frames (the host takes each numbered set once).
-        if (udpRepeats > 0 && lastControls != null && link.controlsByUdp()) {
+        // Our controls are looked at up to 60 times a second. A key or button pressed or let go (or another group,
+        // target, autofire, a counted press) is sent at once; the mouse and the heading alone at most 30 times a
+        // second (the host's updates come 30 times a second, so more told it nothing new: 0.9.3 sent up to 60 while
+        // the mouse moved, the main part of a joiner's upload). While nothing changes they are repeated 15 times a
+        // second. (The timers allow a few milliseconds' slack: frames don't land exactly on the tick.)
+        // By UDP a set can be lost on the way and is not sent again by the network, so a key change is repeated
+        // once in the next frame (the host takes each numbered set once). Not with steady controls: there every
+        // datagram already carries the two sets before it.
+        if (udpRepeats > 0 && lastControls != null && link.controlsByUdp() && !link.steady) {
             udpRepeats--;
             link.sendControls(lastControls, decoder.ackEpoch(), decoder.ackTick());
         }
         boolean floorDue = nowNanos - lastInputSentNanos >= (long) (1000000000L / INPUT_FLOOR) - 6000000L;
-        if (floorDue || nowNanos - lastInputSentNanos >= (long) (1000000000L / INPUT_RATE) - 3000000L) {
+        boolean mouseDue = nowNanos - lastInputSentNanos >= (long) (1000000000L / MOUSE_RATE) - 3000000L;
+        if (nowNanos - lastInputNanos >= (long) (1000000000L / INPUT_RATE) - 3000000L) {
             lastInputNanos = nowNanos;
             captureInput(own);
             byte[] controls = input.encode();
-            if (floorDue || InputState.differ(controls, lastControls)) {
+            boolean edge = InputState.edgeDiffer(controls, lastControls);
+            if (floorDue || edge || (mouseDue && InputState.differ(controls, lastControls))) {
                 // Numbered, and the moment noted, so the host's answer can be matched to it (see reconcile()).
                 input.seq = ++ownSeq;
                 controls = input.encode();
                 seqNumber[ownSeq & 255] = ownSeq;
                 seqClock[ownSeq & 255] = clock;
                 if (link.sendControls(controls, decoder.ackEpoch(), decoder.ackTick())) {
-                    if (!floorDue) udpRepeats = 2;
+                    udpRepeats = edge && !floorDue ? 1 : 0;
                     lastControls = controls;
                     lastInputSentNanos = nowNanos;
                     inputsSent++;
@@ -673,9 +678,33 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         resyncs++;
         lastResyncAt = nowMs;
         reboardId = ownId;
+        reboardUntil = nowMs + 15000L;
         Global.getLogger(WingmanClientPlugin.class).warn("Wingman guard: " + why + "; asking the host for everything again (" + resyncs + " of 5)");
         Ui.say(engine, "Co-op: refreshing your copy of the battle from the host.");
         link.getConn().send(Msg.SYNC_REQ, Msg.EMPTY);
+    }
+
+    /**
+     * After a refresh of the whole battle: sit back down in the ship we were flying, as soon as it has been built
+     * again and while we sit in the stand-in. Tried on the host's answer and then every frame, for up to 15 seconds
+     * (0.9.3 tried only once, on the host's answer, which can come before the ship is rebuilt; then the player was
+     * left in the stand-in with no controls). Sitting down goes the usual way (watchPlayerShip): the host is asked
+     * for the ship, our controls go to it, and the other copies are made inert again.
+     */
+    private void reboard() {
+        if (reboardId < 0) return;
+        if (System.currentTimeMillis() > reboardUntil) { reboardId = -1; return; }
+        ShipAPI now = engine.getPlayerShip();
+        if (now != placeholder) {
+            Puppet in = byShip.get(now);
+            if (in != null && in.netId == reboardId) reboardId = -1; // already back in it
+            return;
+        }
+        Puppet back = puppets.get(reboardId);
+        if (back == null || back.ship == null || !back.ship.isAlive()) return; // not built again yet
+        engine.setPlayerShipExternal(back.ship);
+        Global.getLogger(WingmanClientPlugin.class).info("Wingman: back in our ship after the refresh");
+        reboardId = -1;
     }
 
     /** The notice shown while trying to get back in. Once dismissed it stays away, unless forced. */
@@ -1475,12 +1504,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     }
                     rejoinShip = -1;
                 }
-                // After a refresh of the whole battle, sit back down in the ship we were flying.
-                if (reboardId >= 0 && id == reboardId && puppets.containsKey(id) && engine.getPlayerShip() == placeholder) {
-                    engine.setPlayerShipExternal(puppets.get(id).ship);
-                    lastPlayerShip = puppets.get(id).ship;
-                }
-                reboardId = -1;
+                // After a refresh of the whole battle, sit back down in the ship we were flying (see reboard()). The
+                // host says which ship is ours: if that is another one (ours was lost meanwhile), there is nothing to
+                // go back to.
+                if (reboardId >= 0 && id != reboardId) reboardId = -1;
+                reboard();
                 // If the host has seen our latest request and still says the ship we sit in isn't ours, step out.
                 Puppet in2 = byShip.get(engine.getPlayerShip());
                 if (seq == claimSeq && in2 != null && in2.netId != ownId) toPlaceholder();

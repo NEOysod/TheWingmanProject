@@ -552,8 +552,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 // If anyone's link was too backed up to take this update, the next one carries everything again,
                 // and updates are sent less often for a while: fewer that arrive beat more that don't.
                 Snapshot update = buildSnapshot(full);
-                boolean taken;
+                boolean taken, perPlayer = false;
                 if (cfg.compactUpdates && !codecBroken) {
+                    perPlayer = true;
                     try {
                         // To each player as changes since the last update they hold; in full for one who holds none.
                         taken = session.broadcastUpdate(update);
@@ -562,11 +563,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         Global.getLogger(WingmanHostPlugin.class).error("Wingman: packing updates as changes failed; "
                                 + "they are sent in the old, larger format for the rest of this battle", t);
                         taken = session.broadcastDroppable(Msg.SNAPSHOT, update.encode());
+                        perPlayer = false;
                     }
                 } else {
                     taken = session.broadcastDroppable(Msg.SNAPSHOT, update.encode());
                 }
-                if (!taken) {
+                if (!taken && perPlayer) {
+                    // A link backed up: that player alone is limited (see Budget.choked), the rate stays.
+                    Dbg.info(WingmanHostPlugin.class, "Wingman guard: a link backed up; " + session.describeLimits());
+                } else if (!taken) {
                     fullNext = true;
                     lastSkipNanos = now;
                     int slower = Math.max(Math.min(8, cfg.snapshotRate), rate * 2 / 3);

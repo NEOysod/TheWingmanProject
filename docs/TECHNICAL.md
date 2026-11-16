@@ -249,10 +249,14 @@ lurch. With it:
   TCP) with its own clock and the two sets before it (`ClientLink.sentSets`), so a lost datagram is made good by
   the next without a resend.
 - The host queues sets by number (copies and old ones dropped, `recovered` counted), learns the usual lateness
-  (quickest arrival = base, over two 3 s windows) and its spread (the jitter, capped at 120 ms), and plays each set
-  at its joiner time + base + jitter: a small steady delay instead of an uneven one.
-- One set a frame while on time, so a tap lasts at least a frame. More than the allowance behind (the host
-  hitched): skips to the newest due (`skipped`). Nothing for a second: starts over.
+  (quickest arrival = base, over two 2 s windows) and the allowance: the 90th percentile of the last two seconds'
+  lateness + 4 ms, at most 80 ms (0.9.3: the largest lateness in the window, up to 120 ms, so one late datagram
+  raised everyone's delay for seconds). Each set plays at its joiner time + base + allowance.
+- The allowance moves gently toward its target: up at most 4 ms a frame, down at most 1 ms a frame. (0.9.3 jumped
+  when a window rolled over, which made a burst of sets due at once: the "skipped to catch up" in the logs.)
+- One set a frame while on time, so a tap lasts at least a frame; more than two frames behind, two a frame until
+  caught up; more than the allowance + 100 ms behind (the host hitched): skips to the newest due (`skipped`).
+  Nothing for a second: starts over.
 - Edge presses (system, retreat) are counts in the controls, so nothing here can lose or double them.
 - The traffic line in the log adds per player: sets played, the delay added, sets made good from copies, skips.
 
@@ -291,8 +295,11 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   of flight), at least every two refresh intervals.
 - **Wrecks** are sent when knocked off course (3 units, 2°) or every ~4 s.
 - **Rate** (`snapshotRate`, default 30/s; measured with `SyncBench`, 30 is as smooth as 60 and smoother over an
-  uneven link, at about two thirds of the bytes): when a link refuses an update, the next is full and the rate drops to
-  two thirds (not below 8); after 5 clean seconds it climbs back by a fifth of the setting.
+  uneven link, at about two thirds of the bytes): the rate stays put when one player's link backs up. That player
+  gets a limit of their own (`Budget.choked`: 70% of what their updates needed, at least 6 KB/s) and their next
+  update is in full; from then their updates are trimmed by priority (5.4), what matters least to them waiting.
+  The limit rises by a quarter every 5 clean seconds and is dropped once it is 1.5x what the battle needs. (0.9.3
+  dropped everyone's rate to two thirds instead.) The old rate drop remains only for the old format.
 
 ### 5.3 The compact form (`SnapshotCodec`)
 
@@ -327,11 +334,19 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   costs nothing measurable. At `CARRY` (30) quiet updates in a row an entity must be sent, or is forgotten by both ends. The
   decoder hands the game every entity it holds, sent or carried; ids the joiner no longer has are passed over.
   It refuses an update that would leave it holding over 30,000 ships or missiles.
-- **Per-player encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
+- **Packed once, sent to many** (`HostSession.plan`). Players who share an encoder (the same remembered updates)
+  and are to get an update built on the same one get the very same bytes, packed once. Keys taken at the same tick
+  share a new encoder (new epoch); the periodic TCP keys fall on ticks that are a multiple of 120 (or after 240), so
+  TCP players meet; UDP players on one encoder are built on an update all of them have acknowledged (each player's
+  acked ticks are kept, `Player.holds`) if it is at most 6 updates older than their own newest, else that player goes
+  on a copy (`Encoder.copy`: same epoch, the immutable states shared). A player with a bandwidth limit is packed for
+  alone. `test/wingman/net/LaneTest` (3 UDP players with 1-5 updates of delay and 5-15% loss, 2 TCP; 900 updates):
+  every update right, 2,800 packs instead of 4,500, 1% more bytes.
+- **Encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
   unchanged entities sharing arrays. Over TCP each update is built on the previous; over UDP on the newest tick
   the player acknowledged, if still held. Otherwise a **key** (measured against zeros), always by TCP and taken as
   held at once. Keys also go to new players, after a refused send, on `NEED_KEY`/`SYNC_REQ`, after falling back
-  from UDP, and every 120 updates over TCP (`KEY_EVERY`).
+  from UDP, and periodically over TCP (`KEY_EVERY`, see above).
 - **Decoder results:** `READ` (acknowledged), `OLD` (reordered or duplicate: ignored), `NOTHING_TO_BUILD_ON` (the
   joiner sends `NEED_KEY`, at most every 200 ms). A new epoch wipes the ring; a read error leaves it untouched.
 - **Shots survive loss.** The host sends each weapon's running shot total (8 bits); the decoder reports the
@@ -772,8 +787,11 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   slack is used.
 - **Controls** (`captureInput`): movement keys, fire (not in the command screen or paused), shield/phase, system
   uses (a running count; `noteSystemUse`), vent, fighter pull-back, retreat, mouse, target, autofire mask, selected
-  group (`Groups`), heading. Sent on any change up to 60/s and at least 15/s; over UDP a change is sent on the
-  next two frames too. On autopilot only the autopilot flag goes.
+  group (`Groups`), heading. Looked at up to 60/s. A key or button change (anything but the mouse and the
+  heading: `InputState.edgeDiffer`) is sent at once; the mouse and heading alone at most 30/s (the update rate;
+  0.9.3 sent up to 60/s while the mouse moved, the main part of a joiner's upload); at least 15/s. Over UDP a key
+  change is sent once more in the next frame (not with steady controls, whose datagrams carry the two sets
+  before). On autopilot only the autopilot flag goes.
 - **System readiness:** `matchSystemReadiness` copies the host's charges after 1.5 s of disagreement and clears a
   local cooldown the host doesn't have after 1 s; `confirmSystemUse` resends a use once after 0.8 s and logs it if
   the host never responds.
