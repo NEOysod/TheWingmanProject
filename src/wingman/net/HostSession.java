@@ -683,8 +683,8 @@ public final class HostSession {
      * Packed once, sent to many: players whose packer has remembered the same updates and who are to get an
      * update built on the same one share one packer and get the very same bytes (packing is the host's main cost
      * per player). They stay together as long as they can: players starting at the same moment, or taking an
-     * update in full at the same moment, share; the periodic updates in full by TCP fall on the same ticks for
-     * everyone, so TCP players come together within seconds; UDP players on one packer are built on an update all
+     * update in full at the same moment, share (the periodic ones by TCP are kept apart on purpose: all at once
+     * they would be a spike on the host's upload); UDP players on one packer are built on an update all
      * of them have read if that is at most 6 updates (0.2 s) older than a player's newest (else that player goes its own
      * way, on a copy). With a bandwidth limit (Budget), each player is packed for alone, as before.
      *
@@ -763,11 +763,9 @@ public final class HostSession {
             if (!p.needKey && p.encoder != null) {
                 if (p.udp) { int a = p.ackTick; base = p.encoder.has(a) ? a : -1; } // (read once: the UDP thread moves it)
                 else {
-                    p.sinceKey++;
-                    // The periodic update in full on the same ticks for everyone (when it is due), so that TCP
-                    // players who took one meet on one packer.
-                    boolean due = p.sinceKey >= KEY_EVERY * 2 || (p.sinceKey >= KEY_EVERY / 2 && tick % KEY_EVERY == 0);
-                    base = due ? -1 : p.baseTick;
+                    // The periodic update in full, on each player's own count: never several players' at the same
+                    // moment (updates in full are big, and all at once they would be a spike on the host's upload).
+                    base = ++p.sinceKey < KEY_EVERY ? p.baseTick : -1;
                 }
             }
             p.wantBase = base;

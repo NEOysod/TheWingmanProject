@@ -336,8 +336,8 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   It refuses an update that would leave it holding over 30,000 ships or missiles.
 - **Packed once, sent to many** (`HostSession.plan`). Players who share an encoder (the same remembered updates)
   and are to get an update built on the same one get the very same bytes, packed once. Keys taken at the same tick
-  share a new encoder (new epoch); the periodic TCP keys fall on ticks that are a multiple of 120 (or after 240), so
-  TCP players meet; UDP players on one encoder are built on an update all of them have acknowledged (each player's
+  share a new encoder (new epoch); the periodic TCP keys stay on each player's own count, never all at once (keys are
+  big, and together they would be a spike on the host's upload); UDP players on one encoder are built on an update all of them have acknowledged (each player's
   acked ticks are kept, `Player.holds`) if it is at most 6 updates older than their own newest, else that player goes
   on a copy (`Encoder.copy`: same epoch, the immutable states shared). A player with a bandwidth limit is packed for
   alone. `test/wingman/net/LaneTest` (3 UDP players with 1-5 updates of delay and 5-15% loss, 2 TCP; 900 updates):
@@ -346,7 +346,7 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   unchanged entities sharing arrays. Over TCP each update is built on the previous; over UDP on the newest tick
   the player acknowledged, if still held. Otherwise a **key** (measured against zeros), always by TCP and taken as
   held at once. Keys also go to new players, after a refused send, on `NEED_KEY`/`SYNC_REQ`, after falling back
-  from UDP, and periodically over TCP (`KEY_EVERY`, see above).
+  from UDP, and every 120 updates over TCP (`KEY_EVERY`).
 - **Decoder results:** `READ` (acknowledged), `OLD` (reordered or duplicate: ignored), `NOTHING_TO_BUILD_ON` (the
   joiner sends `NEED_KEY`, at most every 200 ms). A new epoch wipes the ring; a read error leaves it untouched.
 - **Shots survive loss.** The host sends each weapon's running shot total (8 bits); the decoder reports the

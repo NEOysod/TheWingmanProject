@@ -688,18 +688,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * After a refresh of the whole battle: sit back down in the ship we were flying, as soon as it has been built
      * again and while we sit in the stand-in. Tried on the host's answer and then every frame, for up to 15 seconds
      * (0.9.3 tried only once, on the host's answer, which can come before the ship is rebuilt; then the player was
-     * left in the stand-in with no controls). Sitting down goes the usual way (watchPlayerShip): the host is asked
+     * left in the stand-in, or in the host's flagship, with no controls of their own). Sitting down goes the usual way (watchPlayerShip): the host is asked
      * for the ship, our controls go to it, and the other copies are made inert again.
      */
     private void reboard() {
         if (reboardId < 0) return;
         if (System.currentTimeMillis() > reboardUntil) { reboardId = -1; return; }
         ShipAPI now = engine.getPlayerShip();
-        if (now != placeholder) {
-            Puppet in = byShip.get(now);
-            if (in != null && in.netId == reboardId) reboardId = -1; // already back in it
-            return;
-        }
+        Puppet in = now == null ? null : byShip.get(now);
+        if (in != null && in.netId == reboardId) { reboardId = -1; return; } // already back in it
+        // Anywhere else (the stand-in, or a ship that isn't ours: with lost messages the game could seat us in the
+        // host's flagship, the fleet's flagship here, and we were stuck there), into ours once it is built again.
         Puppet back = puppets.get(reboardId);
         if (back == null || back.ship == null || !back.ship.isAlive()) return; // not built again yet
         engine.setPlayerShipExternal(back.ship);
@@ -1507,7 +1506,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 // After a refresh of the whole battle, sit back down in the ship we were flying (see reboard()). The
                 // host says which ship is ours: if that is another one (ours was lost meanwhile), there is nothing to
                 // go back to.
-                if (reboardId >= 0 && id != reboardId) reboardId = -1;
+                if (reboardId >= 0 && id >= 0 && id != reboardId) reboardId = -1;
                 reboard();
                 // If the host has seen our latest request and still says the ship we sit in isn't ours, step out.
                 Puppet in2 = byShip.get(engine.getPlayerShip());
