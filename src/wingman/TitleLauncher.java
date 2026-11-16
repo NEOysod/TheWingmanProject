@@ -25,12 +25,18 @@ import com.fs.state.AppState;
 final class TitleLauncher {
     private TitleLauncher() {}
 
-    /** A mission's spec (its id, its script) and a mission prepared from one: scrambled names, 0.98.5a. */
-    /** The mission spec and mission classes by game build, newest first: 0.98.5a-RC6, RC5. */
-    private static final String[][] MISSION_CLASSES = {
-        { "com.fs.starfarer.title.ooOO.Oo0O", "com.fs.starfarer.title.ooOO.o0oO" },
-        { "com.fs.starfarer.title.Object.N", "com.fs.starfarer.title.Object.K" },
+    /**
+     * A mission's spec (its id, its script), a mission prepared from one, the spec store's list of them and the
+     * spec's id: scrambled names, by game build, newest first: 0.98.5a-RC7, RC6, RC5. The first set whose
+     * classes and methods are all there is used.
+     */
+    private static final String[][] MISSION_NAMES = {
+        { "com.fs.starfarer.title.C.Oo0" + repeat('O', 253), "com.fs.starfarer.title.C.K", "\u00d200000", "\u00d500000" },
+        { "com.fs.starfarer.title.ooOO.Oo0O", "com.fs.starfarer.title.ooOO.o0oO", "new", "\u00d500000" },
+        { "com.fs.starfarer.title.Object.N", "com.fs.starfarer.title.Object.K", "new", "\u00d500000" },
     };
+
+    private static String repeat(char c, int n) { StringBuilder sb = new StringBuilder(n); for (int i = 0; i < n; i++) sb.append(c); return sb.toString(); }
 
     /** Set when the join mission was started from here: back on the title screen, the game shows its missions list. */
     static volatile boolean launched;
@@ -53,21 +59,23 @@ final class TitleLauncher {
         try {
             ClassLoader cl = TitleScreenState.class.getClassLoader();
             Class<?> store = Class.forName("com.fs.starfarer.loading.SpecStore", false, cl);
-            Class<?> specClass = null, missionClass = null;
-            ClassNotFoundException missing = null;
-            for (String[] names : MISSION_CLASSES) {
-                try {
-                    specClass = Class.forName(names[0], false, cl);
-                    missionClass = Class.forName(names[1], false, cl);
-                    break;
-                } catch (ClassNotFoundException e) { specClass = null; missing = e; }
-            }
-            if (specClass == null) throw missing;
             MethodHandles.Lookup l = MethodHandles.publicLookup();
-            MethodHandle list = l.findStatic(store, "new", MethodType.methodType(List.class));
-            MethodHandle id = l.findVirtual(specClass, "\u00D500000", MethodType.methodType(String.class)); // the mission's id
-            MethodHandle make = l.findConstructor(missionClass, MethodType.methodType(void.class, specClass));
-            MethodHandle accept = l.findVirtual(TitleScreenState.class, "missionAccepted", MethodType.methodType(void.class, missionClass));
+            MethodHandle list = null, id = null, make = null, accept = null;
+            Throwable missing = null;
+            for (String[] names : MISSION_NAMES) {
+                try {
+                    Class<?> specClass = Class.forName(names[0], false, cl);
+                    Class<?> missionClass = Class.forName(names[1], false, cl);
+                    MethodHandle li = l.findStatic(store, names[2], MethodType.methodType(List.class));
+                    MethodHandle i = l.findVirtual(specClass, names[3], MethodType.methodType(String.class)); // the mission's id
+                    MethodHandle m = l.findConstructor(missionClass, MethodType.methodType(void.class, specClass));
+                    MethodHandle a = l.findVirtual(TitleScreenState.class, "missionAccepted", MethodType.methodType(void.class, missionClass));
+                    list = li; id = i; make = m; accept = a;
+                    break;
+                } catch (ClassNotFoundException e) { missing = e; }
+                catch (NoSuchMethodException e) { missing = e; }
+            }
+            if (list == null) throw missing;
             List<?> missions = (List<?>) list.invoke();
             if (missions == null) return "the game's mission list is not available";
             for (Object spec : missions) {

@@ -91,25 +91,25 @@ public class InternalsCheck {
         if (bay == null) fail("launch bay class", "none found");
         else {
             ok("launch bay class: " + show(bay));
-            hasField("BayQuiet PENDING", bay, "ØOõo00", "com.fs.starfarer.combat.ai.M$Oo", false);
-            hasField("BayQuiet TIMER", bay, "oOõo00", "com.fs.starfarer.util.IntervalTracker", false);
-            hasField("BayQuiet SPARKS", bay, "class.void$interface", "com.fs.starfarer.renderers.fx.super", false);
-            hasField("BayQuiet QUEUED", bay, "new.void$interface", "int", false);
+            hasField("BayQuiet PENDING", bay, "super.void$interface", "com.fs.starfarer.combat.ai.M$Oo", false);
+            hasField("BayQuiet TIMER", bay, "do.return$interface", "com.fs.starfarer.util.IntervalTracker", false);
+            hasField("BayQuiet SPARKS", bay, "øOõo00", "com.fs.starfarer.renderers.fx.A", false);
+            hasField("BayQuiet QUEUED", bay, "ôOõo00", "int", false);
             hasField("BayLink FIELD", bay, "õ0õo00", "com.fs.starfarer.combat.CombatFleetManager$O0", false);
         }
         // WreckDice
-        hasField("WreckDice", "com.fs.starfarer.util.Tesselator", "class", "java.util.Random", true);
+        hasField("WreckDice", "com.fs.starfarer.util.Tesselator", "Õ00000", "java.util.Random", true);
         // TitleMenu
-        hasField("TitleMenu", "com.fs.starfarer.title.TitleScreenState", "titleWidget", "com.fs.starfarer.title.C", false);
-        hasMethod("TitleMenu hide", "com.fs.starfarer.title.C", "hide", "void");
-        hasMethod("TitleMenu show", "com.fs.starfarer.title.C", "show", "void");
+        hasField("TitleMenu", "com.fs.starfarer.title.TitleScreenState", "titleWidget", "com.fs.starfarer.title.Object", false);
+        hasMethod("TitleMenu hide", "com.fs.starfarer.title.Object", "hide", "void");
+        hasMethod("TitleMenu show", "com.fs.starfarer.title.Object", "show", "void");
         // TitleLauncher
-        hasMethod("TitleLauncher missions", "com.fs.starfarer.loading.SpecStore", "new", "java.util.List");
-        hasMethod("TitleLauncher mission id", "com.fs.starfarer.title.ooOO.Oo0O", "Õ00000", "java.lang.String");
-        hasMethod("TitleLauncher accept", "com.fs.starfarer.title.TitleScreenState", "missionAccepted", "void", "com.fs.starfarer.title.ooOO.o0oO");
+        hasMethod("TitleLauncher missions", "com.fs.starfarer.loading.SpecStore", "Ò00000", "java.util.List");
+        hasMethod("TitleLauncher mission id", "com.fs.starfarer.title.C.Oo0" + new String(new char[253]).replace((char) 0, 'O'), "Õ00000", "java.lang.String");
+        hasMethod("TitleLauncher accept", "com.fs.starfarer.title.TitleScreenState", "missionAccepted", "void", "com.fs.starfarer.title.C.K");
         hasMethod("TitleLauncher back", "com.fs.starfarer.title.TitleScreenState", "backToMenu", "void");
         try {
-            Constructor<?> k = cls("com.fs.starfarer.title.ooOO.o0oO").getConstructor(cls("com.fs.starfarer.title.ooOO.Oo0O"));
+            Constructor<?> k = cls("com.fs.starfarer.title.C.K").getConstructor(cls("com.fs.starfarer.title.C.Oo0" + new String(new char[253]).replace((char) 0, 'O')));
             ok("TitleLauncher mission: " + k);
         } catch (Throwable t) { fail("TitleLauncher mission constructor", t); }
         // MessageTap, MessageSpy
@@ -130,16 +130,16 @@ public class InternalsCheck {
             } catch (Throwable t) { fail("MessageSpy as built", t); }
         }
         // ObjectiveMirror
-        hasMethod("ObjectiveMirror spec lookup", "com.fs.starfarer.loading.SpecStore", "o00000", "java.lang.Object", "java.lang.Class", "java.lang.String");
-        hasMethod("ObjectiveMirror set script", "com.fs.starfarer.loading.specs.oOOo", "Ó00000", "void", "java.lang.String");
-        hasMethod("ObjectiveMirror its script", "com.fs.starfarer.loading.specs.oOOo", "Ô00000", "com.fs.starfarer.api.combat.BattleObjectiveEffect");
+        hasMethod("ObjectiveMirror spec lookup", "com.fs.starfarer.loading.SpecStore", "super", "java.lang.Object", "java.lang.Class", "java.lang.String");
+        hasMethod("ObjectiveMirror set script", "com.fs.starfarer.loading.specs.supersuper", "Object", "void", "java.lang.String");
+        hasMethod("ObjectiveMirror its script", "com.fs.starfarer.loading.specs.supersuper", "Ô00000", "com.fs.starfarer.api.combat.BattleObjectiveEffect");
         // straight out of a battle (WingmanClientPlugin.straightOut), CampaignStandIn
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatEngine", "getStateToReturnTo", "java.lang.String");
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatEngine", "doEndOfCombatProcessing", "void");
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatState", "goToState", "void", "java.lang.String");
         hasField("straightOut", "com.fs.starfarer.title.TitleScreenState", "STATE_ID", "java.lang.String", true);
         // teleporting systems (WingmanClientPlugin.teleporters), Backdrop, GroupFire, FighterUnlock
-        hasClass("teleporter system", "com.fs.starfarer.combat.systems.int");
+        hasClass("teleporter system", "com.fs.starfarer.combat.systems.I");
         hasField("Backdrop light", "com.fs.starfarer.combat.entities.terrain.Planet", "lightColorOverride", "java.awt.Color", false);
         hasMethod("GroupFire", "com.fs.starfarer.combat.systems.WeaponGroup", "setCurrentActive", "void", "int");
         hasMethod("FighterUnlock", "com.fs.starfarer.combat.ai.M", "getLaunchCR", "float");

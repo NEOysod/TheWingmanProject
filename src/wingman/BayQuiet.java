@@ -25,10 +25,15 @@ import com.fs.starfarer.api.combat.ShipAPI;
 final class BayQuiet {
     private BayQuiet() {}
 
-    private static final String PENDING = "\u00d8O\u00f5o00";        // the replacement under way (CombatFleetManager-side record)
-    private static final String TIMER = "oO\u00f5o00";      // its build timer
-    private static final String SPARKS = "class.void$interface"; // the "being built" effect
-    private static final String QUEUED = "new.void$interface";  // further replacements asked for
+    /**
+     * The bay's fields by game build, newest first (0.98.5a-RC7, RC6/RC5): the replacement under way (its class
+     * and field), its build timer, the "being built" effect (class and field), further replacements asked for.
+     */
+    private static final String[][] NAMES = {
+        { "com.fs.starfarer.combat.ai.M$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.A", "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
+        { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
+        { "com.fs.starfarer.combat.ai.N$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
+    };
     private static boolean broken;
     private static MethodHandle getPending, setPending, setTimer, setSparks, setQueued;
     static int cleared;
@@ -56,19 +61,23 @@ final class BayQuiet {
 
     private static boolean ready(Class<?> bayClass) throws Throwable {
         ClassLoader cl = bayClass.getClassLoader();
-        Class<?> pending; // the replacement record: 0.98.5a-RC6 M$Oo, RC5 N$Oo
-        try { pending = Class.forName("com.fs.starfarer.combat.ai.M$Oo", false, cl); }
-        catch (ClassNotFoundException e) { pending = Class.forName("com.fs.starfarer.combat.ai.N$Oo", false, cl); }
         Class<?> timer = Class.forName("com.fs.starfarer.util.IntervalTracker", false, cl);
-        Class<?> sparks = Class.forName("com.fs.starfarer.renderers.fx.super", false, cl);
         MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                 MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
         MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(bayClass, MethodHandles.lookup());
-        getPending = l.findGetter(bayClass, PENDING, pending);
-        setPending = l.findSetter(bayClass, PENDING, pending);
-        setTimer = l.findSetter(bayClass, TIMER, timer);
-        setSparks = l.findSetter(bayClass, SPARKS, sparks);
-        setQueued = l.findSetter(bayClass, QUEUED, int.class);
-        return true;
+        Throwable missing = null;
+        for (String[] n : NAMES) {
+            try {
+                Class<?> pending = Class.forName(n[0], false, cl);
+                Class<?> sparks = Class.forName(n[3], false, cl);
+                MethodHandle gp = l.findGetter(bayClass, n[1], pending), sp = l.findSetter(bayClass, n[1], pending);
+                MethodHandle st = l.findSetter(bayClass, n[2], timer), ss = l.findSetter(bayClass, n[4], sparks);
+                MethodHandle sq = l.findSetter(bayClass, n[5], int.class);
+                getPending = gp; setPending = sp; setTimer = st; setSparks = ss; setQueued = sq;
+                return true;
+            } catch (ClassNotFoundException e) { missing = e; }
+            catch (NoSuchFieldException e) { missing = e; }
+        }
+        throw missing;
     }
 }

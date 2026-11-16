@@ -1,9 +1,15 @@
 # Changelog
 
-## Next (on the test branch)
+## 0.9.4-beta
 
-Same protocol: an older joiner just doesn't get the new hull-size and officer messages.
+For Starsector 0.98.5a-RC7 (and RC6/RC5: each game build's names are tried in turn). Everyone in a game needs the
+same game build and this version. Same protocol as 0.9.3.
 
+- **Starsector 0.98.5a-RC7.** The hotfix renamed game internals again (the title menu, the join mission, held-back
+  objectives, carrier bays, teleporters, the battle message feed). Each is now looked up from a table of names by
+  game build, newest first, so RC5, RC6 and RC7 all work with one jar (the message feed is built for RC7).
+- **Defaults** stay as recommended: 30 updates a second, compact and compressed updates over UDP, no bandwidth
+  limit, steady controls and the jitter buffer off (switch them on for a friend with packet loss or stutter).
 - **Starsector 0.98.5a-RC6.** The hotfix renamed the game internals behind the full-screen lobby, starting the join
   battle from the title screen, script messages in battle, matching wreck break-ups, held-back objectives, quiet
   carrier bays and teleporting systems; all found again (RC5 names kept as the fallback). The build now reads the
