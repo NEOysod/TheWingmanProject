@@ -2,6 +2,12 @@
 
 ## Next (on the test branch)
 
+- **Loadout selectors in friend refits** (Arma Armatura's strikecraft arms; Diable's Virtuous). Hidden hull mods
+  fitted on a ship now show on a joiner's refit page, as in the game's refit screen; taking one off steps it to the
+  next on the host (the mod's own hull mod does it when the host's game works out the ship's stats). A refit made in
+  the game's own screen asks for the selector it ended on, and the host steps until it is there. The arm weapons a
+  selector fits aren't asked for from the host's cargo. Read from Arma Armatura 3.3.9 (data.hullmods.armaa_weaponSwap
+  and the other swaps, after Tartiflette's selector code).
 - **Refit in the game's own refit screen** (joiner): on a ship's refit page, G puts that ship, exactly as the host
   has it, into a new mission, "Wingman: Refit". Open it from Missions, click the ship, Refit, and change what you
   like in the game's real refit screen. Back in CO-OP the changes load onto the refit page, with what the host has

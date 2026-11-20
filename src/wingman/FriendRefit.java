@@ -805,10 +805,12 @@ final class FriendRefit {
             if (!slot.weaponFits(spec)) problems.add(spec.getWeaponName() + " doesn't fit slot " + c.place + " (" + slot.getSlotSize().name().toLowerCase() + " "
                     + slot.getWeaponType().name().toLowerCase() + ").");
         }
+        boolean stepping = ModRefit.Selectors.stepping(r);
         for (String id : r.addMods) {
             try {
                 HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
-                if (spec.isHidden() || spec.isHiddenEverywhere()) problems.add(spec.getDisplayName() + " can't be fitted.");
+                // A hidden one only as where a loadout selector taken off steps to (see ModRefit.Selectors).
+                if (spec.isHiddenEverywhere() || (spec.isHidden() && !stepping)) problems.add(spec.getDisplayName() + " can't be fitted.");
                 if (hull.getBuiltInMods().contains(id)) problems.add(spec.getDisplayName() + " is built into the hull already.");
             } catch (Throwable t) { problems.add("Unknown hull mod " + id + "."); }
         }
@@ -840,7 +842,7 @@ final class FriendRefit {
             }
         }
         for (String id : r.removeMods) v.removeMod(id);
-        for (String id : r.addMods) v.addMod(id);
+        for (String id : r.addMods) if (!ModRefit.Selectors.target(id)) v.addMod(id); // (selectors are stepped to, after)
         for (String id : r.buildIn) v.addPermaMod(id, true);
         ModRefit.afterHullMods(v); // other mods' loadout switches (a Diable Virtuous selector taken off, say)
         v.setNumFluxVents(r.vents);
@@ -921,7 +923,8 @@ final class FriendRefit {
         applyTo(nv, pd);
         if (nv.hasUnassignedWeapons()) nv.assignUnassignedWeapons();
         m.setVariant(nv, false, true);
-        m.updateStats();
+        m.updateStats(); // (the hull mods' own effects run: a mod's selector taken off steps to its next one here)
+        ModRefit.Selectors.stepTo(m, r);
         // Story points for S-mods, with the bonus experience the game gives for building in.
         for (String id : r.buildIn) {
             try {

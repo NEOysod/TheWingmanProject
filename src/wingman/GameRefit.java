@@ -216,6 +216,9 @@ public final class GameRefit {
         for (String slot : slots) {
             String a = had.get(slot), b = want.get(slot);
             if (a == null ? b == null : a.equals(b)) continue;
+            // A weapon a mod's hull mod fits by itself (Arma Armatura's arms, with its selectors): the host's game fits
+            // it again when the selector steps there (ModRefit.Selectors), so it isn't asked for.
+            if (modsOwn(a) || modsOwn(b)) continue;
             if (r.changes.size() >= RefitRequest.MAX_CHANGES) break;
             RefitRequest.Change c = new RefitRequest.Change();
             c.wing = false;
@@ -254,6 +257,17 @@ public final class GameRefit {
         return r;
     }
 
+    /** A weapon only a hull mod fits (the SYSTEM hint, never dropped or sold): not one the player moves. */
+    private static boolean modsOwn(String weapon) {
+        if (weapon == null) return false;
+        try {
+            com.fs.starfarer.api.loading.WeaponSpecAPI w = Global.getSettings().getWeaponSpec(weapon);
+            return w.getAIHints().contains(WeaponAPI.AIHints.SYSTEM) && w.hasTag("no_drop");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** True if the request asks for nothing (the design was saved unchanged). */
     static boolean empty(RefitRequest r, RefitData d) {
         return r.changes.isEmpty() && r.addMods.isEmpty() && r.removeMods.isEmpty() && r.groups == null && r.vents == d.vents && r.caps == d.caps;
@@ -269,7 +283,4 @@ public final class GameRefit {
             try { Global.getCombatEngine().endCombat(0f, com.fs.starfarer.api.mission.FleetSide.PLAYER); } catch (Throwable t) { /* leave it be */ }
         }
     }
-
-    @SuppressWarnings("unused")
-    private static final Class<?> WEAPON = WeaponAPI.class; // (keeps the import list honest for older compilers)
 }

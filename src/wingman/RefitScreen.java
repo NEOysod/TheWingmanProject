@@ -459,7 +459,10 @@ final class RefitScreen {
       }
 
       for (String var11 : this.data.hullmods) {
-         if (!hiddenMod(var11)) {
+         // Hidden hull mods fitted on the ship show, as in the game's refit screen (a mod's loadout selectors:
+         // Arma Armatura's arm weapons, Diable's Virtuous; taking one off steps to the next, on the host); those
+         // hidden everywhere don't.
+         if (!hiddenEverywhere(var11)) {
             var1.add(new RefitScreen.Row(4, var11));
          }
       }
@@ -1678,6 +1681,14 @@ final class RefitScreen {
          return this.hull().getWeaponSlotAPI(var1);
       } catch (Throwable var3) {
          return null;
+      }
+   }
+
+   static boolean hiddenEverywhere(String var0) {
+      try {
+         return Global.getSettings().getHullModSpec(var0).isHiddenEverywhere();
+      } catch (Throwable var2) {
+         return false;
       }
    }
 

@@ -25,6 +25,62 @@ final class ModRefit {
     }
 
     /**
+     * Loadout selectors: hidden hull mods that a mod's own hull mod replaces, when one is taken off, with the next
+     * in its cycle, changing a weapon with it (Arma Armatura's arm weapons on its strikecraft, from Tartiflette's
+     * selector code: the hull mod's applyEffectsBeforeShipCreation sees no selector and fits the next one). The
+     * game's refit runs that as you click; on the host it runs when the ship's stats are next worked out, which a
+     * refit does (FriendRefit.accept). Taking one off from Wingman's refit page steps once. A refit made in the
+     * game's own screen (GameRefit) can have stepped several times: it asks for the selector it ended on, and the
+     * host steps until it gets there, taking off whatever the mod put on each time, at most 12 times.
+     */
+    static final class Selectors {
+        private Selectors() {}
+
+        static boolean hidden(String id) {
+            try {
+                com.fs.starfarer.api.loading.HullModSpecAPI s = Global.getSettings().getHullModSpec(id);
+                return s.isHidden() && !s.isHiddenEverywhere();
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+
+        /** A hidden hull mod asked for: one to step to, not to fit. */
+        static boolean target(String id) { return hidden(id); }
+
+        /** True if the refit takes a selector off (so hidden ones it asks for are where to step to). */
+        static boolean stepping(wingman.net.RefitRequest r) {
+            for (String id : r.removeMods) if (hidden(id)) return true;
+            return false;
+        }
+
+        /** After the refit: step each selector until the one asked for is on (or no step helps). */
+        static void stepTo(com.fs.starfarer.api.fleet.FleetMemberAPI m, wingman.net.RefitRequest r) {
+            try {
+                java.util.List<String> want = new java.util.ArrayList<String>();
+                for (String id : r.addMods) if (hidden(id)) want.add(id);
+                if (want.isEmpty() || !stepping(r)) return;
+                ShipVariantAPI v = m.getVariant();
+                java.util.Set<String> keep = new java.util.HashSet<String>();
+                for (String id : v.getNonBuiltInHullmods()) if (hidden(id) && !r.removeMods.contains(id)) keep.add(id);
+                for (int step = 0; step < 12; step++) {
+                    v = m.getVariant();
+                    for (java.util.Iterator<String> it = want.iterator(); it.hasNext();) if (v.hasHullMod(it.next())) it.remove();
+                    if (want.isEmpty()) return;
+                    java.util.List<String> stepOff = new java.util.ArrayList<String>();
+                    for (String id : v.getNonBuiltInHullmods()) if (hidden(id) && !keep.contains(id) && !r.addMods.contains(id)) stepOff.add(id);
+                    if (stepOff.isEmpty()) break;
+                    for (String id : stepOff) v.removeMod(id);
+                    m.updateStats();
+                }
+                Global.getLogger(ModRefit.class).info("Wingman: loadout selectors not all reached after a refit: " + want);
+            } catch (Throwable t) {
+                Global.getLogger(ModRefit.class).warn("Wingman: loadout selectors not stepped after a refit", t);
+            }
+        }
+    }
+
+    /**
      * Diable Avionics' Virtuous: hidden selector hull mods pick its hull config (and ship system), left and right
      * weapon kits and head weapon. Taking a selector off makes Diable's master hull mod put on the next one in its
      * cycle when the ship is next built; the hull config step needs a live ship, which a fleet member at the host's
