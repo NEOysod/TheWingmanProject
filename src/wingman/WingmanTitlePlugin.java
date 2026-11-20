@@ -331,9 +331,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     if (cfg == null) cfg = WingmanConfig.load();
                     wingman.net.Roster.Member mine = roster.pickOf(HostSession.cleanName(cfg.playerName));
                     JoinSetup.lobbyPick = mine == null ? null : new String[] { mine.shipName, mine.hullName };
-                    StringBuilder names = new StringBuilder(roster.hostName).append(" (host)");
-                    for (wingman.net.Roster.Player rp : roster.players) names.append(", ").append(rp.name);
-                    withHost = names.toString();
+                    withHost = inThisGame(roster);
                     if (!refitMember.isEmpty()) { // friend refit: the screen stays (docked or not) until a battle, or another pick
                         if (roster.hostState == 1) closeRefit("The host went into a battle, so the refit screen closed. Your plan is kept.");
                         else if (mine == null || !mine.id.equals(refitMember)) closeRefit("Your pick changed, so the refit screen closed. Your plan for that ship is kept.");
@@ -374,9 +372,9 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     WishView.onList(p.data);
                 } else if (p.type == Msg.LOBBY) { // who else is there
                     wingman.net.Lobby lobby = wingman.net.Lobby.decode(p.data);
-                    StringBuilder names = new StringBuilder(lobby.hostName).append(" (host)");
-                    for (wingman.net.Lobby.Entry e : lobby.players) names.append(", ").append(e.name);
-                    withHost = names.toString();
+                    List<String> names = new ArrayList<String>();
+                    for (wingman.net.Lobby.Entry e : lobby.players) names.add(e.name);
+                    withHost = inThisGame(lobby.hostName, names);
                 }
             }
         } catch (Throwable t) {
@@ -417,6 +415,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         && LobbyScreen.inside(lobby.listBox[0], lobby.listBox[1], lobby.listBox[2], lobby.listBox[3])) { // the wheel goes through the fleet
                     int n = roster.members.size();
                     lobbyAt = Math.max(0, Math.min(n - 1, lobbyAt + (e.getEventValue() > 0 ? -1 : 1)));
+                    e.consume();
+                    continue;
+                }
+                if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.FLEET && lobby.playersBox != null
+                        && LobbyScreen.inside(lobby.playersBox[0], lobby.playersBox[1], lobby.playersBox[2], lobby.playersBox[3])) { // the wheel goes through the players
+                    lobby.playersScroll = Math.max(0, lobby.playersScroll + (e.getEventValue() > 0 ? -2 : 2));
                     e.consume();
                     continue;
                 }
@@ -838,6 +842,24 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         } else {
             lobbyKey(value, (char) 0, h[6] > 0f, false);
         }
+    }
+
+    /** "NEOysod (host), Kyrizion, Cy" — in a big game the first few and how many more, so it stays one line. */
+    static String inThisGame(String host, List<String> others) {
+        StringBuilder b = new StringBuilder(host).append(" (host)");
+        int shown = 0;
+        for (String n : others) {
+            if (shown == 7 && others.size() > 8) { b.append(" and ").append(others.size() - 7).append(" more"); break; }
+            b.append(", ").append(n);
+            shown++;
+        }
+        return b.toString();
+    }
+
+    private static String inThisGame(wingman.net.Roster r) {
+        List<String> names = new ArrayList<String>();
+        for (wingman.net.Roster.Player rp : r.players) names.add(rp.name);
+        return inThisGame(r.hostName, names);
     }
 
     /** A level-up card picked (its index), or CONFIRM (-1): the one picked is sent to the host. */

@@ -102,6 +102,7 @@ final class Screens {
         m.dmods = "Degraded Engines, Faulty Grid";
         m.sprite = "graphics/ships/eagle.png";
         for (String n : new String[] { "Kyrizion", "Cy", "Mosk" }) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = n; p.slot = r.players.size() + 2; r.players.add(p); }
+        for (int i = 0; i < big - 4; i++) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = BIG_NAMES[i % BIG_NAMES.length] + (i >= BIG_NAMES.length ? String.valueOf(i / BIG_NAMES.length + 1) : ""); p.slot = r.players.size() + 2; r.players.add(p); }
         return r;
     }
 
@@ -178,6 +179,10 @@ final class Screens {
 
     static String searchFor = "";
     static boolean whole, loadouts;
+    /** Players in the game for the big-game shots (0: the usual four). */
+    static int big;
+    static final String[] BIG_NAMES = { "Vex", "Halcyon", "Brightwater", "Okonkwo", "Rook", "Tamsin", "Juniper", "Faraday", "Quill", "Marlowe", "Sable", "Ivo",
+        "Petra", "Lumen", "Ostrava", "Wren", "Calder", "Nyx", "Bastion", "Ember", "Sorrel", "Thane", "Corvid", "Delphine", "Kestrel", "Lyra", "Moth", "Orrin" };
 
     static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
@@ -264,7 +269,13 @@ final class Screens {
             if (!r.officer.isEmpty()) r.officerNote = "Level 5, aggressive  -  captains the ship " + r.name + " picks";
             rows.add(r);
         }
+        for (int i = 0; i < big - 4; i++) {
+            CampaignPlayerList.Row r = new CampaignPlayerList.Row();
+            r.slot = 5 + i; r.name = BIG_NAMES[i % BIG_NAMES.length]; r.ship = i % 3 == 0 ? "" : "ISS Wanderer " + (i + 1) + ", Hammerhead"; r.permission = 1;
+            rows.add(r);
+        }
         if (whole) set(pl, "openSlot", 3);
+        if (big > 0) set(pl, "scroll", 6);
         pl.draw(rows, 1);
     }
 
@@ -273,6 +284,8 @@ final class Screens {
         OfficerLinkPanel.View v = new OfficerLinkPanel.View();
         String[][] f = { { "2", "Kyrizion" }, { "3", "Cy" }, { "4", "Mosk" } };
         for (String[] x : f) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = Integer.parseInt(x[0]); fr.name = x[1]; v.friends.add(fr); }
+        for (int i = 0; i < big - 4; i++) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = 5 + i; fr.name = BIG_NAMES[i % BIG_NAMES.length]; v.friends.add(fr); }
+        if (big > 0) v.friend = 14;
         Object[][] os = { { "Mira Okonkwo", 5, "aggressive", "Linked to Kyrizion  -  ISS Long Wait, Eagle", "mine", "helmsmanship+ combat_endurance impact_mitigation+ field_modulation target_analysis" },
                 { "Tomas Reyes", 4, "steady", "Captain of ISS Hand of Fate, Conquest", "Leaves ISS Hand of Fate, Conquest when Kyrizion picks a ship.", "point_defense ordnance_expertise+ gunnery_implants damage_control" },
                 { "Ana Weiss", 6, "cautious", "Linked to Cy", "Moves over from Cy.", "systems_expertise+ missile_specialization energy_weapon_mastery helmsmanship+ field_modulation polarized_armor+" },
@@ -340,6 +353,10 @@ final class Screens {
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list-cy", 1920, 1080, 1700, 1000, new Runnable() { public void run() { whole = true; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } whole = false; } }));
         out.add(new Shot("officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); } }));
+        out.add(new Shot("big-officers", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; officers(); big = 0; } }));
+        out.add(new Shot("big-player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } big = 0; } }));
+        out.add(new Shot("big-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
+        out.add(new Shot("big-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
         out.add(new Shot("officers-1366", 1366, 768, -1, -1, new Runnable() { public void run() { whole = true; officers(); whole = false; } }));
         out.add(new Shot("lobby-levelup", 1920, 1080, -1, -1, new Runnable() { public void run() { levelUp(); } }));
         out.add(new Shot("lobby-levelup-1366", 1366, 768, -1, -1, new Runnable() { public void run() { levelUp(); } }));

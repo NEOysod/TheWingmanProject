@@ -61,6 +61,10 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
                 // A click on the panel or its buttons must not also land on the dialog's options underneath.
+                if (open && e.isMouseScrollEvent()) { // the wheel over the tabs goes along them
+                    String over = hits.at(e.getX() / scale, e.getY() / scale);
+                    if (over != null && over.startsWith("tab:")) tabFirst = Math.max(0, tabFirst + (e.getEventValue() > 0 ? -1 : 1));
+                }
                 if (e.isMouseEvent() && !e.isMouseMoveEvent() && overUs(e.getX() / scale, e.getY() / scale)) { e.consume(); continue; }
                 if (!e.isKeyboardEvent()) continue;
                 // Everything about the key is read first: the game refuses any read of an event once it is consumed.
@@ -117,6 +121,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     // ---- the page: queue tabs, the changes, cost and checks at the side, the buttons at the foot ----
 
     private final Widgets.Hits hits = new Widgets.Hits();
+    private int tabFirst;
 
     private boolean overUs(float mx, float my) {
         if (open && hits.over(mx, my)) return true;
@@ -146,6 +151,9 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         else if (id.equals("prev")) { at = (at + list.size() - 1) % list.size(); message = ""; }
         else if (id.equals("next")) { at = (at + 1) % list.size(); message = ""; }
         else if (id.equals("close")) open = false;
+        else if (id.equals("tab:left")) tabFirst = Math.max(0, tabFirst - 1);
+        else if (id.equals("tab:right")) tabFirst++;
+        else if (id.equals("tab:strip")) { /* between tabs */ }
         else if (id.startsWith("tab:")) { at = Integer.parseInt(id.substring(4)); message = ""; }
         else if (id.startsWith("perm:")) {
             FriendRefit.Pending pd = list.get(at);
@@ -216,15 +224,10 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         float th = Style.lineHeight(Style.TITLE_FONT);
         Style.text("FRIEND REFITS", Style.TITLE_FONT, Style.ACCENT, x + 16f, top - (bar - th) / 2f, 240f);
         float tx = x + 16f + Style.width("FRIEND REFITS", Style.TITLE_FONT) + 18f;
-        for (int i = 0; i < list.size(); i++) { // the refits waiting, as tabs
-            FriendRefit.Pending q = list.get(i);
-            String t = "P" + q.player.slot + "  " + q.player.name;
-            float bw = Style.width(t.toUpperCase(), Style.SMALL_FONT) + 24f;
-            if (tx + bw > x + w - 80f) break;
-            Widgets.box(tx, top - bar + 8f, bw, bar - 16f, t, PlayerTags.color(q.player.slot), i == at);
-            hits.add(tx, top - bar + 8f, bw, bar - 16f, "tab:" + i);
-            tx += bw + 6f;
-        }
+        List<String> names = new ArrayList<String>(); // the refits waiting, as tabs (scrolling along when there are many)
+        List<Color> colors = new ArrayList<Color>();
+        for (FriendRefit.Pending q : list) { names.add("P" + q.player.slot + "  " + q.player.name); colors.add(PlayerTags.color(q.player.slot)); }
+        tabFirst = Widgets.tabStrip(names, colors, at, tabFirst, tx, top - bar + 8f, x + w - 16f - (bar - 16f) - 16f - tx, bar - 16f, hits, "tab");
         float cb = bar - 16f;
         Widgets.box(x + w - 16f - cb, top - bar + 8f, cb, cb, "X", Style.TEXT, false);
         hits.add(x + w - 16f - cb, top - bar + 8f, cb, cb, "close");

@@ -91,6 +91,53 @@ final class Widgets {
         return at;
     }
 
+    /**
+     * Tabs in a row (one per player, say) that scroll left and right when they don't all fit: arrows at the ends
+     * (ids id+":left", id+":right"), the whole strip id+":strip" (for the wheel), each tab id+":"+index. 'first' is
+     * the first tab shown; the one active is always brought into view. Returns the first tab shown now.
+     */
+    static int tabStrip(List<String> names, List<Color> colors, int active, int first, float x, float y, float w, float h, Hits hits, String id) {
+        int n = names.size();
+        if (n == 0) return 0;
+        float[] tw = new float[n];
+        float total = 0f;
+        for (int i = 0; i < n; i++) { tw[i] = Style.width(names.get(i).toUpperCase(), Style.SMALL_FONT) + 24f; total += tw[i] + 6f; }
+        hits.add(x, y, w, h, id + ":strip");
+        float aw = h, avail = w;
+        boolean scrolls = total - 6f > w;
+        if (scrolls) avail = w - 2f * (aw + 6f);
+        first = Math.max(0, Math.min(first, n - 1));
+        if (!scrolls) first = 0;
+        else {
+            if (active < first) first = active;
+            while (first < active && span(tw, first, active) > avail) first++;
+            while (first > 0 && span(tw, first - 1, n - 1) <= avail) first--; // no empty room at the end
+        }
+        float tx = scrolls ? x + aw + 6f : x;
+        int last = first - 1;
+        for (int i = first; i < n; i++) {
+            if (tx + tw[i] > (scrolls ? x + w - aw - 6f : x + w) + 0.5f) break;
+            box(tx, y, tw[i], h, names.get(i), colors.get(i), i == active);
+            hits.add(tx, y, tw[i], h, id + ":" + i);
+            tx += tw[i] + 6f;
+            last = i;
+        }
+        if (scrolls) {
+            boolean left = first > 0, right = last < n - 1;
+            box(x, y, aw, h, left ? "<" : "", left ? Style.ACCENT : Style.FAINT, false);
+            if (left) hits.add(x, y, aw, h, id + ":left");
+            box(x + w - aw, y, aw, h, right ? ">" : "", right ? Style.ACCENT : Style.FAINT, false);
+            if (right) hits.add(x + w - aw, y, aw, h, id + ":right");
+        }
+        return first;
+    }
+
+    private static float span(float[] tw, int a, int b) {
+        float s = 0f;
+        for (int i = a; i <= b; i++) s += tw[i] + 6f;
+        return s - 6f;
+    }
+
     /** A card's back: lit when picked, edged in 'edge' (null: the usual). */
     static void card(float x, float y, float w, float h, boolean on, Color edge) {
         boolean over = over(x, y, w, h);

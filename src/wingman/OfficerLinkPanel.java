@@ -27,7 +27,7 @@ import wingman.net.HostSession;
 final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderingListener {
     private static OfficerLinkPanel instance;
     private boolean open, broken, wasPaused;
-    private int player, officer, scroll;
+    private int player, officer, scroll, tabFirst;
     private String message = "";
     private Color messageColor = Panel.DIM;
     private final Widgets.Hits hits = new Widgets.Hits();
@@ -83,7 +83,12 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
                 if (open && e.isMouseEvent()) { // the page takes the mouse while it is up
-                    if (e.isMouseScrollEvent()) scroll = Math.max(0, scroll + (e.getEventValue() > 0 ? -1 : 1));
+                    if (e.isMouseScrollEvent()) {
+                        String over = hits.at(e.getX() / scale, e.getY() / scale);
+                        int step = e.getEventValue() > 0 ? -1 : 1;
+                        if (over != null && over.startsWith("friend:")) tabFirst = Math.max(0, tabFirst + step); // over the friends: along them
+                        else scroll = Math.max(0, scroll + step);
+                    }
                     else if (e.isLMBDownEvent()) {
                         String id = hits.at(e.getX() / scale, e.getY() / scale);
                         if (id == null) { close(); e.consume(); break; } // a click off the page closes it
@@ -125,8 +130,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
     private void act(String id) {
         List<HostSession.Player> ps = players();
         List<PersonAPI> os = OfficerLinks.officers();
-        if (!id.equals("link") && !id.equals("unlink")) Widgets.click();
+        if (!id.equals("link") && !id.equals("unlink") && !id.endsWith(":strip")) Widgets.click();
         if (id.equals("close")) { close(); return; }
+        if (id.equals("friend:left")) { tabFirst = Math.max(0, tabFirst - 1); return; }
+        if (id.equals("friend:right")) { tabFirst++; return; }
+        if (id.equals("friend:strip")) return;
         if (id.startsWith("friend:")) { player = Integer.parseInt(id.substring(7)); message = ""; return; }
         if (id.startsWith("officer:")) { officer = Integer.parseInt(id.substring(8)); message = ""; return; }
         if (os.isEmpty()) return;
@@ -262,15 +270,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         Style.text("OFFICER FOR", Style.TITLE_FONT, Style.ACCENT, x + 16f, top - (bar - th) / 2f, 200f);
         float tx = x + 16f + Style.width("OFFICER FOR", Style.TITLE_FONT) + 16f;
         if (v.friends.isEmpty()) Style.text("no friends connected", body, Panel.WARN, tx, top - (bar - Style.lineHeight(body)) / 2f, 300f);
-        for (int i = 0; i < v.friends.size(); i++) {
-            Friend f = v.friends.get(i);
-            String t = "P" + f.slot + "  " + f.name;
-            float bw = Style.width(t.toUpperCase(), Style.SMALL_FONT) + 24f;
-            if (tx + bw > x + w - 260f) break;
-            Widgets.box(tx, top - bar + 8f, bw, bar - 16f, t, PlayerTags.color(f.slot), i == v.friend);
-            hits.add(tx, top - bar + 8f, bw, bar - 16f, "friend:" + i);
-            tx += bw + 6f;
-        }
+        List<String> names = new ArrayList<String>();
+        List<Color> colors = new ArrayList<Color>();
+        for (Friend f : v.friends) { names.add("P" + f.slot + "  " + f.name); colors.add(PlayerTags.color(f.slot)); }
+        float stripW = x + w - 16f - (bar - 16f) - 120f - tx;
+        tabFirst = Widgets.tabStrip(names, colors, v.friend, tabFirst, tx, top - bar + 8f, stripW, bar - 16f, hits, "friend");
         float cb = bar - 16f;
         Widgets.box(x + w - 16f - cb, top - bar + 8f, cb, cb, "X", Style.TEXT, false);
         hits.add(x + w - 16f - cb, top - bar + 8f, cb, cb, "close");

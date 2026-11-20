@@ -40,6 +40,9 @@ final class LobbyScreen {
     final List<float[]> hits = new java.util.ArrayList<float[]>();
     /** The fleet list's box, for the mouse wheel. */
     float[] listBox;
+    /** The players box, when it has more than fit (the wheel goes through them), and how far it is scrolled. */
+    float[] playersBox;
+    int playersScroll;
 
     /** What is under the mouse, as last drawn (the topmost), or null. */
     float[] hitAt(float mx, float my) {
@@ -125,6 +128,7 @@ final class LobbyScreen {
             refitButton = null;
             hits.clear();
             listBox = null;
+            playersBox = null;
             loadBudget = 4;
             float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
             float m = Math.max(24f, sw * 0.022f);
@@ -522,15 +526,39 @@ final class LobbyScreen {
         if (pH < Style.BAR_H + 30f) return; // no room left for the players (the level-up cards take it for now)
         float y = Style.window(x, pTop - pH, w, pH, "PLAYERS", v.roster == null ? "" : String.valueOf(1 + v.roster.players.size())) - 8f;
         if (v.roster != null) {
-            y = player(1, v.roster.hostName + "  (host)", null, false, px, y, pw, pTop - pH);
-            int shownN = 0;
-            for (Roster.Player p : v.roster.players) {
-                if (y < pTop - pH + 50f) {
-                    text("...and " + (v.roster.players.size() - shownN) + " more", body, Panel.DIM, px, y, pw);
-                    break;
+            float floor = pTop - pH + 8f, lh = Style.lineHeight(body);
+            int n = v.roster.players.size() + 1;
+            float full = n * (2f * lh + 8f), line = Math.max(Style.chipHeight(), lh) + 4f;
+            if (y - full >= floor) { // room for each with their ship under them
+                y = player(1, v.roster.hostName + "  (host)", null, false, px, y, pw, pTop - pH);
+                for (Roster.Player p : v.roster.players) y = player(p.slot, p.name, v.roster.pickOf(p.name), p.name.equalsIgnoreCase(v.me), px, y, pw, pTop - pH);
+            } else { // a big game: one line each (you first after the host), in two columns when that fits more; the wheel scrolls
+                List<Roster.Player> ps = new java.util.ArrayList<Roster.Player>(v.roster.players);
+                for (int i = 0; i < ps.size(); i++) if (ps.get(i).name.equalsIgnoreCase(v.me)) ps.add(0, ps.remove(i));
+                int perCol = Math.max(1, (int) ((y - floor) / line));
+                if (n > perCol) perCol = Math.max(1, perCol - 1); // a line under them for "more"
+                int cols = pw >= 280f && n > perCol ? 2 : 1;
+                float cw = (pw - (cols - 1) * 12f) / cols;
+                int fit = perCol * cols;
+                if (n > fit) playersBox = new float[] { x, pTop - pH, w, pH };
+                int maxScroll = Math.max(0, n - fit);
+                if (maxScroll > 0 && maxScroll % cols != 0) maxScroll += cols - maxScroll % cols;
+                playersScroll = Math.max(0, Math.min(playersScroll - playersScroll % cols, maxScroll));
+                int from = n > fit ? playersScroll : 0;
+                for (int k = 0; k < fit && from + k < n; k++) {
+                    int i = from + k;
+                    float cx = px + (k / perCol) * (cw + 12f), cy = y - (k % perCol) * line;
+                    if (i == 0) playerLine(1, v.roster.hostName + " (host)", null, false, cx, cy, cw);
+                    else {
+                        Roster.Player p = ps.get(i - 1);
+                        playerLine(p.slot, p.name, v.roster.pickOf(p.name), p.name.equalsIgnoreCase(v.me), cx, cy, cw);
+                    }
                 }
-                y = player(p.slot, p.name, v.roster.pickOf(p.name), p.name.equalsIgnoreCase(v.me), px, y, pw, pTop - pH);
-                shownN++;
+                if (n > fit) {
+                    int below = Math.max(0, n - from - fit);
+                    String m = (from > 0 ? from + " above" : "") + (from > 0 && below > 0 ? ",  " : "") + (below > 0 ? below + " more below" : "") + "   (wheel to scroll)";
+                    text(m, Style.SMALL_FONT, Panel.DIM, px, y - perCol * line - 2f, pw);
+                }
             }
         }
     }
@@ -592,6 +620,18 @@ final class LobbyScreen {
         Style.text(Widgets.fit(s, Style.SMALL_FONT, w - bw - 28f), Style.SMALL_FONT, Style.DIM, x + 8f, by + 22f, w - bw - 28f);
     }
 
+    /** One player on one line (a big game): their tag, their name, and the ship they picked, faint, after it. */
+    private void playerLine(int slot, String name, Roster.Member pick, boolean me, float x, float top, float w) {
+        Color pc = PlayerTags.color(slot);
+        float cw = Style.chip("P" + slot, pc, x, top - 1f);
+        float tx = x + Math.max(cw, Style.width("P00", Style.SMALL_FONT) + 10f) + 6f, tw = w - (tx - x);
+        String nm = Widgets.fit(name + (me ? " (you)" : ""), body, tw * 0.6f);
+        float nw = Style.width(nm, body);
+        text(nm, body, me ? Panel.GOOD : Panel.TEXT, tx, top, tw);
+        String ship = slot == 1 ? "" : pick == null ? "no ship" : pick.shipName.isEmpty() ? Roster.label(pick) : pick.shipName;
+        if (!ship.isEmpty() && tw - nw - 10f > 40f) text(Widgets.fit(ship, body, tw - nw - 10f), body, pick == null ? Style.FAINT : Panel.DIM, tx + nw + 10f, top, tw - nw - 10f);
+    }
+
     /** One player: their tag in their colour, their name, and the ship they picked under it. */
     private float player(int slot, String name, Roster.Member pick, boolean me, float x, float top, float w, float floor) {
         Color pc = PlayerTags.color(slot);
@@ -635,7 +675,8 @@ final class LobbyScreen {
         y = Style.section("Pilots", px, y, pw) - 2f;
         float[] col = { 0f, 0.06f, 0.22f, 0.50f, 0.62f, 0.70f, 0.78f, 0.90f };
         String[] head = { "", "PLAYER", "SHIP", "", "KILLS", "FIGHTERS", "DAMAGE", "TAKEN" };
-        float rowH = 26f, sh = Style.lineHeight(Style.SMALL_FONT), bh = Style.lineHeight(body);
+        float bh = Style.lineHeight(body), sh = Style.lineHeight(Style.SMALL_FONT);
+        float rowH = r.pilots.size() * 26f > y - (top - h) - 200f ? Math.max(bh + 3f, 20f) : 26f; // a big game: tighter rows
         fill(px, y - rowH, pw, rowH, Style.BAR);
         for (int i = 0; i < head.length; i++) text(head[i], Style.SMALL_FONT, Style.DIM, px + 8f + col[i] * (pw - 16f), y - (rowH - sh) / 2f, (pw - 16f) * 0.2f);
         y -= rowH;

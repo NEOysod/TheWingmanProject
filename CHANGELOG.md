@@ -2,6 +2,12 @@
 
 ## Next (on the test branch)
 
+- **Big games (checked with 32 players):** the CO-OP panel scrolls (the wheel, or the "more above/below" lines)
+  once its friends fill most of the screen's height, keeping the host's row on top and an open row in view; the
+  friends' tabs on the officer page and the refits' tabs on the friend refit page scroll left and right (arrows at the
+  ends, the wheel over them) and keep the one picked in view; a joiner's PLAYERS box goes to one line each, in two
+  columns, and scrolls with the wheel past that (you are listed right after the host); the battle report's pilots
+  table packs its rows tighter; "In this game" names the first few and says how many more.
 - **The CO-OP panel on the campaign map** (host) does more than list who is here: click a friend to open their row,
   with their linked officer (ASSIGN or CHANGE opens the officer page on them), how their refits are taken, and any
   refit of theirs waiting (REVIEW). Each row shows the ship they picked, their officer and their refit setting. REFITS

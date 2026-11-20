@@ -31,7 +31,8 @@ import wingman.net.HostSession;
  */
 final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignInputListener {
     private static final float W = 440f;
-    private static final int MAX_ROWS = 8;
+    /** How far down the friends the list is scrolled (the first friend shown); the host's own row stays on top. */
+    private int scroll;
     static final String[] PERMS = { "Look only", "Ask me", "Trust" };
     private static final String[] PERM_HELP = {
         "They can plan refits here, but not send them.",
@@ -98,6 +99,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
                 float mx = e.getX() / scale, my = e.getY() / scale;
                 String id = hits.at(mx, my);
                 if (id == null || id.equals("settings")) continue; // (the settings page takes its own button)
+                if (e.isMouseScrollEvent()) { scroll = Math.max(0, scroll + (e.getEventValue() > 0 ? -1 : 1)); e.consume(); continue; }
                 boolean press = e.isLMBDownEvent();
                 e.consume();
                 if (press && !id.isEmpty()) act(id);
@@ -114,7 +116,9 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         Widgets.click();
         String[] p = id.split(":", 3);
         HostSession.Player pl = p.length > 1 ? bySlot(p[1]) : null;
-        if (p[0].equals("row")) {
+        if (p[0].equals("up")) scroll = Math.max(0, scroll - 3);
+        else if (p[0].equals("down")) scroll += 3;
+        else if (p[0].equals("row")) {
             int slot = Integer.parseInt(p[1]);
             openSlot = openSlot == slot ? 0 : slot;
         } else if (p[0].equals("refits")) {
@@ -170,7 +174,6 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
     static volatile float bottom = Float.MAX_VALUE;
 
     private List<Row> list = new ArrayList<Row>();
-    private int more;
     private long builtAt;
 
     private List<Row> rows(HostSession s, long now) {
@@ -186,10 +189,8 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             Collections.sort(ps, new Comparator<HostSession.Player>() {
                 public int compare(HostSession.Player a, HostSession.Player b) { return a.slot - b.slot; }
             });
-            more = 0;
             for (int i = 0; i < ps.size(); i++) {
                 HostSession.Player p = ps.get(i);
-                if (l.size() >= MAX_ROWS) { more = ps.size() - i; break; }
                 Row r = new Row();
                 r.slot = p.slot;
                 r.name = p.name;
@@ -231,10 +232,35 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         hits.clear();
         String body = Style.body();
         float headH = Style.lineHeight(Style.SMALL_FONT) + 16f;
-        float footH = Style.lineHeight(Style.SMALL_FONT) + 10f;
-        float h = headH + footH + (more > 0 ? 24f : 0f) + 4f;
-        for (Row r : rows) h += ROW_H + (r.slot == openSlot && !r.host ? openHeight(r) : 0f);
+        float footH = Style.lineHeight(Style.SMALL_FONT) + 10f, moreH = 22f;
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        // Room for friends: up to most of the screen's height; past that the list scrolls (the wheel, or the arrows).
+        Row host = rows.isEmpty() ? null : rows.get(0);
+        List<Row> friends = rows.size() > 1 ? rows.subList(1, rows.size()) : new ArrayList<Row>();
+        float room = Math.max(ROW_H * 3f, sh * 0.62f - headH - footH - ROW_H);
+        float all = 0f;
+        for (Row r : friends) all += height(r);
+        boolean scrolls = all > room;
+        if (!scrolls) scroll = 0;
+        else {
+            room -= 2f * moreH;
+            scroll = Math.max(0, Math.min(scroll, friends.size() - 1));
+            while (scroll > 0 && fits(friends, scroll - 1, friends.size() - 1, room)) scroll--; // no empty room at the end
+            int open = -1; // an open row is kept in view
+            for (int i = 0; i < friends.size(); i++) if (friends.get(i).slot == openSlot) open = i;
+            if (open >= 0 && open < scroll) scroll = open;
+            while (open >= 0 && scroll < open && !fits(friends, scroll, open, room)) scroll++;
+        }
+        boolean upLine = scrolls && scroll > 0; // (at the top, no line saying there is more above)
+        if (scrolls && !upLine) room += moreH;
+        int last = scroll - 1;
+        float used = 0f;
+        for (int i = scroll; i < friends.size(); i++) {
+            if (used + height(friends.get(i)) > room + 0.5f) break;
+            used += height(friends.get(i));
+            last = i;
+        }
+        float h = headH + footH + 4f + (host == null ? 0f : ROW_H) + used + (scrolls ? (upLine ? 2f : 1f) * moreH : 0f);
         float x = sw - W - 10f, y = sh - h - 10f;
         bottom = y;
         hits.add(x, y, W, h, ""); // the panel: clicks on it go no further
@@ -260,49 +286,75 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             hits.add(right - rbw, by, rbw, bh, "refits");
             right -= rbw + 6f;
         }
-        Style.textRight((rows.size() + more) + " players", Style.SMALL_FONT, Style.DIM, right - 4f, ty);
+        Style.textRight(rows.size() + " players", Style.SMALL_FONT, Style.DIM, right - 4f, ty);
 
         float top = hy;
-        for (Row r : rows) {
-            boolean open = r.slot == openSlot && !r.host;
-            float ry = top - ROW_H;
-            if (!r.host) {
-                hits.add(x + 2f, ry, W - 4f, ROW_H, "row:" + r.slot);
-                if (open) Style.fill(x + 2f, ry, W - 4f, ROW_H, Style.MARKED);
-                else if (Widgets.over(x + 2f, ry, W - 4f, ROW_H)) Style.fill(x + 2f, ry, W - 4f, ROW_H, Style.HOVER);
-            }
-            Color c = PlayerTags.color(r.slot);
-            float cw = Style.chip("P" + r.slot, c, x + 12f, top - (ROW_H - Style.chipHeight()) / 2f);
-            float tx = x + 12f + cw + 10f;
-            // right side: the officer's first name and how their refits are taken
-            float rx = x + W - 12f;
-            if (!r.host) {
-                String tag = PERMS[r.permission].toUpperCase();
-                Color tc = r.permission == 2 ? Panel.GOOD : r.permission == 0 ? Style.DIM : Style.ACCENT;
-                float tw = Style.width(tag, Style.SMALL_FONT) + 10f;
-                Style.outline(rx - tw, top - ROW_H / 2f - 9f, tw, 18f, Style.alpha(tc, 160));
-                Style.text(tag, Style.SMALL_FONT, tc, rx - tw + 5f, top - ROW_H / 2f + 6f, tw);
-                rx -= tw + 10f;
-                if (!r.refitShip.isEmpty()) {
-                    Style.fill(rx - 8f, top - ROW_H / 2f - 4f, 8f, 8f, Panel.WARN);
-                    rx -= 16f;
-                }
-                if (!r.officer.isEmpty()) {
-                    String first = r.officer.split(" ")[0];
-                    rx = Style.textRight(first, body, Panel.GOOD, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
-                }
-                if (r.quiet) rx = Style.textRight("link quiet", body, Panel.WARN, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
-            }
-            float tw = Math.max(40f, rx - tx);
-            float ny = Style.text(Widgets.fit(r.name, body, tw), body, r.host ? Style.TEXT : c, tx, top - 5f, tw);
-            String ship = r.host ? "host: commands the fleet" : r.ship.isEmpty() ? "no ship picked" : r.ship;
-            Style.text(Widgets.fit(ship, body, tw), body, r.ship.isEmpty() && !r.host ? Style.FAINT : Style.DIM, tx, ny - 1f, tw);
-            top = ry;
-            if (open) top = drawOpen(r, x, top);
-            Style.fill(x + 8f, top, W - 16f, 1f, Style.alpha(Style.RULE, 40));
-        }
-        if (more > 0) { Style.text("and " + more + " more", body, Style.DIM, x + 12f, top - 4f, W - 24f); top -= 24f; }
+        if (host != null) top = row(host, x, top, body);
+        if (upLine) top = more("up", scroll > 0 ? scroll + " more above" : "", x, top);
+        for (int i = scroll; i <= last; i++) top = row(friends.get(i), x, top, body);
+        if (scrolls) top = more("down", last < friends.size() - 1 ? (friends.size() - 1 - last) + " more below   (wheel to scroll)" : "", x, top);
         Style.text("Click a friend to manage them.", Style.SMALL_FONT, Style.FAINT, x + 12f, y + footH - 4f, W - 24f);
+    }
+
+    private float height(Row r) { return ROW_H + (r.slot == openSlot && !r.host ? openHeight(r) : 0f); }
+
+    private boolean fits(List<Row> friends, int from, int to, float room) {
+        float u = 0f;
+        for (int i = from; i <= to; i++) u += height(friends.get(i));
+        return u <= room + 0.5f;
+    }
+
+    /** A line saying how many more friends are above or below, which scrolls to them. */
+    private float more(String id, String text, float x, float top) {
+        float h = 22f;
+        if (!text.isEmpty()) {
+            boolean over = Widgets.over(x + 2f, top - h, W - 4f, h);
+            if (over) Style.fill(x + 2f, top - h, W - 4f, h, Style.HOVER);
+            Style.text(text, Style.SMALL_FONT, over ? Style.TEXT : Style.DIM, x + 50f, top - (h - Style.lineHeight(Style.SMALL_FONT)) / 2f, W - 60f);
+            hits.add(x + 2f, top - h, W - 4f, h, id);
+        }
+        return top - h;
+    }
+
+    /** One player's row (and, opened, what is under it). Returns its bottom. */
+    private float row(Row r, float x, float top, String body) {
+        boolean open = r.slot == openSlot && !r.host;
+        float ry = top - ROW_H;
+        if (!r.host) {
+            hits.add(x + 2f, ry, W - 4f, ROW_H, "row:" + r.slot);
+            if (open) Style.fill(x + 2f, ry, W - 4f, ROW_H, Style.MARKED);
+            else if (Widgets.over(x + 2f, ry, W - 4f, ROW_H)) Style.fill(x + 2f, ry, W - 4f, ROW_H, Style.HOVER);
+        }
+        Color c = PlayerTags.color(r.slot);
+        float cw = Style.chip("P" + r.slot, c, x + 12f, top - (ROW_H - Style.chipHeight()) / 2f);
+        float tx = x + 12f + Math.max(cw, Style.width("P00", Style.SMALL_FONT) + 10f) + 10f;
+        // right side: the officer's first name and how their refits are taken
+        float rx = x + W - 12f;
+        if (!r.host) {
+            String tag = PERMS[r.permission].toUpperCase();
+            Color tc = r.permission == 2 ? Panel.GOOD : r.permission == 0 ? Style.DIM : Style.ACCENT;
+            float tw = Style.width(tag, Style.SMALL_FONT) + 10f;
+            Style.outline(rx - tw, top - ROW_H / 2f - 9f, tw, 18f, Style.alpha(tc, 160));
+            Style.text(tag, Style.SMALL_FONT, tc, rx - tw + 5f, top - ROW_H / 2f + 6f, tw);
+            rx -= tw + 10f;
+            if (!r.refitShip.isEmpty()) {
+                Style.fill(rx - 8f, top - ROW_H / 2f - 4f, 8f, 8f, Panel.WARN);
+                rx -= 16f;
+            }
+            if (!r.officer.isEmpty()) {
+                String first = r.officer.split(" ")[0];
+                rx = Style.textRight(first, body, Panel.GOOD, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
+            }
+            if (r.quiet) rx = Style.textRight("link quiet", body, Panel.WARN, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
+        }
+        float tw = Math.max(40f, rx - tx);
+        float ny = Style.text(Widgets.fit(r.name, body, tw), body, r.host ? Style.TEXT : c, tx, top - 5f, tw);
+        String ship = r.host ? "host: commands the fleet" : r.ship.isEmpty() ? "no ship picked" : r.ship;
+        Style.text(Widgets.fit(ship, body, tw), body, r.ship.isEmpty() && !r.host ? Style.FAINT : Style.DIM, tx, ny - 1f, tw);
+        float bottomY = ry;
+        if (open) bottomY = drawOpen(r, x, bottomY);
+        Style.fill(x + 8f, bottomY, W - 16f, 1f, Style.alpha(Style.RULE, 40));
+        return bottomY;
     }
 
     /** A friend's row, opened: their officer, how their refits are taken, a refit of theirs waiting. Returns its bottom. */
