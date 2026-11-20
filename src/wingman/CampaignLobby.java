@@ -63,7 +63,7 @@ final class CampaignLobby implements EveryFrameScript {
             }
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
-            for (String line : OfficerLinks.applyWaiting()) say("Co-op: " + line); // officer moves held back while a screen was open
+            OfficerLinks.afterScreen(); // the fleet view refreshed after an officer moved under an open screen
             FriendRefit.advance(s, cfg);
             WishList.advance(s);
             FriendRefit.applyWaiting();
@@ -147,7 +147,6 @@ final class CampaignLobby implements EveryFrameScript {
             any = true;
             if (want.isEmpty()) {
                 WingmanAPI.reserveShip(p.name, null);
-                OfficerLinks.forgetWaiting(p.name);
                 if (onMap) say("Co-op: " + p.name + " will choose a ship in the battle.");
                 continue;
             }

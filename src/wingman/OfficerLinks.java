@@ -109,7 +109,6 @@ final class OfficerLinks {
      */
     static String levelUps(wingman.net.HostSession s) {
         String said = null;
-        if (screenUp()) return null; // picks wait (and nothing new is offered) until the game's own screen is closed
 
         for (wingman.net.HostSession.Player p : s.getPlayers()) {
             try {
@@ -155,19 +154,11 @@ final class OfficerLinks {
      * can't be moved. Returns a line for the host, or null if nothing moved.
      */
     static String follow(String player, FleetMemberAPI ship) {
-        if (ship == null) return null;
-        if (screenUp()) { // not under an open fleet/refit/officer screen: its officer rows (and their hover pop-ups) would be left behind
-            waiting.put(key(player), new String[] { player, ship.getId() });
-            PersonAPI o = officerOf(player);
-            return o == null || ship.getCaptain() == o ? null
-                    : o.getNameString() + " (" + player + "'s officer) takes command of " + CampaignLobby.label(ship) + " once you close this screen.";
-        }
-        waiting.remove(key(player));
         return move(player, ship);
     }
 
-    /** Officer moves held back while a screen was open: player key -> {player, ship id}, the newest pick each. */
-    private static final java.util.Map<String, String[]> waiting = new java.util.LinkedHashMap<String, String[]>();
+    /** A move made while a screen was open, whose fleet view is refreshed once it closes. */
+    private static boolean syncWaiting;
 
     /** A screen of the game's own (fleet, refit, character, cargo...) is open over the map. */
     static boolean screenUp() {
@@ -179,25 +170,14 @@ final class OfficerLinks {
         }
     }
 
-    /** The player dropped their pick: a held-back move for it is dropped too. */
-    static void forgetWaiting(String player) { waiting.remove(key(player)); }
-
-    /** Once the screen is closed: the officer moves held back, done. Returns lines for the host. */
-    static List<String> applyWaiting() {
-        List<String> said = new ArrayList<String>();
-        if (waiting.isEmpty() || screenUp()) return said;
-        List<String[]> todo = new ArrayList<String[]>(waiting.values());
-        waiting.clear();
-        CampaignFleetAPI f = Global.getSector().getPlayerFleet();
-        if (f == null) return said;
-        for (String[] w : todo) {
-            for (FleetMemberAPI m : f.getFleetData().getMembersListCopy()) {
-                if (!m.getId().equals(w[1])) continue;
-                String line = move(w[0], m);
-                if (line != null) said.add(line);
-            }
-        }
-        return said;
+    /**
+     * Each frame: once the screen is closed, the fleet view a move made under it is refreshed. (Refreshing it with
+     * the screen open rebuilds the officer rows under the mouse, and the pop-up of the one hovered stays stuck.)
+     */
+    static void afterScreen() {
+        if (!syncWaiting || screenUp()) return;
+        syncWaiting = false;
+        try { Global.getSector().getPlayerFleet().getFleetData().setSyncNeeded(); } catch (Throwable t) { /* no fleet */ }
     }
 
     private static String move(String player, FleetMemberAPI ship) {
@@ -213,7 +193,8 @@ final class OfficerLinks {
             for (FleetMemberAPI m : f.getFleetData().getMembersListCopy()) if (m.getCaptain() == officer) left = m;
             ship.setCaptain(officer);
             if (left != null) left.setCaptain(current != null && !current.isDefault() ? current : null);
-            f.getFleetData().setSyncNeeded();
+            if (screenUp()) syncWaiting = true; // the captains move now; the open screen's rows are left alone
+            else f.getFleetData().setSyncNeeded();
             return officer.getNameString() + " (" + player + "'s officer) takes command of " + CampaignLobby.label(ship)
                     + (left != null && current != null && !current.isDefault() ? "; " + current.getNameString() + " moves to " + CampaignLobby.label(left) : "") + ".";
         } catch (Throwable t) {
