@@ -1,5 +1,14 @@
 # Changelog
 
+## Next (on the test branch)
+
+- **Refit in the game's own refit screen** (joiner): on a ship's refit page, G puts that ship, exactly as the host
+  has it, into a new mission, "Wingman: Refit". Open it from Missions, click the ship, Refit, and change what you
+  like in the game's real refit screen. Back in CO-OP the changes load onto the refit page, with what the host has
+  and what it costs; send them as any friend refit (the host checks it all again). No game internals: the game's
+  own saved name for the mission's ship is read back through the API. The mission's screen shows every weapon and
+  hull mod; the host's check catches what they don't have. S-mods can't be built in there.
+
 ## 0.9.4-beta
 
 For Starsector 0.98.5a-RC7 (and RC6/RC5: each game build's names are tried in turn). Everyone in a game needs the

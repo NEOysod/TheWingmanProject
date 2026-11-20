@@ -46,6 +46,8 @@ final class RefitScreen {
    static final int NOTHING = 0;
    static final int CLOSE = 1;
    static final int SEND = 2;
+   /** G: refit this ship in the game's own refit screen instead (see GameRefit). */
+   static final int GAME_REFIT = 3;
    private RefitRequest req;
    private RefitData data;
    private int rowAt = -1;
@@ -151,6 +153,21 @@ final class RefitScreen {
 
          this.data = var1;
       }
+   }
+
+   /** A status line of our own (for the refit in the game's screen). */
+   void say(String text, Color color) {
+      this.status = text;
+      this.statusColor = color;
+   }
+
+   /** Load a plan made elsewhere (the game's refit screen) for the ship shown, to check and send. */
+   void load(RefitRequest r, String why) {
+      if (this.data == null || r == null || !this.data.memberId.equals(r.memberId)) return;
+      this.reset(this.data);
+      this.req = r;
+      this.status = why;
+      this.statusColor = Panel.GOOD;
    }
 
    void saveDraft() {
@@ -982,6 +999,8 @@ final class RefitScreen {
          RefitScreen.Row var6 = this.marked(var5);
          if (var3 && Panel.isEnter(var1)) {
             return this.trySend();
+         } else if (var1 == 34 && !var3) {
+            return GAME_REFIT;
          } else if (var1 == 1) {
             return 1;
          } else if (var1 == 44) {

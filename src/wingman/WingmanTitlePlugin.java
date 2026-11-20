@@ -1,5 +1,7 @@
 package wingman;
 
+import wingman.net.RefitRequest;
+
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -201,6 +203,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         LunaCopy.restoreIfLeft();
         wingman.api.WingmanAPI.deliver(); // other mods' messages, while we wait here between battles
         ObjectiveMirror.restoreIfLeft();
+        gameRefit();
         if (missionListFrames > 0 && ++missionListFrames >= 3) { // (the list is shown as the title screen sets itself up)
             missionListFrames = 0;
             try {
@@ -578,6 +581,23 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     private void note(String text, java.awt.Color color) { lobbyNote = text; lobbyNoteColor = color; }
 
+    /** A refit made in the game's own refit screen (the Wingman: Refit mission): onto the ship's refit page. */
+    private void gameRefit() {
+        RefitRequest r;
+        try { r = GameRefit.poll(); } catch (Throwable t) { GameRefit.forget(); Global.getLogger(WingmanTitlePlugin.class).warn("Wingman: the refit from the game's screen couldn't be read", t); return; }
+        if (r == null) return;
+        boolean onPage = r.memberId.equals(refitMember) && refitData != null && refitData.memberId.equals(r.memberId);
+        if (onPage && GameRefit.empty(r, refitData)) { lobby.refit.say("The game's refit screen saved the ship unchanged: nothing to send.", Panel.DIM); return; }
+        if (onPage) {
+            lobby.refit.load(r, "Loaded from the game's refit screen. Check what the host has and what it costs, then send it (Ctrl+Enter).");
+            lobby.page = LobbyScreen.REFIT;
+        } else {
+            Drafts.put(r, false);
+            note("Your refit from the game's screen is saved as the plan for that ship: open its refit page (R) to check and send it.", Panel.GOOD);
+        }
+        Global.getLogger(WingmanTitlePlugin.class).info("Wingman: a refit from the game's refit screen, " + r.changes.size() + " slot change(s)");
+    }
+
     /** Friend refit: open the refit screen on the ship we picked, and ask the host for what it shows. */
     private void openRefit() {
         String me = HostSession.cleanName(cfg == null ? "" : cfg.playerName);
@@ -598,6 +618,16 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     /** What the refit screen asked for: close it, or send the refit to the host. */
     private void refitAction(int action) {
+        if (action == RefitScreen.GAME_REFIT) {
+            if (refitData == null) { lobby.refit.say("Wait for the host's description of the ship, then press G again.", Panel.WARN); return; }
+            String name = "";
+            wingman.net.Roster.Member mine = roster == null ? null : roster.pickOf(HostSession.cleanName(cfg == null ? "" : cfg.playerName));
+            if (mine != null) name = mine.shipName;
+            GameRefit.offer(refitData, name);
+            lobby.refit.say("Ready: leave CO-OP (Esc), open Missions > Wingman: Refit, click the ship, then Refit. Come back here when done:"
+                    + " your changes load on this page.", Panel.GOOD);
+            return;
+        }
         if (action == RefitScreen.CLOSE) closeRefit(null);
         else if (action == RefitScreen.SEND) {
             Conn c = ClientLink.get().getConn();

@@ -65,6 +65,9 @@ and in a campaign friends can connect as soon as you load your save, while you a
    (setting "Reopen the refit screen after a friend's refit"). An accepted refit
    is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
    paid, story points spent. Whether a hull mod suits the ship is for you to judge.
+   **Refit in the game's own screen:** on your ship's refit page press **G**, leave CO-OP (Esc), open Missions >
+   **Wingman: Refit**, click the ship and choose Refit. Refit as in single player, then go back to CO-OP: your
+   changes are on the refit page, ready to check and send. (Don't start that mission; if you do, it ends at once.)
    Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
    **Officers for friends:** press **Ctrl+Shift+L** on the campaign map, pick a friend (Left/Right) and one of
    your officers (Up/Down), and press **Enter**. That officer then captains whichever ship the friend picks
