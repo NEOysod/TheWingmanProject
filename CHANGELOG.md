@@ -2,6 +2,9 @@
 
 ## Next (on the test branch)
 
+- **Fix: officer skill pop-ups stuck on the host's screen.** When a friend picked another ship while the host had the
+  fleet or refit screen open, their linked officer changed ships under it, and the pop-up of the officer being hovered
+  stayed on screen until a reload. Officer moves and level-ups now wait until that screen is closed (the host is told).
 - **Loadout selectors in friend refits**, for any mod that has them (Arma Armatura's strikecraft arms, Diable
   Avionics' Virtuous, and others built the same way). A joiner's refit page gets a LOADOUT section: one row per
   selector (R ARM, L ARM, HEAD...), with every option and the weapons it fits; pick one with Left/Right or a click.
