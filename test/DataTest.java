@@ -226,6 +226,28 @@ public class DataTest {
             gd2.groups = null; // an older host: groups in the request change nothing it knows
             check(new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty() || true, "older host");
         }
+        { // loadout selectors: sent after the groups, read back; a pick is the fitted one off and another on
+            wingman.net.RefitData ld = wingman.net.RefitData.decode(rd.encode());
+            ld.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            ld.hullmods.add("sel_rifle");
+            wingman.net.RefitData.Loadout l = new wingman.net.RefitData.Loadout();
+            l.name = "R ARM"; l.slots.add("A_GUN");
+            String[][] opts = { { "sel_rifle", "HEAVY RIFLE", "armaa_rifle" }, { "sel_laser", "LASER RIFLE", "armaa_laser" }, { "sel_flamer", "PLASMA FLAMER", "" } };
+            for (String[] op : opts) { l.mods.add(op[0]); l.labels.add(op[1]); l.hulls.add("armaa_aleste"); l.weapons.add(new java.util.ArrayList<String>(java.util.Arrays.asList(op[2]))); }
+            ld.loadouts.add(l);
+            wingman.net.RefitData ld2 = wingman.net.RefitData.decode(ld.encode());
+            check(ld2.loadouts.size() == 1 && ld2.loadouts.get(0).name.equals("R ARM") && ld2.loadouts.get(0).mods.size() == 3 && ld2.loadouts.get(0).current == 0
+                    && "armaa_laser".equals(ld2.loadouts.get(0).weapon(1, "A_GUN")) && "".equals(ld2.loadouts.get(0).weapon(2, "A_GUN"))
+                    && ld2.loadoutOf("sel_flamer") == ld2.loadouts.get(0) && ld2.loadoutOwning("A_GUN") != null && ld2.groups != null, "refit data loadouts round trip");
+            check(wingman.net.RefitData.decode(rd.encode()).loadouts.isEmpty(), "refit data without loadouts: none read");
+            wingman.net.RefitRequest pick = new wingman.net.RefitRequest(); pick.memberId = "m1"; pick.vents = ld2.vents; pick.caps = ld2.caps;
+            pick.removeMods.add("sel_rifle"); pick.addMods.add("sel_flamer");
+            wingman.net.RefitPlan lp = new wingman.net.RefitPlan(ld2, pick);
+            check(!lp.isEmpty() && !lp.allProblems().toString().contains("FLAMER") && !lp.allProblems().toString().contains("sel_") && !lp.allProblems().toString().contains("Loadout"),
+                    "a loadout pick is a change the plan takes (" + lp.allProblems() + ")");
+            pick.removeMods.clear();
+            check(new wingman.net.RefitPlan(ld2, pick).allProblems().toString().contains("Loadout"), "a loadout option asked for without the fitted one off is a problem");
+        }
         wingman.net.RefitPlan pl = new wingman.net.RefitPlan(rd, rq2);
         // OP: 148 - 12 (mauler) + 4 (light AC) + 6 (wasps) = 146. Credits: buy 130, sell the mauler (no value given: 0).
         check(pl.opUsed == 146 && pl.buy == 130 && pl.sell == 0 && pl.net() == 130 && pl.allProblems().isEmpty() && !pl.isEmpty(), "refit plan: ordnance points and credits " + pl.opUsed + " " + pl.buy + " " + pl.allProblems());

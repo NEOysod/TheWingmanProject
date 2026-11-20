@@ -217,8 +217,8 @@ public final class GameRefit {
             String a = had.get(slot), b = want.get(slot);
             if (a == null ? b == null : a.equals(b)) continue;
             // A weapon a mod's hull mod fits by itself (Arma Armatura's arms, with its selectors): the host's game fits
-            // it again when the selector steps there (ModRefit.Selectors), so it isn't asked for.
-            if (modsOwn(a) || modsOwn(b)) continue;
+            // it again when the selector steps there (ModRefit.Loadouts), so it isn't asked for.
+            if (modsOwn(a) || modsOwn(b) || d.loadoutOwning(slot) != null) continue;
             if (r.changes.size() >= RefitRequest.MAX_CHANGES) break;
             RefitRequest.Change c = new RefitRequest.Change();
             c.wing = false;

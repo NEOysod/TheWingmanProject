@@ -72,6 +72,10 @@ final class RefitScreen {
    private static final int HEAD = 7;
    /** The weapon groups tile (and its editor on the right). */
    private static final int GROUPS = 8;
+   /** A loadout selector's row (id: its index in data.loadouts). */
+   private static final int LOADOUT = 9;
+   /** Buttons LOADOUT_PICK + n pick option n of the marked loadout. */
+   private static final int LOADOUT_PICK = 1000;
    /** Weapon groups editor: a weapon's box for a group, a group's fire mode, its autofire; and AUTO-ARRANGE. */
    private static final int H_GCELL = 8, H_GMODE = 9, H_GAUTO = 10, B_ARRANGE = 21;
    private float[] groupArea;
@@ -370,14 +374,18 @@ final class RefitScreen {
       if (var2 != null) {
          for (WeaponSlotAPI var4 : var2.getAllWeaponSlotsCopy()) {
             try {
-               if (changeable(var4)) {
+               if (changeable(var4) && this.data.loadoutOwning(var4.getId()) == null) { // (a loadout's slots: picked by its selector)
                   var1.add(var4.getId());
                }
             } catch (Throwable var6) {
             }
          }
       } else {
-         var1.addAll(this.data.fitSlots);
+         for (String var7 : this.data.fitSlots) {
+            if (this.data.loadoutOwning(var7) == null) {
+               var1.add(var7);
+            }
+         }
       }
 
       Collections.sort(var1, new Comparator<String>() {
@@ -439,6 +447,14 @@ final class RefitScreen {
          }
       }
 
+      if (!this.data.loadouts.isEmpty()) {
+         var1.add(new RefitScreen.Row(7, "LOADOUT"));
+
+         for (int var5 = 0; var5 < this.data.loadouts.size(); var5++) {
+            var1.add(new RefitScreen.Row(LOADOUT, String.valueOf(var5)));
+         }
+      }
+
       var1.add(new RefitScreen.Row(7, "WEAPON GROUPS"));
       var1.add(new RefitScreen.Row(GROUPS, ""));
       var1.add(new RefitScreen.Row(7, "FLUX"));
@@ -459,16 +475,16 @@ final class RefitScreen {
       }
 
       for (String var11 : this.data.hullmods) {
-         // Hidden hull mods fitted on the ship show, as in the game's refit screen (a mod's loadout selectors:
-         // Arma Armatura's arm weapons, Diable's Virtuous; taking one off steps to the next, on the host); those
-         // hidden everywhere don't.
-         if (!hiddenEverywhere(var11)) {
+         // (a mod's loadout selectors are hidden hull mods: they have LOADOUT rows of their own)
+         if (!hiddenMod(var11) && this.data.loadoutOf(var11) == null) {
             var1.add(new RefitScreen.Row(4, var11));
          }
       }
 
       for (String var12 : this.req.addMods) {
-         var1.add(new RefitScreen.Row(4, var12));
+         if (this.data.loadoutOf(var12) == null) {
+            var1.add(new RefitScreen.Row(4, var12));
+         }
       }
 
       var1.add(new RefitScreen.Row(5, ""));
@@ -854,6 +870,8 @@ final class RefitScreen {
             this.req.note = "";
          } else if (var1.kind == GROUPS) {
             this.req.groups = null;
+         } else if (var1.kind == LOADOUT && this.loadout(var1) != null) {
+            this.pickLoadout(this.loadout(var1), this.loadout(var1).current);
          }
       }
    }
@@ -869,6 +887,9 @@ final class RefitScreen {
          return this.req.caps != this.data.caps;
       } else if (var1.kind == 4) {
          return this.req.removeMods.contains(var1.id) || this.req.addMods.contains(var1.id) || this.req.buildIn.contains(var1.id);
+      } else if (var1.kind == LOADOUT) {
+         RefitData.Loadout var2 = this.loadout(var1);
+         return var2 != null && this.picked(var2) != var2.current;
       } else if (var1.kind == GROUPS) {
          return this.req.groups != null && this.data.groups != null && !RefitData.sameGroups(this.req.groups, this.data.groups);
       } else {
@@ -1030,6 +1051,14 @@ final class RefitScreen {
                }
 
                return 0;
+            } else if (var6 != null && var6.kind == LOADOUT) {
+               RefitData.Loadout var9 = this.loadout(var6);
+               if (var9 != null && (var1 == 203 || var1 == 205)) {
+                  int var10 = var9.mods.size();
+                  this.pickLoadout(var9, (this.picked(var9) + (var1 == 205 ? 1 : var10 - 1)) % var10);
+               }
+
+               return 0;
             } else {
                List var8 = this.options(var6, new FriendRefit.Names(this.data), true);
                if (var8.isEmpty()) {
@@ -1177,7 +1206,12 @@ final class RefitScreen {
                            this.autoArrange();
                            return 0;
                         default:
-                           if (var5.index >= 100) {
+                           if (var5.index >= LOADOUT_PICK) {
+                              RefitData.Loadout var15 = this.loadout(var6);
+                              if (var15 != null && var5.index - LOADOUT_PICK < var15.mods.size()) {
+                                 this.pickLoadout(var15, var5.index - LOADOUT_PICK);
+                              }
+                           } else if (var5.index >= 100) {
                               int var11 = (var5.index - 100) / 10;
                               int var8 = (var5.index - 100) % 10;
                               SavedRefits.Saved var9 = SavedRefits.get(this.data.memberId, var11);
@@ -1684,11 +1718,96 @@ final class RefitScreen {
       }
    }
 
-   static boolean hiddenEverywhere(String var0) {
-      try {
-         return Global.getSettings().getHullModSpec(var0).isHiddenEverywhere();
-      } catch (Throwable var2) {
-         return false;
+   // ---- loadout selectors (a mod's hidden hull mods that pick weapons: ModRefit.Loadouts on the host) ----
+
+   private RefitData.Loadout loadout(RefitScreen.Row var1) {
+      if (var1 == null || var1.kind != LOADOUT) {
+         return null;
+      } else {
+         try {
+            return this.data.loadouts.get(Integer.parseInt(var1.id));
+         } catch (Throwable var3) {
+            return null;
+         }
+      }
+   }
+
+   /** The option the plan picks: the one asked for in place of the fitted one, or the fitted one. */
+   private int picked(RefitData.Loadout var1) {
+      if (this.req.removeMods.contains(var1.currentMod())) {
+         for (String var3 : this.req.addMods) {
+            int var4 = var1.indexOf(var3);
+            if (var4 >= 0 && var4 != var1.current) {
+               return var4;
+            }
+         }
+      }
+
+      return var1.current;
+   }
+
+   /** Asks for option n: the fitted selector off, that one on (the host steps round to it). */
+   private void pickLoadout(RefitData.Loadout var1, int var2) {
+      this.req.addMods.removeAll(var1.mods);
+      this.req.removeMods.removeAll(var1.mods);
+      if (var2 != var1.current && var2 >= 0 && var2 < var1.mods.size()) {
+         this.req.removeMods.add(var1.currentMod());
+         this.req.addMods.add(var1.mods.get(var2));
+      }
+   }
+
+   /** What an option fits: its weapons by name, and its hull where that changes. */
+   private String fits(RefitData.Loadout var1, int var2, FriendRefit.Names var3) {
+      StringBuilder var4 = new StringBuilder();
+      String var5 = var2 < var1.hulls.size() ? var1.hulls.get(var2) : "";
+      if (!var5.isEmpty() && !var5.equals(var1.hulls.get(var1.current))) {
+         try {
+            var4.append(Global.getSettings().getHullSpec(var5).getHullName()).append(" hull");
+         } catch (Throwable var9) {
+            var4.append(var5);
+         }
+      }
+
+      for (String var7 : var1.slots) {
+         String var8 = var1.weapon(var2, var7);
+         if (var8 != null && !var8.isEmpty()) {
+            var4.append(var4.length() == 0 ? "" : ", ").append(var3.item(RefitData.key(0, var8)));
+         }
+      }
+
+      return var4.toString();
+   }
+
+   private void loadoutPanel(RefitScreen.Row var1, FriendRefit.Names var2, float var3, float var4, float var5) {
+      RefitData.Loadout var6 = this.loadout(var1);
+      if (var6 != null) {
+         String var7 = this.ui.body;
+         float var8 = Style.section("Loadout: " + var6.name, var3, var4, var5) - 4.0F;
+         var8 = this.ui
+               .text(
+                  "This ship's mod picks these with a hull mod of its own, as you step through them in the game's refit screen. Pick one: the host steps the ship round to it.",
+                  var7,
+                  Panel.DIM,
+                  var3,
+                  var8,
+                  var5
+               )
+            - 10.0F;
+         int var9 = this.picked(var6);
+
+         for (int var10 = 0; var10 < var6.mods.size() && var8 > 60.0F; var10++) {
+            String var11 = var6.labels.get(var10) + (var10 == var6.current ? "   (fitted)" : (var10 == var9 ? "   (picked)" : ""));
+            Color var12 = var10 == var9 ? CYAN : (var10 == var6.current ? Panel.TEXT : Panel.DIM);
+            this.button(var3, var8 - 40.0F, var5, 40.0F, "", var12, var10 != var9, LOADOUT_PICK + var10);
+            iconBox(picture(var6.mods.get(var10), true), var3 + 4.0F, var8 - 36.0F, 32.0F, false);
+            this.line(var11, var7, var12, var3 + 44.0F, var8 - 4.0F, var5 - 50.0F);
+            this.line(this.fits(var6, var10, var2), var7, Panel.DIM, var3 + 44.0F, var8 - 21.0F, var5 - 50.0F);
+            var8 -= 46.0F;
+         }
+
+         if (var9 != var6.current) {
+            this.button(var3, var8 - 34.0F, 80.0F, 30.0F, "UNDO", Panel.WARN, true, 4);
+         }
       }
    }
 
@@ -1928,6 +2047,25 @@ final class RefitScreen {
                var13 = Panel.DIM;
             }
             break;
+         case LOADOUT:
+            RefitData.Loadout var32 = this.loadout(var1);
+            if (var32 == null) {
+               var9 = "";
+               break;
+            }
+
+            int var33 = this.picked(var32);
+            var11 = var32.mods.get(var33);
+            var12 = true;
+            var9 = var32.name + ":  " + var32.labels.get(var33);
+            var10 = this.fits(var32, var33, var3);
+            if (var33 != var32.current) {
+               var13 = Panel.GOOD;
+               var10 = "was " + var32.labels.get(var32.current) + "   (Left/Right to change)";
+            } else {
+               var10 = (var10.isEmpty() ? "" : var10 + "   ") + "(Left/Right to change)";
+            }
+            break;
          case 2:
             var9 = "Flux vents   " + this.req.vents + " / " + this.data.maxVents;
             var10 = "1 OP each";
@@ -1995,7 +2133,7 @@ final class RefitScreen {
 
       float var23 = var7 - 8.0F;
       float var27 = var4 + 4.0F;
-      if (var1.kind != 0 && var1.kind != 1 && var1.kind != 4) {
+      if (var1.kind != 0 && var1.kind != 1 && var1.kind != 4 && var1.kind != LOADOUT) {
          var27 = var4 + 10.0F;
       } else {
          iconBox(picture(var11, var12), var4 + 4.0F, var5 + 4.0F, var23, var1.kind == 4 && this.req.removeMods.contains(var1.id));
@@ -2181,6 +2319,9 @@ final class RefitScreen {
                }
             case GROUPS:
                this.groupsPanel(var2, var3, var4, var5, var6, var7);
+               return;
+            case LOADOUT:
+               this.loadoutPanel(var1, var3, var4, var5, var6);
                return;
             case 5:
                float var19 = Style.section("Add a hull mod", var4, var5, var6) - 4.0F;
@@ -2543,6 +2684,10 @@ final class RefitScreen {
         Map<String, String> m = new java.util.LinkedHashMap<String, String>();
         for (String s : data.fitSlots) m.put(s, data.weaponIn(s));
         for (RefitRequest.Change c : req.changes) if (!c.wing) m.put(c.place, c.item);
+        for (RefitData.Loadout l : data.loadouts) { // a loadout picked: its weapons in the slots it owns
+            int at = picked(l);
+            if (at != l.current) for (String s : l.slots) m.put(s, l.weapon(at, s));
+        }
         return m;
     }
 

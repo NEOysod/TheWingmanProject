@@ -92,6 +92,91 @@ public final class RefitData {
         public boolean same(Group o) { return o != null && alternating == o.alternating && autofire == o.autofire && slots.equals(o.slots); }
     }
 
+    /**
+     * Loadout selectors on the ship: hidden hull mods that a mod's own hull mod swaps, one for the next in a cycle,
+     * with the weapons (or hull) that go with each (Arma Armatura's arms, Diable Avionics' Virtuous). Found by the
+     * host trying each step on a copy of the ship (ModRefit.Loadouts); empty from a host that doesn't send them.
+     */
+    public List<Loadout> loadouts = new ArrayList<Loadout>();
+
+    /** One selector's cycle: its options in order, the one on the ship, and what each puts in the slots it owns. */
+    public static final class Loadout {
+        /** What it picks ("R ARM"), from the options' names. */
+        public String name = "";
+        /** The option fitted now. */
+        public int current;
+        /** Each option: its hull mod, its name ("HEAVY RIFLE"), and the hull it puts the ship on (the same for most). */
+        public List<String> mods = new ArrayList<String>(), labels = new ArrayList<String>(), hulls = new ArrayList<String>();
+        /** The weapon slots the selector owns, and each option's weapon in each ("" for none), slot by slot. */
+        public List<String> slots = new ArrayList<String>();
+        public List<List<String>> weapons = new ArrayList<List<String>>();
+
+        public String currentMod() { return mods.get(current); }
+        public int indexOf(String mod) { return mods.indexOf(mod); }
+        public String weapon(int option, String slot) {
+            int i = slots.indexOf(slot);
+            return i < 0 || option < 0 || option >= weapons.size() || i >= weapons.get(option).size() ? null : weapons.get(option).get(i);
+        }
+    }
+
+    public static final int MAX_LOADOUTS = 8, MAX_OPTIONS = 16, MAX_LOADOUT_SLOTS = 8;
+
+    /** The loadout an option's hull mod belongs to, or null. */
+    public Loadout loadoutOf(String mod) {
+        for (Loadout l : loadouts) if (l.mods.contains(mod)) return l;
+        return null;
+    }
+
+    /** The loadout that owns a weapon slot, or null. */
+    public Loadout loadoutOwning(String slot) {
+        for (Loadout l : loadouts) if (l.slots.contains(slot)) return l;
+        return null;
+    }
+
+    public static void writeLoadouts(Out o, List<Loadout> l) throws IOException {
+        int n = Math.min(l.size(), MAX_LOADOUTS);
+        o.writeVarInt(n);
+        for (int i = 0; i < n; i++) {
+            Loadout x = l.get(i);
+            int k = Math.min(x.mods.size(), MAX_OPTIONS);
+            o.writeUTF(cap(x.name, 60));
+            o.writeVarInt(Math.max(0, Math.min(k - 1, x.current)));
+            writeStrings(o, x.slots, MAX_LOADOUT_SLOTS, 100);
+            o.writeVarInt(k);
+            for (int j = 0; j < k; j++) {
+                o.writeUTF(cap(x.mods.get(j), 100));
+                o.writeUTF(cap(j < x.labels.size() ? x.labels.get(j) : x.mods.get(j), 60));
+                o.writeUTF(cap(j < x.hulls.size() ? x.hulls.get(j) : "", 100));
+                List<String> w = j < x.weapons.size() ? x.weapons.get(j) : new ArrayList<String>();
+                for (int s = 0; s < Math.min(x.slots.size(), MAX_LOADOUT_SLOTS); s++) o.writeUTF(cap(s < w.size() ? w.get(s) : "", 100));
+            }
+        }
+    }
+
+    public static List<Loadout> readLoadouts(In in) throws IOException {
+        int n = count(in, MAX_LOADOUTS, "loadouts");
+        List<Loadout> l = new ArrayList<Loadout>();
+        for (int i = 0; i < n; i++) {
+            Loadout x = new Loadout();
+            x.name = id(in, 60);
+            int cur = in.readVarInt();
+            readStrings(in, x.slots, MAX_LOADOUT_SLOTS, 100, "slots");
+            int k = count(in, MAX_OPTIONS, "loadout options");
+            if (k < 1 || cur < 0 || cur >= k) throw new IOException("impossible loadout");
+            x.current = cur;
+            for (int j = 0; j < k; j++) {
+                x.mods.add(id(in, 100));
+                x.labels.add(id(in, 60));
+                x.hulls.add(id(in, 100));
+                List<String> w = new ArrayList<String>();
+                for (int s = 0; s < x.slots.size(); s++) w.add(id(in, 100));
+                x.weapons.add(w);
+            }
+            l.add(x);
+        }
+        return l;
+    }
+
     /** Most groups sent; the game's own keys go to 7. */
     public static final int MAX_GROUPS = 10;
 
@@ -230,7 +315,8 @@ public final class RefitData {
             writeStrings(o, noBuildIn, MAX_MODS, 100);
             writeItems(o, setAside);
             writeItems(o, heldForOthers);
-            if (groups != null) writeGroups(o, groups); // last: a host without groups stops before this
+            if (groups != null) writeGroups(o, groups); // a host without groups stops before this
+            if (groups != null && !loadouts.isEmpty()) writeLoadouts(o, loadouts); // last: a host without loadouts stops before this
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -323,6 +409,7 @@ public final class RefitData {
         readItems(in, d.setAside);
         readItems(in, d.heldForOthers);
         if (in.remaining() > 0) d.groups = readGroups(in); // (a host without groups stops here)
+        if (in.remaining() > 0) d.loadouts = readLoadouts(in); // (a host without loadouts stops here)
         return d;
     }
 

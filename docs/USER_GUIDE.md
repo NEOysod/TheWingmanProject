@@ -68,6 +68,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
    **Refit in the game's own screen:** on your ship's refit page press **G**, leave CO-OP (Esc), open Missions >
    **Wingman: Refit**, click the ship and choose Refit. Refit as in single player, then go back to CO-OP: your
    changes are on the refit page, ready to check and send. (Don't start that mission; if you do, it ends at once.)
+   **Loadout selectors** (a mod's swappable arms or heads, such as Arma Armatura's strikecraft): they have their
+   own LOADOUT rows on the refit page. Pick an option with Left/Right or a click; the host's game swaps the ship to it.
    Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
    **Officers for friends:** press **Ctrl+Shift+L** on the campaign map, pick a friend (Left/Right) and one of
    your officers (Up/Down), and press **Enter**. That officer then captains whichever ship the friend picks

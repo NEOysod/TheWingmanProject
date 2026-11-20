@@ -177,7 +177,7 @@ final class Screens {
     static void refit(boolean changed) { refit(changed, true); }
 
     static String searchFor = "";
-    static boolean whole;
+    static boolean whole, loadouts;
 
     static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
@@ -196,6 +196,28 @@ final class Screens {
             q.changes.add(c);
             q.vents = 30; q.caps = 26;
             q.addMods.add("Heavy Armor");
+        }
+        if (loadouts) {
+            for (String[][] g : new String[][][] {
+                    { { "R ARM", "WS0007" }, { "HEAVY RIFLE", "Heavy Rifle" }, { "LASER RIFLE", "Laser Rifle" }, { "PLASMA FLAMER", "Plasma Flamer" }, { "MINIGUN", "Minigun" } },
+                    { { "L ARM", "WS0008" }, { "BLADE", "Laser Blade" }, { "STAKE DRIVER", "Stake Driver" }, { "DISPERSAL GRENADE", "Dispersal Grenade" } } }) {
+                wingman.net.RefitData.Loadout lo = new wingman.net.RefitData.Loadout();
+                lo.name = g[0][0]; lo.slots.add(g[0][1]);
+                for (int i = 1; i < g.length; i++) {
+                    lo.mods.add(lo.name + ": " + g[i][0]); lo.labels.add(g[i][0]); lo.hulls.add("eagle");
+                    lo.weapons.add(new ArrayList<String>(Arrays.asList(g[i][1])));
+                }
+                v.refitData.loadouts.add(lo);
+                v.refitData.hullmods.add(lo.mods.get(0));
+            }
+            l.refit.setData(v.refitData);
+            wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
+            q.removeMods.add("R ARM: HEAVY RIFLE"); q.addMods.add("R ARM: PLASMA FLAMER");
+            try {
+                java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
+                List<?> rs = (List<?>) rows.invoke(l.refit);
+                for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 9) { set(l.refit, "rowAt", i); break; }
+            } catch (Exception e) { throw new RuntimeException(e); }
         }
         if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
         if (whole) set(l.refit, "availableOnly", false);
@@ -280,6 +302,7 @@ final class Screens {
         } }));
         out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
         out.add(new Shot("refit-tip", 1920, 1080, 1600, 770, new Runnable() { public void run() { refit(false); try { Thread.sleep(300); } catch (Exception e) { } refit(false); } }));
+        out.add(new Shot("refit-loadout", 1920, 1080, -1, -1, new Runnable() { public void run() { loadouts = true; refit(false); loadouts = false; } }));
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));

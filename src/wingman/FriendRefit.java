@@ -425,6 +425,7 @@ final class FriendRefit {
             }
             d.groups = groups;
         } catch (Throwable t) { /* not sent: the joiner can't change them */ }
+        d.loadouts = ModRefit.Loadouts.find(v);
         return d;
     }
 
@@ -799,25 +800,32 @@ final class FriendRefit {
                 problems.add("Slot " + c.place + " can't take a weapon.");
                 continue;
             }
+            if (d.loadoutOwning(c.place) != null) {
+                problems.add("Slot " + c.place + " holds the " + d.loadoutOwning(c.place).name + " loadout's weapon: pick the loadout instead.");
+                continue;
+            }
             if (c.item.isEmpty()) continue;
             WeaponSpecAPI spec;
             try { spec = Global.getSettings().getWeaponSpec(c.item); } catch (Throwable t) { problems.add("Unknown weapon " + c.item + "."); continue; }
             if (!slot.weaponFits(spec)) problems.add(spec.getWeaponName() + " doesn't fit slot " + c.place + " (" + slot.getSlotSize().name().toLowerCase() + " "
                     + slot.getWeaponType().name().toLowerCase() + ").");
         }
-        boolean stepping = ModRefit.Selectors.stepping(r);
         for (String id : r.addMods) {
+            if (ModRefit.Loadouts.option(d, id)) { // a loadout option: picked by stepping its selector round
+                RefitData.Loadout l = d.loadoutOf(id);
+                if (!id.equals(l.currentMod()) && !r.removeMods.contains(l.currentMod())) problems.add("Loadout " + l.name + ": pick it in place of the one fitted.");
+                continue;
+            }
             try {
                 HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
-                // A hidden one only as where a loadout selector taken off steps to (see ModRefit.Selectors).
-                if (spec.isHiddenEverywhere() || (spec.isHidden() && !stepping)) problems.add(spec.getDisplayName() + " can't be fitted.");
+                if (spec.isHidden() || spec.isHiddenEverywhere()) problems.add(spec.getDisplayName() + " can't be fitted.");
                 if (hull.getBuiltInMods().contains(id)) problems.add(spec.getDisplayName() + " is built into the hull already.");
             } catch (Throwable t) { problems.add("Unknown hull mod " + id + "."); }
         }
         // The real ordnance cost: the new loadout on a copy of the ship, counted by the game with the host's skills.
         try {
             ShipVariantAPI test = v.clone();
-            applyTo(test, pd);
+            test = applyTo(test, pd);
             MutableCharacterStatsAPI stats = Global.getSector().getPlayerStats();
             pd.op = test.computeOPCost(stats);
             pd.opMax = hull.getOrdnancePoints(stats);
@@ -831,7 +839,7 @@ final class FriendRefit {
     }
 
     /** The request's loadout put on a variant (a copy for the checks, the new one on accepting). */
-    private static void applyTo(ShipVariantAPI v, Pending pd) {
+    private static ShipVariantAPI applyTo(ShipVariantAPI v, Pending pd) {
         RefitRequest r = pd.request;
         for (RefitRequest.Change c : r.changes) {
             if (pd.plan.sameAsBefore(c)) continue;
@@ -841,14 +849,22 @@ final class FriendRefit {
                 if (!c.item.isEmpty()) v.addWeapon(c.place, c.item);
             }
         }
-        for (String id : r.removeMods) v.removeMod(id);
-        for (String id : r.addMods) if (!ModRefit.Selectors.target(id)) v.addMod(id); // (selectors are stepped to, after)
+        RefitData d = pd.plan.d;
+        for (String id : r.removeMods) if (!ModRefit.Loadouts.option(d, id)) v.removeMod(id);
+        for (String id : r.addMods) if (!ModRefit.Loadouts.option(d, id)) v.addMod(id); // (loadouts are stepped to, after)
         for (String id : r.buildIn) v.addPermaMod(id, true);
         ModRefit.afterHullMods(v); // other mods' loadout switches (a Diable Virtuous selector taken off, say)
         v.setNumFluxVents(r.vents);
         v.setNumFluxCapacitors(r.caps);
         if (r.groups != null) {
             try { applyGroups(v, r.groups); } catch (Throwable t) { Global.getLogger(FriendRefit.class).warn("Wingman: weapon groups from the refit not set; the game places the weapons", t); }
+        }
+        if (d.loadouts.isEmpty()) return v;
+        try {
+            return ModRefit.Loadouts.reach(v, d, r); // each loadout stepped round to the option picked
+        } catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: loadouts from the refit not stepped", t);
+            return v;
         }
     }
 
@@ -920,11 +936,10 @@ final class FriendRefit {
         // The ship: a refit variant of its own (never the shared stock one), with the new loadout.
         ShipVariantAPI nv = m.getVariant().clone();
         nv.setSource(VariantSource.REFIT);
-        applyTo(nv, pd);
+        nv = applyTo(nv, pd);
         if (nv.hasUnassignedWeapons()) nv.assignUnassignedWeapons();
         m.setVariant(nv, false, true);
-        m.updateStats(); // (the hull mods' own effects run: a mod's selector taken off steps to its next one here)
-        ModRefit.Selectors.stepTo(m, r);
+        m.updateStats();
         // Story points for S-mods, with the bonus experience the game gives for building in.
         for (String id : r.buildIn) {
             try {
@@ -1014,8 +1029,13 @@ final class FriendRefit {
                     + Math.round(plan.d.sellPrice(plan.d.market(to), old)) + " cr" : " to " + n.source(to));
             out.add(place + ":  " + in + outTo);
         }
-        for (String id : pd.request.removeMods) out.add("Hull mod off:  " + n.mod(id));
-        for (String id : pd.request.addMods) out.add("Hull mod on:  " + n.mod(id));
+        RefitData d = pd.plan == null ? null : pd.plan.d;
+        for (String id : pd.request.removeMods) if (!ModRefit.Loadouts.option(d, id)) out.add("Hull mod off:  " + n.mod(id));
+        for (String id : pd.request.addMods) if (!ModRefit.Loadouts.option(d, id)) out.add("Hull mod on:  " + n.mod(id));
+        if (d != null) for (RefitData.Loadout l : d.loadouts) {
+            String to = ModRefit.Loadouts.picked(l, pd.request);
+            if (to != null) out.add("Loadout " + l.name + ":  " + l.labels.get(l.current) + "  ->  " + l.labels.get(l.indexOf(to)));
+        }
         for (String id : pd.request.buildIn) out.add("Built in (S-mod, 1 story point):  " + n.mod(id));
         if (pd.request.vents != plan.d.vents) out.add("Flux vents:  " + plan.d.vents + " -> " + pd.request.vents);
         if (pd.request.caps != plan.d.caps) out.add("Flux capacitors:  " + plan.d.caps + " -> " + pd.request.caps);

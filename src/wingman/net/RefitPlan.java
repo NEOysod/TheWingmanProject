@@ -243,6 +243,12 @@ public final class RefitPlan {
             op -= modCost(id);
         }
         for (String id : r.addMods) {
+            RefitData.Loadout l = d.loadoutOf(id);
+            if (l != null) { // a loadout's option: the one fitted is taken off for it (both free of ordnance points here)
+                if (!r.removeMods.contains(l.currentMod())) problems.add("Loadout " + l.name + ": pick one option.");
+                else { fitted.add(id); op += modCost(id); }
+                continue;
+            }
             if (!d.knownHullmods.contains(id)) problems.add("The host doesn't know " + names.mod(id) + ".");
             else if (d.hullmods.contains(id) && !r.removeMods.contains(id) || d.sMods.contains(id) || d.permaMods.contains(id)) problems.add(names.mod(id) + " is already on the ship.");
             else { fitted.add(id); op += modCost(id); }
