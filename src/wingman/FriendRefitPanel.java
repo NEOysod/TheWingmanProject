@@ -30,8 +30,6 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     private static final String SMALL = "graphics/fonts/orbitron12condensed.fnt";
     /** Where the stack of buttons top right ends (screen y): the wish lists' button goes under this one. */
     static volatile float bottom = Float.MAX_VALUE;
-    private final Panel panel = new Panel();
-    { panel.mouse = true; } // clicks on it are acted on
     private boolean open, broken, wasDown;
     private int at;
     private String message = "";
@@ -44,6 +42,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         try {
             FriendRefitPanel p = new FriendRefitPanel();
             Global.getSector().getListenerManager().addListener(p, true);
+            instance = p;
         } catch (Throwable t) {
             Global.getLogger(FriendRefitPanel.class).warn("Wingman: friends' refits can't be shown on the campaign map", t);
         }
@@ -81,11 +80,8 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 else if (key == 30) { if (accept(list.get(at))) break; }                       // A: accept
                 else if (key == 20) {                                                          // T: trust this player's refits, or stop
                     FriendRefit.Pending pd = list.get(at);
-                    pd.player.trustedRefits = !pd.player.trustedRefits;
-                    if (pd.player.trustedRefits) {
-                        say("You trust " + pd.player.name + "'s refits: from now on they are done as they arrive (checks still run). T again to stop.", Panel.WARN);
-                        if (pd.problems.isEmpty() && FriendRefit.autoAccept(pd)) break;
-                    } else say(pd.player.name + "'s refits need your yes again.", Panel.GOOD);
+                    act("perm:" + pd.player.slot + ":" + (pd.player.trustedRefits ? 1 : 2), list);
+                    if (!requests().contains(pd)) break;
                 }
             }
         } catch (Throwable t) {
@@ -118,140 +114,46 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         return true;
     }
 
-    // ---- buttons: YES / NO under the panel, and the others; clicks on them (or the panel) go no further ----
+    // ---- the page: queue tabs, the changes, cost and checks at the side, the buttons at the foot ----
 
-    private static final int YES = 0, NO = 1, PREV = 2, NEXT = 3, CLOSE = 4;
-    /** Where each button was drawn last frame: x, y, w, h, action. */
-    private final List<float[]> buttons = new ArrayList<float[]>();
-    private static final String BUTTON_FONT = "graphics/fonts/orbitron20aabold.fnt";
-    private final java.util.Map<String, LabelAPI> labels = new java.util.HashMap<String, LabelAPI>();
+    private final Widgets.Hits hits = new Widgets.Hits();
 
     private boolean overUs(float mx, float my) {
-        if (open && panel.contains(mx, my)) return true;
-        if (open && strip != null && mx >= strip[0] && mx <= strip[0] + strip[2] && my >= strip[1] && my <= strip[1] + strip[3]) return true;
-        for (float[] b : buttons) if (mx >= b[0] && mx <= b[0] + b[2] && my >= b[1] && my <= b[1] + b[3]) return true;
+        if (open && hits.over(mx, my)) return true;
         return !open && button != null && mx >= button[0] && mx <= button[0] + button[2] && my >= button[1] && my <= button[1] + button[3];
     }
 
-    /** A click on a button (polled while drawing, so it works over any screen). */
-    private void clicked(float mx, float my, List<FriendRefit.Pending> list) {
-        Panel.Hit ph = panel.contains(mx, my) ? panel.hitAt(mx, my) : null;
-        if (ph != null && ph.kind == Panel.Hit.KEY) { // the key hints and the close box, for the mouse
-            at = Math.max(0, Math.min(list.size() - 1, at));
-            if (ph.value == 30) accept(list.get(at));
-            else if (ph.value == 32) deny(list.get(at));
-            else if (ph.value == 203) { at = (at + list.size() - 1) % list.size(); message = ""; }
-            else if (ph.value == 205) { at = (at + 1) % list.size(); message = ""; }
-            else if (ph.value == 1) open = false;
-            try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
-            return;
-        }
-        for (float[] b : buttons) {
-            if (mx < b[0] || mx > b[0] + b[2] || my < b[1] || my > b[1] + b[3]) continue;
-            at = Math.max(0, Math.min(list.size() - 1, at));
-            switch ((int) b[4]) {
-                case YES: accept(list.get(at)); break;
-                case NO: deny(list.get(at)); break;
-                case PREV: at = (at + list.size() - 1) % list.size(); message = ""; break;
-                case NEXT: at = (at + 1) % list.size(); message = ""; break;
-                default: open = false;
-            }
-            try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
-            return;
-        }
+    /** Opens the page (from the CO-OP panel), on that player's refit if they have one waiting. */
+    static void openFor(String name) {
+        FriendRefitPanel p = instance;
+        if (p == null) return;
+        List<FriendRefit.Pending> list = requests();
+        if (list.isEmpty()) return;
+        for (int i = 0; i < list.size(); i++) if (name != null && list.get(i).player.name.equalsIgnoreCase(name)) p.at = i;
+        p.open = true;
+        p.message = "";
     }
 
-    /** The row of buttons under the panel box. */
-    private void drawButtons(FriendRefit.Pending pd, int count) {
-        buttons.clear();
-        List<Object[]> row = new ArrayList<Object[]>();
-        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose && FriendRefit.docked();
-        if (count > 1) row.add(new Object[] { "<", PREV, LobbyScreen.TITLE });
-        row.add(new Object[] { pd.acceptOnClose ? "ACCEPTED" : "YES, ACCEPT", YES, canAccept ? Panel.GOOD : Panel.DIM });
-        row.add(new Object[] { pd.acceptOnClose ? "NO, CANCEL" : "NO, DENY", NO, Panel.BAD });
-        if (count > 1) row.add(new Object[] { ">", NEXT, LobbyScreen.TITLE });
-        row.add(new Object[] { "CLOSE", CLOSE, Panel.DIM });
-        float gap = 12f, h = 0f, total = 0f;
-        float[] widths = new float[row.size()];
-        for (int i = 0; i < row.size(); i++) {
-            LabelAPI l = buttonLabel((String) row.get(i)[0], (Color) row.get(i)[2]);
-            widths[i] = Math.max(l.computeTextWidth((String) row.get(i)[0]) + 36f, ((Integer) row.get(i)[1]) <= NO ? 170f : 44f);
-            h = Math.max(h, 36f);
-            total += widths[i] + (i > 0 ? gap : 0f);
-        }
-        float stripBottom = changeIcons(pd);
-        float x = panel.lastX + (panel.lastW - total) / 2f, y = Math.max(4f, stripBottom - h - 10f);
-        for (int i = 0; i < row.size(); i++) {
-            String text = (String) row.get(i)[0];
-            Color c = (Color) row.get(i)[2];
-            boolean over = LobbyScreen.inside(x, y, widths[i], h);
-            Style.fill(x - 2f, y - 2f, widths[i] + 4f, h + 4f, new Color(6, 10, 16, 220));
-            Style.button(x, y, widths[i], h, text, c, true, over);
-            buttons.add(new float[] { x, y, widths[i], h, (Integer) row.get(i)[1] });
-            x += widths[i] + gap;
-        }
-    }
+    private static FriendRefitPanel instance;
 
-    /**
-     * The changes as pictures, under the panel: for each slot or bay, what comes out (faded) and what goes in. Returns
-     * the strip's bottom (the panel's, if there is nothing to show).
-     */
-    private float changeIcons(FriendRefit.Pending pd) {
-        List<String[]> pairs = new ArrayList<String[]>();
-        for (wingman.net.RefitRequest.Change c : pd.request.changes) {
-            if (pd.plan.sameAsBefore(c)) continue;
-            pairs.add(new String[] { pd.plan.before(c), pd.plan.after(c) });
+    static boolean isOpen() { return instance != null && instance.open; }
+
+    private void act(String id, List<FriendRefit.Pending> list) {
+        Widgets.click();
+        at = Math.max(0, Math.min(list.size() - 1, at));
+        if (id.equals("accept")) accept(list.get(at));
+        else if (id.equals("deny")) deny(list.get(at));
+        else if (id.equals("prev")) { at = (at + list.size() - 1) % list.size(); message = ""; }
+        else if (id.equals("next")) { at = (at + 1) % list.size(); message = ""; }
+        else if (id.equals("close")) open = false;
+        else if (id.startsWith("tab:")) { at = Integer.parseInt(id.substring(4)); message = ""; }
+        else if (id.startsWith("perm:")) {
+            FriendRefit.Pending pd = list.get(at);
+            int k = Integer.parseInt(id.substring(id.lastIndexOf(':') + 1));
+            CampaignPlayerList.setPermission(pd.player, k);
+            say(k == 2 ? "You trust " + pd.player.name + "'s refits: done as they arrive (checks still run)." : k == 0
+                    ? pd.player.name + "'s refits are look only now: this one still waits for you." : pd.player.name + "'s refits wait for your yes.", k == 2 ? Panel.WARN : Panel.GOOD);
         }
-        for (String id : pd.request.addMods) pairs.add(new String[] { null, "m:" + id });
-        strip = null;
-        if (pairs.isEmpty()) return panel.lastY;
-        float s = 32f, arrow = 16f, pairW = s * 2 + arrow + 14f, gap = 6f;
-        int perRow = Math.max(1, (int) ((panel.lastW + gap) / (pairW + gap)));
-        int rows = Math.min(3, (pairs.size() + perRow - 1) / perRow);
-        float stripH = rows * (s + 8f) + 8f;
-        float y0 = panel.lastY - 6f - stripH;
-        strip = new float[] { panel.lastX, y0, panel.lastW, stripH };
-        Style.frame(panel.lastX, y0, panel.lastW, stripH, Style.WINDOW, Style.EDGE, 8f);
-        for (int i = 0; i < pairs.size() && i < rows * perRow; i++) {
-            float x = panel.lastX + 8f + (i % perRow) * (pairW + gap), y = y0 + stripH - 8f - (i / perRow + 1) * (s + 8f) + 8f;
-            String[] p = pairs.get(i);
-            RefitScreen.iconBox(pic(p[0]), x, y, s, true);
-            arrowRight(x + s + 3f, y + s / 2f, arrow - 6f);
-            RefitScreen.iconBox(pic(p[1]), x + s + arrow, y, s, false);
-        }
-        return y0;
-    }
-
-    private float[] strip;
-
-    private static com.fs.starfarer.api.graphics.SpriteAPI pic(String key) {
-        if (key == null) return null;
-        if (key.startsWith("m:")) return RefitScreen.picture(key.substring(2), true);
-        return RefitScreen.picture(key, false);
-    }
-
-    private static void arrowRight(float x, float y, float len) {
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(0.47f, 0.82f, 1f, 0.9f);
-        GL11.glBegin(GL11.GL_TRIANGLES);
-        GL11.glVertex2f(x, y - 5f); GL11.glVertex2f(x, y + 5f); GL11.glVertex2f(x + len, y);
-        GL11.glEnd();
-        GL11.glPopAttrib();
-    }
-
-    private LabelAPI buttonLabel(String text, Color c) {
-        String key = c.getRGB() + "|" + text;
-        LabelAPI l = labels.get(key);
-        if (l == null) {
-            if (labels.size() > 64) labels.clear();
-            l = Global.getSettings().createLabel(text, BUTTON_FONT);
-            l.setColor(c);
-            labels.put(key, l);
-        }
-        return l;
     }
 
     public void processCampaignInputPreFleetControl(List<InputEventAPI> events) {}
@@ -269,66 +171,176 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             if (list.isEmpty()) {
                 if (open && !message.isEmpty()) { open = false; } // the last one decided
                 button = null;
-                buttons.clear();
+                hits.clear();
                 wasDown = down;
                 return;
             }
-            if (open && down && !wasDown) { // the buttons drawn last frame
-                clicked(Global.getSettings().getMouseX(), Global.getSettings().getMouseY(), list);
+            if (open) { // the clicks on what was drawn last frame (polled while drawing, so it works over any screen)
+                String id = hits.clicked();
                 wasDown = down;
+                if (id != null) act(id, list);
                 list = requests();
-                if (list.isEmpty() || !open) { buttons.clear(); return; }
+                if (list.isEmpty() || !open) { hits.clear(); return; }
             }
             if (!open) {
-                buttons.clear();
+                hits.clear();
+                if (CampaignPlayerList.showing()) { button = null; wasDown = down; return; } // its REFITS button stands for this one
                 drawButton(list.size());
                 if (down && !wasDown && button != null && LobbyScreen.inside(button[0], button[1], button[2], button[3])) { open = true; message = ""; }
                 wasDown = down;
                 return;
             }
-            wasDown = down;
             at = Math.max(0, Math.min(list.size() - 1, at));
-            FriendRefit.Pending pd = list.get(at);
-            panel.render(doc(pd, list.size()));
-            drawButtons(pd, list.size());
+            draw(list, at);
         } catch (Throwable t) {
             open = false;
             broken = true;
+            Style.forget();
             Global.getLogger(FriendRefitPanel.class).error("Wingman: the friend refit panel can't be drawn and is switched off (requests still time out when the host undocks)", t);
         }
     }
 
-    /** One request as a window: who and what, the changes, the cost, and the checks. */
-    private Panel.Doc doc(FriendRefit.Pending pd, int count) {
-        Panel.Doc d = new Panel.Doc("FRIEND REFIT").note(count > 1 ? (at + 1) + " of " + count : "");
-        d.section("Request");
-        d.line(pd.player.name + " asks for a refit of " + pd.ship + ".", PlayerTags.color(pd.player.slot));
-        if (!pd.request.note.isEmpty()) d.callout("\"" + pd.request.note + "\"", Style.ACCENT);
-        List<String> changes = FriendRefit.describe(pd);
-        if (!changes.isEmpty()) {
-            d.section("Changes");
-            for (String l : changes) d.line(l, Panel.TEXT);
+    void draw(List<FriendRefit.Pending> list, int at) {
+        hits.clear();
+        FriendRefit.Pending pd = list.get(at);
+        String body = Style.body();
+        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float w = Math.min(1120f, sw - 60f), h = Math.min(720f, sh - 60f);
+        float x = (sw - w) / 2f, y = (sh - h) / 2f;
+        Style.fill(0f, 0f, sw, sh, Widgets.BACKDROP);
+        hits.add(x, y, w, h, "");
+        Style.frame(x, y, w, h, new Color(8, 18, 31, 248), Style.EDGE, 10f);
+        float bar = 46f, top = y + h;
+        Style.fill(x + 1f, top - bar, w - 11f, bar - 1f, Style.BAR);
+        Style.fill(x + 1f, top - bar, 3f, bar - 1f, Style.ACCENT);
+        float th = Style.lineHeight(Style.TITLE_FONT);
+        Style.text("FRIEND REFITS", Style.TITLE_FONT, Style.ACCENT, x + 16f, top - (bar - th) / 2f, 240f);
+        float tx = x + 16f + Style.width("FRIEND REFITS", Style.TITLE_FONT) + 18f;
+        for (int i = 0; i < list.size(); i++) { // the refits waiting, as tabs
+            FriendRefit.Pending q = list.get(i);
+            String t = "P" + q.player.slot + "  " + q.player.name;
+            float bw = Style.width(t.toUpperCase(), Style.SMALL_FONT) + 24f;
+            if (tx + bw > x + w - 80f) break;
+            Widgets.box(tx, top - bar + 8f, bw, bar - 16f, t, PlayerTags.color(q.player.slot), i == at);
+            hits.add(tx, top - bar + 8f, bw, bar - 16f, "tab:" + i);
+            tx += bw + 6f;
         }
-        d.section("Cost");
+        float cb = bar - 16f;
+        Widgets.box(x + w - 16f - cb, top - bar + 8f, cb, cb, "X", Style.TEXT, false);
+        hits.add(x + w - 16f - cb, top - bar + 8f, cb, cb, "close");
+
+        float sideW = 360f, foot = 64f;
+        float sx = x + w - sideW, bodyTop = top - bar, bodyBottom = y + foot;
+        Style.fill(sx, bodyBottom, 1f, bodyTop - bodyBottom, Style.RULE);
+        Style.fill(sx + 1f, bodyBottom, sideW - 2f, bodyTop - bodyBottom, new Color(10, 24, 40, 200));
+
+        // who and which ship
+        float lx = x + 18f, lw = sx - lx - 18f, ly = bodyTop - 16f;
+        float ny = Style.text(pd.ship, Style.TITLE_FONT, Style.TEXT, lx, ly, lw);
+        long ago = Math.max(0L, (System.currentTimeMillis() - pd.at) / 60000L);
+        ny = Style.text(pd.player.name + " asks  -  " + (ago < 1 ? "just now" : ago + " min ago"), body, PlayerTags.color(pd.player.slot), lx, ny - 4f, lw) - 10f;
+        if (!pd.request.note.isEmpty()) ny = Style.callout("\"" + pd.request.note + "\"", Style.ACCENT, lx, ny, lw) - 12f;
+        ny = Widgets.head("Changes", lx, ny);
+        List<String[]> rows = FriendRefit.rows(pd);
+        float rh = 46f, colW = (lw - 150f - 28f) * 0.42f, toW = (lw - 150f - 28f) - colW;
+        for (int i = 0; i < rows.size(); i++) {
+            if (ny - rh < bodyBottom + 10f) { Style.text("and " + (rows.size() - i) + " more", body, Style.DIM, lx, ny, lw); break; }
+            String[] r = rows.get(i);
+            float ry = ny - rh;
+            Style.fill(lx, ry, lw, rh - 4f, Widgets.CARD);
+            Style.outline(lx, ry, lw, rh - 4f, Widgets.CARD_EDGE);
+            float mid = ry + (rh - 4f) / 2f, lh = Style.lineHeight(body);
+            Style.text(Widgets.fit(r[0], Style.SMALL_FONT, 140f), Style.SMALL_FONT, Style.DIM, lx + 10f, mid + Style.lineHeight(Style.SMALL_FONT) / 2f, 140f);
+            float fx = lx + 150f;
+            float ix = item(r[1], r[2], Style.DIM, fx, mid, colW, true);
+            arrowRight(fx + colW + 6f, mid, 12f);
+            float tx2 = fx + colW + 28f;
+            boolean sub = r[5] != null && !r[5].isEmpty();
+            item(r[3], r[4], Style.TEXT, tx2, sub ? mid + 7f : mid, toW - 8f, false);
+            if (sub) Style.text(Widgets.fit(r[5], Style.SMALL_FONT, toW - 8f - (r[3] == null ? 0f : 34f)), Style.SMALL_FONT, Style.DIM, tx2 + (r[3] == null ? 0f : 34f), mid - 4f, toW);
+            ny = ry;
+        }
+        if (rows.isEmpty()) Style.text("Nothing to change.", body, Style.DIM, lx, ny, lw);
+
+        // the side: cost, checks, and how this player's refits are taken
+        float px = sx + 18f, pw = sideW - 36f, py = bodyTop - 16f;
+        py = Widgets.head("Cost", px, py);
         int net = pd.plan.net();
-        d.field("Ordnance points", pd.op + " / " + pd.opMax, false, false);
-        d.field("Credits", net > 0 ? "costs " + LobbyScreen.grouped(net) : net < 0 ? "brings in " + LobbyScreen.grouped(-net) : "none", false, false);
-        if (pd.plan.storyPoints > 0) d.field("Story points", String.valueOf(pd.plan.storyPoints), false, false);
+        py = field("Ordnance points", pd.op + " / " + pd.opMax, pd.op > pd.opMax ? Panel.BAD : Style.TEXT, px, py, pw);
+        py = field("Credits", net > 0 ? LobbyScreen.grouped(net) : net < 0 ? "brings in " + LobbyScreen.grouped(-net) : "none", Style.TEXT, px, py, pw);
+        py = field("Story points", pd.plan.storyPoints > 0 ? String.valueOf(pd.plan.storyPoints) : "none", Style.TEXT, px, py, pw) - 8f;
         if (FriendRefit.docked() && (net != pd.request.expectCredits || pd.plan.storyPoints != pd.request.expectStoryPoints))
-            d.callout(pd.player.name + " was shown " + pd.request.expectCredits + " credits and " + pd.request.expectStoryPoints + " story points: something changed since.", Panel.WARN);
-        d.section("Checks");
-        if (!pd.acceptOnClose && !FriendRefit.docked()) d.callout("Waiting for a market: dock at one to check this refit there and accept it.", Panel.WARN);
-        else if (pd.acceptOnClose) d.callout("Accepted: being done now.", Panel.GOOD);
-        else if (pd.problems.isEmpty()) d.callout("All checks pass.", Panel.GOOD);
-        else for (String p : pd.problems) d.callout(p, Panel.BAD);
-        if (!pd.request.addMods.isEmpty()) d.line("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.", Panel.DIM);
-        d.section("Trust");
-        d.line(pd.player.trustedRefits ? "You trust " + pd.player.name + "'s refits: they are done as they arrive, without asking (checks still run)."
-                : "T trusts " + pd.player.name + "'s refits from now on: done as they arrive, without asking (checks still run). Until they reconnect.",
-                pd.player.trustedRefits ? Panel.WARN : Panel.DIM);
-        if (!message.isEmpty()) d.callout(message, messageColor);
-        d.keys("A: accept     D: deny     T: " + (pd.player.trustedRefits ? "stop trusting" : "trust") + " their refits     " + (count > 1 ? "Left: previous     Right: next     " : "") + "Esc: close");
-        return d;
+            py = Style.callout(pd.player.name + " was shown " + pd.request.expectCredits + " credits and " + pd.request.expectStoryPoints + " story points: something changed since.", Panel.WARN, px, py, pw) - 8f;
+        py = Widgets.head("Checks", px, py);
+        if (!pd.acceptOnClose && !FriendRefit.docked()) py = Style.callout("Waiting for a market: dock at one to check this refit there and accept it.", Panel.WARN, px, py, pw) - 6f;
+        else if (pd.acceptOnClose) py = Style.callout("Accepted: being done now.", Panel.GOOD, px, py, pw) - 6f;
+        else if (pd.problems.isEmpty()) py = Style.callout("All checks pass.", Panel.GOOD, px, py, pw) - 6f;
+        else for (String p : pd.problems) { if (py < bodyBottom + 140f) break; py = Style.callout(p, Panel.BAD, px, py, pw) - 6f; }
+        if (!pd.request.addMods.isEmpty() && py > bodyBottom + 150f) py = Style.text("Hull mods' own rules (what they need, what they rule out) can't be checked outside the refit screen: you decide.", Style.SMALL_FONT, Style.DIM, px, py - 2f, pw) - 8f;
+        float permTop = bodyBottom + 96f;
+        Widgets.head(pd.player.name + "'s refits", px, permTop);
+        int perm = CampaignPlayerList.permission(pd.player);
+        Widgets.toggles(CampaignPlayerList.PERMS, perm, px, permTop - Style.lineHeight(Style.SMALL_FONT) - 5f - 30f, pw, 30f, Style.ACCENT, hits, "perm:" + pd.player.slot);
+        Style.text(perm == 2 ? "Done as they arrive, until they reconnect (T)." : perm == 0 ? "They can't send refits; this one still waits." : "Each one waits for you (T trusts them).",
+                Style.SMALL_FONT, Style.DIM, px, permTop - Style.lineHeight(Style.SMALL_FONT) - 5f - 30f - 6f, pw);
+
+        // the foot: the message, < >, DENY, ACCEPT
+        Style.fill(x + 1f, y + foot, w - 2f, 1f, Style.RULE);
+        float by = y + 12f, bh = 40f, bx = x + 18f;
+        if (list.size() > 1) {
+            Style.button(bx, by, 44f, bh, "<", LobbyScreen.TITLE, true, Widgets.over(bx, by, 44f, bh));
+            hits.add(bx, by, 44f, bh, "prev");
+            Style.button(bx + 52f, by, 44f, bh, ">", LobbyScreen.TITLE, true, Widgets.over(bx + 52f, by, 44f, bh));
+            hits.add(bx + 52f, by, 44f, bh, "next");
+            bx += 108f;
+        }
+        boolean canAccept = pd.problems.isEmpty() && !pd.acceptOnClose && FriendRefit.docked();
+        String acc = pd.acceptOnClose ? "ACCEPTED" : !FriendRefit.docked() ? "[A]  ACCEPT AT A MARKET" : "[A]  ACCEPT";
+        float aw = Math.max(200f, Style.width(acc, Style.TITLE_FONT) + 40f), dw = 180f;
+        float ax = x + w - 18f - aw, dx = ax - 10f - dw;
+        Style.button(dx, by, dw, bh, pd.acceptOnClose ? "[D]  CANCEL" : "[D]  DENY", Panel.BAD, true, Widgets.over(dx, by, dw, bh));
+        hits.add(dx, by, dw, bh, "deny");
+        Style.button(ax, by, aw, bh, acc, Panel.GOOD, canAccept, canAccept && Widgets.over(ax, by, aw, bh));
+        hits.add(ax, by, aw, bh, "accept");
+        String m = message.isEmpty() ? "Left/Right: another refit     Esc: close" : message;
+        Style.text(Widgets.fit(m, body, dx - bx - 16f), body, message.isEmpty() ? Style.FAINT : messageColor, bx, by + (bh + Style.lineHeight(body)) / 2f, dx - bx - 16f);
+    }
+
+    /** One side of a change: its picture (if any) and its name, centred on 'mid'. Returns the right edge. */
+    private static float item(String key, String text, Color c, float x, float mid, float w, boolean faded) {
+        float tx = x;
+        if (key != null) {
+            RefitScreen.iconBox(pic(key), x, mid - 14f, 28f, faded);
+            tx += 34f;
+        }
+        String body = Style.body();
+        Style.text(Widgets.fit(text, body, w - (tx - x)), body, c, tx, mid + Style.lineHeight(body) / 2f, w - (tx - x));
+        return x + w;
+    }
+
+    private static float field(String name, String value, Color c, float x, float top, float w) {
+        String body = Style.body();
+        Style.text(name, body, Style.DIM, x, top, w * 0.6f);
+        Style.textRight(value, body, c, x + w, top);
+        return top - Style.lineHeight(body) - 6f;
+    }
+
+    private static com.fs.starfarer.api.graphics.SpriteAPI pic(String key) {
+        if (key == null) return null;
+        if (key.startsWith("m:")) return RefitScreen.picture(key.substring(2), true);
+        return RefitScreen.picture(key, false);
+    }
+
+    private static void arrowRight(float x, float y, float len) {
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glColor4f(0.47f, 0.82f, 1f, 0.9f);
+        GL11.glBegin(GL11.GL_TRIANGLES);
+        GL11.glVertex2f(x, y - 6f); GL11.glVertex2f(x, y + 6f); GL11.glVertex2f(x + len, y);
+        GL11.glEnd();
+        GL11.glPopAttrib();
     }
 
     /** The small button, top right, while requests wait. */

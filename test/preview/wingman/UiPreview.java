@@ -177,6 +177,18 @@ public class UiPreview {
                 if (n.equals("getString") && "defaultFont".equals(a[0])) return "graphics/fonts/insignia15LTaa.fnt";
                 if (n.equals("createLabel")) return label((String) a[0], (String) a[1]);
                 if (n.equals("getWeaponSpec")) return fakeWeapon((String) a[0]);
+                if (n.equals("getSkillSpec")) {
+                    final String id = (String) a[0];
+                    return proxy(com.fs.starfarer.api.characters.SkillSpecAPI.class, new InvocationHandler() {
+                        public Object invoke(Object p2, Method m2, Object[] a2) {
+                            String n2 = m2.getName();
+                            if (n2.equals("getName")) { String[] w = id.split("_"); StringBuilder b = new StringBuilder(); for (String x : w) b.append(b.length() == 0 ? "" : " ").append(Character.toUpperCase(x.charAt(0))).append(x.substring(1)); return b.toString(); }
+                            if (n2.equals("getGoverningAptitudeName")) return "Combat";
+                            if (n2.equals("getDescription")) return "Improves how the ship fights in this area. More effective at the elite level.";
+                            return zero(m2.getReturnType());
+                        }
+                    });
+                }
                 if (n.equals("getDescription")) {
                     com.fs.starfarer.api.loading.Description d = new com.fs.starfarer.api.loading.Description((String) a[0], (com.fs.starfarer.api.loading.Description.Type) a[1]);
                     d.setText1("A heavy, slow-firing cannon that trades rate of fire for raw punch. Its high-explosive shells crack armor plating that lighter guns barely scratch, though it struggles against shields.");

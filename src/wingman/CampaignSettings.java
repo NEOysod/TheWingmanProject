@@ -25,9 +25,15 @@ final class CampaignSettings implements CampaignInputListener, CampaignUIRenderi
     { panel.mouse = true; } // clicks on it are acted on
     private boolean broken, wasPaused;
 
+    private static CampaignSettings instance;
+
+    static boolean isOpen() { return instance != null && instance.menu.open; }
+
     static void install() {
         try {
-            Global.getSector().getListenerManager().addListener(new CampaignSettings(), true);
+            CampaignSettings c = new CampaignSettings();
+            Global.getSector().getListenerManager().addListener(c, true);
+            instance = c;
         } catch (Throwable t) {
             Global.getLogger(CampaignSettings.class).warn("Wingman: the settings page can't be opened on the campaign map (use the title screen or a battle)", t);
         }

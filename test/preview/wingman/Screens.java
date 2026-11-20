@@ -241,32 +241,64 @@ final class Screens {
         pd.request = q;
         pd.plan = new wingman.net.RefitPlan(d, q, new FriendRefit.Names(d));
         pd.op = 141; pd.opMax = 145;
-        FriendRefitPanel p = new FriendRefitPanel();
-        java.lang.reflect.Method doc = FriendRefitPanel.class.getDeclaredMethod("doc", FriendRefit.Pending.class, int.class);
-        doc.setAccessible(true);
-        Panel panel = (Panel) get(p, "panel");
-        panel.render((Panel.Doc) doc.invoke(p, pd, 2));
-        java.lang.reflect.Method b = FriendRefitPanel.class.getDeclaredMethod("drawButtons", FriendRefit.Pending.class, int.class);
-        b.setAccessible(true);
-        b.invoke(p, pd, 2);
-        java.lang.reflect.Method tb = FriendRefitPanel.class.getDeclaredMethod("drawButton", int.class);
-        tb.setAccessible(true);
-        tb.invoke(p, 2);
+        FriendRefit.Pending pd2 = new FriendRefit.Pending();
+        java.lang.reflect.Constructor<wingman.net.HostSession.Player> pc2 = wingman.net.HostSession.Player.class.getDeclaredConstructor(int.class, wingman.net.Conn.class);
+        pc2.setAccessible(true);
+        wingman.net.HostSession.Player cy = pc2.newInstance(3, null);
+        cy.name = "Cy"; cy.slot = 3;
+        pd2.player = cy; pd2.ship = "ISS Patience, Dominator"; pd2.request = new wingman.net.RefitRequest(); pd2.plan = pd.plan;
+        pd.at = System.currentTimeMillis() - 120000L;
+        new FriendRefitPanel().draw(Arrays.asList(pd, pd2), 0);
     }
 
     static void playerList() throws Exception {
         CampaignPlayerList pl = new CampaignPlayerList();
-        Class<?> rc = Class.forName("wingman.CampaignPlayerList$Row");
-        java.lang.reflect.Constructor<?> c = rc.getDeclaredConstructor(int.class, String.class, String.class, boolean.class);
-        c.setAccessible(true);
-        List<Object> rows = new ArrayList<Object>();
-        rows.add(c.newInstance(1, "NEOysod (you)", "host", false));
-        rows.add(c.newInstance(2, "Kyrizion", "ISS Long Wait", false));
-        rows.add(c.newInstance(3, "Cy", "", false));
-        rows.add(c.newInstance(4, "Mosk", "ISS Kettle", true));
-        java.lang.reflect.Method d = CampaignPlayerList.class.getDeclaredMethod("draw", List.class);
-        d.setAccessible(true);
-        d.invoke(pl, rows);
+        set(pl, "openSlot", 2);
+        List<CampaignPlayerList.Row> rows = new ArrayList<CampaignPlayerList.Row>();
+        Object[][] d = { { 1, "NEOysod (you)", "host", false, "", 1, "" }, { 2, "Kyrizion", "ISS Long Wait, Eagle", false, "Mira Okonkwo", 1, "ISS Long Wait, Eagle" },
+                { 3, "Cy", "", false, "", 2, "" }, { 4, "Mosk", "ISS Patience, Dominator", true, "Ana Weiss", 0, "" } };
+        for (Object[] x : d) {
+            CampaignPlayerList.Row r = new CampaignPlayerList.Row();
+            r.slot = (Integer) x[0]; r.name = (String) x[1]; r.ship = (String) x[2]; r.quiet = (Boolean) x[3]; r.host = r.slot == 1;
+            r.officer = (String) x[4]; r.permission = (Integer) x[5]; r.refitShip = (String) x[6];
+            if (!r.officer.isEmpty()) r.officerNote = "Level 5, aggressive  -  captains the ship " + r.name + " picks";
+            rows.add(r);
+        }
+        if (whole) set(pl, "openSlot", 3);
+        pl.draw(rows, 1);
+    }
+
+    static void officers() {
+        OfficerLinkPanel p = new OfficerLinkPanel();
+        OfficerLinkPanel.View v = new OfficerLinkPanel.View();
+        String[][] f = { { "2", "Kyrizion" }, { "3", "Cy" }, { "4", "Mosk" } };
+        for (String[] x : f) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = Integer.parseInt(x[0]); fr.name = x[1]; v.friends.add(fr); }
+        Object[][] os = { { "Mira Okonkwo", 5, "aggressive", "Linked to Kyrizion  -  ISS Long Wait, Eagle", "mine", "helmsmanship+ combat_endurance impact_mitigation+ field_modulation target_analysis" },
+                { "Tomas Reyes", 4, "steady", "Captain of ISS Hand of Fate, Conquest", "Leaves ISS Hand of Fate, Conquest when Kyrizion picks a ship.", "point_defense ordnance_expertise+ gunnery_implants damage_control" },
+                { "Ana Weiss", 6, "cautious", "Linked to Cy", "Moves over from Cy.", "systems_expertise+ missile_specialization energy_weapon_mastery helmsmanship+ field_modulation polarized_armor+" },
+                { "Ido Hartmann", 2, "reckless", "Unassigned", "", "combat_endurance target_analysis" },
+                { "Sun Qian", 3, "steady", "Captain of ISS Lantern, Heron", "Leaves ISS Lantern, Heron when Kyrizion picks a ship.", "damage_control impact_mitigation+ point_defense" },
+                { "Erik Laine", 1, "timid", "Unassigned", "", "gunnery_implants" } };
+        for (Object[] o : os) {
+            OfficerLinkPanel.Officer x = new OfficerLinkPanel.Officer();
+            x.name = (String) o[0]; x.level = (Integer) o[1]; x.personality = (String) o[2]; x.status = (String) o[3];
+            x.mine = "mine".equals(o[4]); x.moveNote = x.mine ? "" : (String) o[4];
+            x.statusColor = x.mine ? Panel.GOOD : x.status.startsWith("Linked") ? Panel.WARN : Panel.DIM;
+            for (String sk : ((String) o[5]).split(" ")) { x.skills.add(sk.replace("+", "")); x.elite.add(sk.endsWith("+")); }
+            v.officers.add(x);
+        }
+        v.picked = whole ? 2 : 0;
+        p.draw(v);
+    }
+
+    static void levelUp() {
+        try {
+            java.lang.reflect.Field f = OfficerChoice.class.getDeclaredField("skills"); f.setAccessible(true);
+            f.set(null, new ArrayList<String>(Arrays.asList("ballistic_mastery", "systems_expertise", "point_defense", "damage_control")));
+        } catch (Exception e) { throw new RuntimeException(e); }
+        OfficerChoice.officer = "Mira Okonkwo"; OfficerChoice.toLevel = 6; OfficerChoice.chosen = 1;
+        lobby(LobbyScreen.FLEET, true);
+        OfficerChoice.forget();
     }
 
     static List<Shot> all() {
@@ -306,6 +338,11 @@ final class Screens {
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
+        out.add(new Shot("player-list-cy", 1920, 1080, 1700, 1000, new Runnable() { public void run() { whole = true; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } whole = false; } }));
+        out.add(new Shot("officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); } }));
+        out.add(new Shot("officers-1366", 1366, 768, -1, -1, new Runnable() { public void run() { whole = true; officers(); whole = false; } }));
+        out.add(new Shot("lobby-levelup", 1920, 1080, -1, -1, new Runnable() { public void run() { levelUp(); } }));
+        out.add(new Shot("lobby-levelup-1366", 1366, 768, -1, -1, new Runnable() { public void run() { levelUp(); } }));
         return out;
     }
 }

@@ -65,6 +65,8 @@ public final class HostSession {
          * host's game restarting, asks again. After scardwell15's pull request #1.
          */
         public volatile boolean trustedRefits;
+        /** The host set this player's refits to look only: they can plan them, but a refit sent is refused. This connection only. */
+        public volatile boolean refitsLookOnly;
         /** The skill this player picked for their linked officer's level-up (game thread takes it), and what was last offered. */
         public volatile String officerPick;
         public String officerOffered = "";

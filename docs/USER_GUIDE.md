@@ -71,10 +71,13 @@ and in a campaign friends can connect as soon as you load your save, while you a
    **Loadout selectors** (a mod's swappable arms or heads, such as Arma Armatura's strikecraft): they have their
    own LOADOUT rows on the refit page. Pick an option with Left/Right or a click; the host's game swaps the ship to it.
    Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
-   **Officers for friends:** press **Ctrl+Shift+L** on the campaign map, pick a friend (Left/Right) and one of
-   your officers (Up/Down), and press **Enter**. That officer then captains whichever ship the friend picks
-   (the officer already on it swaps over). When it can level up, the friend picks its skill in their lobby with
-   the number keys. Setting "Friends' officers level like a player" lets a linked officer reach a player's max
+   **The CO-OP panel** (top right of the map): click a friend for their officer, how their refits are taken
+   (**Look only**, **Ask me**, **Trust**) and any refit of theirs waiting.
+   **Officers for friends:** click ASSIGN on a friend in the CO-OP panel, or press **Ctrl+Shift+L** on the campaign
+   map; pick the friend (tabs along the top) and one of your officers (click a card, or the arrows), and click
+   **LINK** (or press **Enter**). That officer then captains whichever ship the friend picks
+   (the officer already on it swaps over). When it can level up, the friend picks its skill in their lobby: click a
+   skill card and CONFIRM (or press its number twice). Setting "Friends' officers level like a player" lets a linked officer reach a player's max
    level. Enter again (or Delete) unlinks it and puts its level cap back. Saves load fine without Wingman.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each

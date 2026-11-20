@@ -30,6 +30,7 @@ final class OfficerChoice {
             if (n > 8) return;
             List<String> s = new ArrayList<String>();
             for (int i = 0; i < n; i++) s.add(in.readUTF());
+            if (!s.equals(skills) || level != toLevel) chosen = -1;
             officer = name;
             toLevel = level;
             skills = s;
@@ -37,6 +38,9 @@ final class OfficerChoice {
     }
 
     static boolean pending() { return !skills.isEmpty(); }
+
+    /** The skill picked on the cards (index), not yet sent; -1 none. */
+    static volatile int chosen = -1;
 
     /** What YOUR SHIP says while the officer can level up. */
     static String line() {
@@ -57,6 +61,7 @@ final class OfficerChoice {
         if (index < 0 || index >= s.size()) return false;
         synchronized (outgoing) { outgoing.add(s.get(index)); }
         skills = new ArrayList<String>(); // until the host's answer (the next level's choices, if any)
+        chosen = -1;
         return true;
     }
 
@@ -68,5 +73,5 @@ final class OfficerChoice {
         }
     }
 
-    static void forget() { officer = ""; toLevel = 0; skills = new ArrayList<String>(); }
+    static void forget() { officer = ""; toLevel = 0; skills = new ArrayList<String>(); chosen = -1; }
 }

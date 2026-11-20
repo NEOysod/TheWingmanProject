@@ -551,9 +551,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             refitAction(lobby.refit.key(key, ch, ctrl, shift));
             return;
         }
-        if (key >= 2 && key <= 9 && OfficerChoice.pending()) {                       // 1..8: our officer's skill
-            String officer = OfficerChoice.officer, skill = key - 2 < OfficerChoice.skills.size() ? OfficerChoice.skills.get(key - 2) : null;
-            if (skill != null && OfficerChoice.pick(key - 2)) { note("Sent to the host: " + OfficerChoice.name(skill) + " for " + officer + ".", Panel.GOOD); return; }
+        if (key >= 2 && key <= 9 && OfficerChoice.pending()) {                       // 1..8: our officer's skill (again: send it)
+            if (key - 2 < OfficerChoice.skills.size()) { skillCard(OfficerChoice.chosen == key - 2 ? -1 : key - 2); return; }
         }
         if (key == 19) { openRefit(); return; }                                         // R: refit the ship we picked
         if (key == 1) { lobbyOpen = false; return; }                                   // Esc: back to the panel
@@ -830,6 +829,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             lastRowClickAt = now;
             lobbyAt = value;
             if (twice) lobbyKey(33, (char) 0, false, false); // a double click picks it
+        } else if (kind == LobbyScreen.SKILL) {
+            skillCard(value);
         } else if (kind == LobbyScreen.TAB) {
             if (value == lobby.page) return;
             if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
@@ -837,6 +838,15 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         } else {
             lobbyKey(value, (char) 0, h[6] > 0f, false);
         }
+    }
+
+    /** A level-up card picked (its index), or CONFIRM (-1): the one picked is sent to the host. */
+    private void skillCard(int i) {
+        if (i >= 0) { OfficerChoice.chosen = i; return; }
+        int c = OfficerChoice.chosen;
+        if (c < 0 || c >= OfficerChoice.skills.size()) return;
+        String officer = OfficerChoice.officer, skill = OfficerChoice.skills.get(c);
+        if (OfficerChoice.pick(c)) note("Sent to the host: " + OfficerChoice.name(skill) + " for " + officer + ".", Panel.GOOD);
     }
 
     private static void sound() {

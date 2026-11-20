@@ -35,6 +35,8 @@ final class LobbyScreen {
 
     /** What can be clicked, as drawn this frame: {x, y, w, h, kind, value, ctrl}. KEY: a key code; ROW: a ship in the fleet list; TAB: a page. */
     static final int KEY = 0, ROW = 1, TAB = 2;
+    /** A level-up skill card (value: its index), or CONFIRM (value -1). */
+    static final int SKILL = 3;
     final List<float[]> hits = new java.util.ArrayList<float[]>();
     /** The fleet list's box, for the mouse wheel. */
     float[] listBox;
@@ -501,10 +503,11 @@ final class LobbyScreen {
         // Your ship
         Roster.Member mine = v.roster == null ? null : v.roster.pickOf(v.me);
         String yours = mine == null ? "Not picked yet. Pick one here, or choose in the battle." : Roster.label(mine);
-        if (OfficerChoice.pending()) yours += "\n\n" + OfficerChoice.line();
-        float yoursH = Style.BAR_H + 22f + Style.height(yours, body, pw - 14f) + 6f;
+        float levelH = OfficerChoice.pending() ? levelUpHeight(pw) : 0f;
+        float yoursH = Style.BAR_H + 22f + Style.height(yours, body, pw - 14f) + 6f + levelH;
         Style.window(x, top - yoursH, w, yoursH, "YOUR SHIP", "");
-        Style.callout(yours, mine == null ? Panel.WARN : Panel.GOOD, px, top - Style.BAR_H - 12f, pw);
+        float yy = Style.callout(yours, mine == null ? Panel.WARN : Panel.GOOD, px, top - Style.BAR_H - 12f, pw);
+        if (levelH > 0f) levelUp(px, yy - 12f, pw);
         // Last battle (at the bottom)
         float lastH = r == null ? 0f : Style.BAR_H + 70f;
         if (r != null) {
@@ -516,6 +519,7 @@ final class LobbyScreen {
         }
         // Players, between
         float pTop = top - yoursH - gap, pH = h - yoursH - gap - (r == null ? 0f : lastH + gap);
+        if (pH < Style.BAR_H + 30f) return; // no room left for the players (the level-up cards take it for now)
         float y = Style.window(x, pTop - pH, w, pH, "PLAYERS", v.roster == null ? "" : String.valueOf(1 + v.roster.players.size())) - 8f;
         if (v.roster != null) {
             y = player(1, v.roster.hostName + "  (host)", null, false, px, y, pw, pTop - pH);
@@ -532,6 +536,61 @@ final class LobbyScreen {
     }
 
     private static final String TITLE_FONT_BIG = "graphics/fonts/orbitron20aabold.fnt";
+
+    // ---- our linked officer's level-up: the skills the host's game offers, as cards; CONFIRM sends the one picked ----
+
+    /** A card's height: with the skill's aptitude and a line about it, or (a narrow column) its name alone. */
+    private static float cardH(float w) { return w < 400f ? 46f : 96f; }
+
+    private float levelUpHeight(float w) {
+        int n = OfficerChoice.skills.size();
+        float sh = Style.lineHeight(Style.SMALL_FONT);
+        return 12f + sh + 8f + ((n + 1) / 2) * (cardH(w) + 8f) + 40f + 6f;
+    }
+
+    private void levelUp(float x, float top, float w) {
+        List<String> skills = OfficerChoice.skills;
+        int chosen = OfficerChoice.chosen;
+        float h = levelUpHeight(w) - 12f;
+        Style.fill(x, top - h, w, h, Style.alpha(Panel.WARN, 14));
+        Style.outline(x, top - h, w, h, Style.alpha(Panel.WARN, 150));
+        float y = Style.text(Widgets.fit(("Level up: " + OfficerChoice.officer + " can reach level " + OfficerChoice.toLevel).toUpperCase(), Style.SMALL_FONT, w - 16f),
+                Style.SMALL_FONT, Panel.WARN, x + 8f, top - 6f, w - 16f) - 8f;
+        float cw = (w - 16f - 8f) / 2f, CARD_H = cardH(w);
+        boolean small = CARD_H < 90f;
+        for (int i = 0; i < skills.size(); i++) {
+            String id = skills.get(i);
+            float cx = x + 8f + (i % 2) * (cw + 8f), cy = y - (i / 2 + 1) * CARD_H - (i / 2) * 8f;
+            boolean on = i == chosen;
+            Widgets.card(cx, cy, cw, CARD_H, on, on ? Panel.WARN : null);
+            if (on) Style.outline(cx, cy, cw, CARD_H, Panel.WARN);
+            hits.add(new float[] { cx, cy, cw, CARD_H, SKILL, i, 0 });
+            if (small) {
+                Widgets.picture(Widgets.skillIcon(id), cx + 6f, cy + 7f, 32f, Style.alpha(Style.ACCENT, 160));
+                float stw = cw - 46f - 16f;
+                Style.text(Widgets.fit(Widgets.skillName(id), Style.SMALL_FONT, stw), Style.SMALL_FONT, on ? Color.WHITE : Panel.TEXT, cx + 44f, cy + (CARD_H + Style.lineHeight(Style.SMALL_FONT)) / 2f, stw);
+                Style.textRight(String.valueOf(i + 1), Style.SMALL_FONT, Style.FAINT, cx + cw - 6f, cy + CARD_H - 6f);
+                continue;
+            }
+            Widgets.picture(Widgets.skillIcon(id), cx + 8f, cy + CARD_H - 8f - 36f, 36f, Style.alpha(Style.ACCENT, 160));
+            float tx = cx + 52f, tw = cw - 60f;
+            float ny = Style.text(Widgets.fit(Widgets.skillName(id), body, tw - 14f), body, on ? Color.WHITE : Panel.TEXT, tx, cy + CARD_H - 8f, tw - 14f);
+            Style.textRight(String.valueOf(i + 1), Style.SMALL_FONT, Style.FAINT, cx + cw - 8f, cy + CARD_H - 9f);
+            Style.text(Widgets.skillAptitude(id), Style.SMALL_FONT, Style.DIM, tx, ny - 1f, tw);
+            String d = Widgets.skillText(id);
+            if (!d.isEmpty()) {
+                float dh = Style.height(d, Style.SMALL_FONT, cw - 16f), room = cy + CARD_H - 52f - (cy + 6f);
+                if (dh > room) d = Widgets.fit(d, Style.SMALL_FONT, (cw - 16f) * Math.max(1f, (float) Math.floor(room / Style.lineHeight(Style.SMALL_FONT))) * 0.92f);
+                Style.text(d, Style.SMALL_FONT, Style.DIM, cx + 8f, cy + CARD_H - 50f, cw - 16f);
+            }
+        }
+        float by = top - h + 8f, bw = 130f;
+        boolean can = chosen >= 0 && chosen < skills.size();
+        Style.button(x + w - 8f - bw, by, bw, 32f, "CONFIRM", Panel.GOOD, can, can && inside(x + w - 8f - bw, by, bw, 32f));
+        if (can) hits.add(new float[] { x + w - 8f - bw, by, bw, 32f, SKILL, -1, 0 });
+        String s = can ? "Picked: " + Widgets.skillName(skills.get(chosen)) + " (its number again sends it too)" : "Click a skill, or press its number.";
+        Style.text(Widgets.fit(s, Style.SMALL_FONT, w - bw - 28f), Style.SMALL_FONT, Style.DIM, x + 8f, by + 22f, w - bw - 28f);
+    }
 
     /** One player: their tag in their colour, their name, and the ship they picked under it. */
     private float player(int slot, String name, Roster.Member pick, boolean me, float x, float top, float w, float floor) {

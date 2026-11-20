@@ -2,6 +2,24 @@
 
 ## Next (on the test branch)
 
+- **The CO-OP panel on the campaign map** (host) does more than list who is here: click a friend to open their row,
+  with their linked officer (ASSIGN or CHANGE opens the officer page on them), how their refits are taken, and any
+  refit of theirs waiting (REVIEW). Each row shows the ship they picked, their officer and their refit setting. REFITS
+  in its header opens the friend refit page while any wait (the separate button stays away while the panel shows).
+- **Refits: look only, ask me, or trust**, per friend, from the CO-OP panel or the refit page. Look only (new): they
+  can plan refits but a refit sent is refused with a note. Ask me: each one waits for you, as before. Trust: done as
+  they arrive (checks still run) until they reconnect, as T did. T still toggles trust.
+- **Officer page redone** (Ctrl+Shift+L, or from the CO-OP panel): friends as tabs; your officers as cards with
+  portrait, level, personality, a mark per skill (gold: elite) and who has them; the picked one's skills listed at
+  the side, a note when linking moves them off another friend or ship, and LINK and UNLINK. Everything works with the
+  mouse; the keys are as before.
+- **Friend refit page redone:** the refits waiting as tabs, each change a row from what was there to what goes in
+  (with pictures, and where it comes from or goes), slots named by size and kind, cost and checks at the side with
+  the friend's refit setting, and DENY / ACCEPT at the foot ("ACCEPT AT A MARKET" until docked). A, D, T, Left/Right
+  and Esc as before.
+- **Officer level-up as cards** (joiner): when your linked officer can level up, YOUR SHIP shows the skills the
+  host's game offers as cards (icon, name, aptitude, a line about it); click one and CONFIRM. A number key picks one,
+  the same number again sends it.
 - **Fix: officer skill pop-ups stuck on the host's screen.** When a friend picked another ship while the host had the
   fleet or refit screen open, their linked officer moved and the screen rebuilt its officer rows under the mouse; the
   pop-up of the one hovered stayed until a reload. The officer still moves at once; the open screen now shows it

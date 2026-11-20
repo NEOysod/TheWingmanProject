@@ -712,6 +712,11 @@ final class FriendRefit {
             send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + "."));
             return;
         }
+        if (p.refitsLookOnly) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: their refits are look only");
+            send(p, new RefitResult(RefitResult.REFUSED, "The host has your refits on look only: plan them here, and ask the host to let you send them."));
+            return;
+        }
         Pending pd = new Pending();
         pd.player = p;
         pd.request = r;
@@ -739,6 +744,12 @@ final class FriendRefit {
         }
         send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
         CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+    }
+
+    /** The host changed how a player's refits are taken (CO-OP panel): a waiting one, now trusted, is done if it can be. */
+    static void permissionChanged(HostSession.Player p) {
+        Pending pd = pending.get(p.id);
+        if (pd != null && p.trustedRefits && pd.problems.isEmpty() && !pd.acceptOnClose) autoAccept(pd);
     }
 
     /** Each second: requests that can't be done any more are withdrawn; the others are checked again. */
@@ -1056,6 +1067,43 @@ final class FriendRefit {
                         + (sb.length() == 0 ? "empty" : sb.toString()));
             }
         }
+        return out;
+    }
+
+    /**
+     * The changes as rows for the review page: {what, picture before, before, picture after, after, how}. A picture is
+     * a refit-screen key ("w:", "f:") or "m:" and a hull mod id, or null.
+     */
+    static List<String[]> rows(Pending pd) {
+        List<String[]> out = new ArrayList<String[]>();
+        RefitPlan plan = pd.plan;
+        Names n = new Names(plan.d);
+        ShipHullSpecAPI hull = null;
+        try { hull = Global.getSettings().getHullSpec(plan.d.hullId); } catch (Throwable t) { /* plain ids */ }
+        for (RefitRequest.Change c : pd.request.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String old = plan.before(c), now = plan.after(c);
+            String kind = c.wing ? "" : slotKind(hull, c.place).replace("(", "").replace(")", "").trim();
+            String place = c.wing ? "Fighter bay " + (Integer.parseInt(c.place) + 1) : (kind.isEmpty() ? "Slot" : Character.toUpperCase(kind.charAt(0)) + kind.substring(1)) + "  " + c.place;
+            String from = plan.from(c), to = plan.to(c);
+            String how = now == null ? "" : RefitRequest.ANY.equals(from) ? "still to find"
+                    : plan.d.market(from) != null ? "bought at " + n.source(from) + ", " + LobbyScreen.grouped(Math.round(plan.d.buyPrice(plan.d.market(from), now))) + " cr"
+                    : RefitRequest.CARGO.equals(from) && RefitData.count(plan.d.setAside, now) > 0 ? "set aside in cargo" : "from " + n.source(from);
+            if (old != null) how += (how.isEmpty() ? "" : "  -  ") + "old one " + (plan.d.market(to) != null ? "sold at " + n.source(to) + ", "
+                    + LobbyScreen.grouped(Math.round(plan.d.sellPrice(plan.d.market(to), old))) + " cr" : "to " + n.source(to));
+            out.add(new String[] { place, old, old == null ? "empty" : n.item(old), now, now == null ? "empty" : n.item(now), how });
+        }
+        RefitData d = plan.d;
+        for (String id : pd.request.removeMods) if (!ModRefit.Loadouts.option(d, id)) out.add(new String[] { "Hull mod", "m:" + id, n.mod(id), null, "taken off", "" });
+        for (String id : pd.request.addMods) if (!ModRefit.Loadouts.option(d, id)) out.add(new String[] { "Hull mod", null, "none", "m:" + id, n.mod(id), "" });
+        for (RefitData.Loadout l : d.loadouts) {
+            String to = ModRefit.Loadouts.picked(l, pd.request);
+            if (to != null) out.add(new String[] { "Loadout " + l.name, "m:" + l.currentMod(), l.labels.get(l.current), "m:" + to, l.labels.get(l.indexOf(to)), "stepped by the ship's own mod" });
+        }
+        for (String id : pd.request.buildIn) out.add(new String[] { "S-mod", "m:" + id, n.mod(id), "m:" + id, "built in", "1 story point" });
+        if (pd.request.vents != d.vents) out.add(new String[] { "Flux vents", null, String.valueOf(d.vents), null, String.valueOf(pd.request.vents), "" });
+        if (pd.request.caps != d.caps) out.add(new String[] { "Flux capacitors", null, String.valueOf(d.caps), null, String.valueOf(pd.request.caps), "" });
+        if (plan.groupsChanged()) out.add(new String[] { "Weapon groups", null, "as they were", null, "rearranged", RefitData.trimmed(pd.request.groups).size() + " groups" });
         return out;
     }
 
