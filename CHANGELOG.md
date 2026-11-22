@@ -2,6 +2,8 @@
 
 ## Next (on the test branch)
 
+- **Fix: the build stamp in the log** ("Wingman: build ...") had said 0.9.3-beta since 0.9.3; build.sh now writes the
+  version and build time into every jar.
 - **Log: what a joiner's controls change.** The joiner's two-minute traffic line now ends with which controls were
   sent as changed and how often ("controls changed: accelerate 240, shield/phase 3900, ..."), so a control that
   flickers frame to frame, or a ship acting on its own, shows in a playtest's log.

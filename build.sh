@@ -11,7 +11,11 @@ FEED=$(echo "$NAMES" | sed -n 1p); LINE=$(echo "$NAMES" | sed -n 2p); FEEDCALL=$
 # The optional agent (jars/WingmanAgent.jar, see docs/TECHNICAL.md section 9): its own jar, started by the game's launch settings.
 javac -nowarn -encoding UTF-8 --release 8 -cp "$CORE/*" -d build/agent $(find agent/src -name '*.java') || exit 1
 jar cfm jars/WingmanAgent.jar agent/MANIFEST.MF -C build/agent wingman || exit 1
-javac -nowarn -encoding UTF-8 --release 8 -cp "build/agent:build/stub:$CORE/*" -d build/classes $(find src -name '*.java') || exit 1
+# The build stamp in the log ("Wingman: build ..."): this version and when it was built (src/wingman/Build.java is only for editors).
+VER=$(grep -o '"version": *"[^"]*"' mod_info.json | sed 's/.*"\([^"]*\)"$/\1/')
+mkdir -p build/gen/wingman
+printf 'package wingman;\n\n/** Which build of the jar this is (written by build.sh), for the log: zips of one version differ. */\nfinal class Build {\n    private Build() {}\n    static final String ID = "%s %s";\n}\n' "$VER" "$(date -u +%Y-%m-%dT%H:%MZ)" > build/gen/wingman/Build.java
+javac -nowarn -encoding UTF-8 --release 8 -cp "build/agent:build/stub:$CORE/*" -d build/classes $(find src -name '*.java' ! -path src/wingman/Build.java) build/gen/wingman/Build.java || exit 1
 java -cp build/tools PatchPackage build/classes/wingman/MessageSpy.class com/fs/starfarer/klass/Object/O0OO "$LINE" || exit 1
 java -cp build/tools PatchPackage build/classes/wingman/MessageSpy.class com/fs/starfarer/klass/C "$FEED" || exit 1
 # (the feed's two ways in, overridden by MessageSpy as o00000: renamed when this build calls them something else)
