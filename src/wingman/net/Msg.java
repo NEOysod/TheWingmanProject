@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 61;
+    public static final int PROTOCOL_VERSION = 62;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -106,6 +106,14 @@ public final class Msg {
     public static final byte HULL_SIZE = 70;
     public static final byte OFFICER_LEVEL = 71; // host -> joiner: their linked officer's level-up: UTF name, int level, byte n, n x UTF skill id (n 0: none)
     public static final byte OFFICER_PICK = 72;  // joiner -> host: UTF skill id, one of those offered    // host -> joiner: int ship, byte hull size (a mod changed it in battle: a mech landing or taking off)
+    /** Either way, handled by the connection itself: long the sender's clock (ms); answered at once with ECHO_BACK. */
+    public static final byte ECHO = 73;
+    /** The answer to ECHO, the same long: the round trip is measured from it (see Conn.rttMs). */
+    public static final byte ECHO_BACK = 74;
+    /** host -> joiners, every 2 s: byte n, then n x (byte slot, short round trip ms, -1 unknown) (see Pings). */
+    public static final byte PINGS = 75;
+    /** joiner -> host: UTF text. host -> joiners: byte slot, UTF name, UTF text (see ChatLog). */
+    public static final byte CHAT = 76;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

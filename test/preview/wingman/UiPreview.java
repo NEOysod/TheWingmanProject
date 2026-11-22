@@ -246,6 +246,10 @@ public class UiPreview {
             if (!only.isEmpty() && !s.name.contains(only)) continue;
             W = s.w; H = s.h;
             mouseX = s.mx; mouseY = s.my;
+            if (Boolean.getBoolean("preview.p720")) { // every screen at the smallest size supported
+                mouseX = mouseX < 0 ? mouseX : mouseX * 1280f / W; mouseY = mouseY < 0 ? mouseY : mouseY * 720f / H;
+                W = 1280; H = 720;
+            }
             setUp();
             backdrop();
             try { s.draw.run(); } catch (Throwable t) { t.printStackTrace(); }

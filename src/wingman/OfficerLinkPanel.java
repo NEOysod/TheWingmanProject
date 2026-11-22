@@ -90,7 +90,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         if (broken || events == null || Global.getCurrentState() != GameState.CAMPAIGN) return;
         if (open && Pages.stale(seenAt)) { close(); Global.getLogger(OfficerLinkPanel.class).info("Wingman: the officer links page wasn't being drawn and was closed"); }
         try {
-            float scale = Global.getSettings().getScreenScaleMult();
+            float scale = Style.eventScale();
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
                 if (open && e.isMouseEvent()) { // the page takes the mouse while it is up
@@ -104,10 +104,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
                     continue;
                 }
                 if (!e.isKeyboardEvent()) continue;
-                boolean down = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown();
+                boolean down = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown(), alt = e.isAltDown();
                 int key = e.getEventValue();
+                boolean mine = Keys.is("officerLinks", key, ctrl, shift, alt);
                 if (!open) {
-                    if (!down || !ctrl || !shift || key != 38) continue; // Ctrl+Shift+L
+                    if (!down || !mine) continue; // its key (Ctrl+Shift+L)
                     if (Global.getSector().getCampaignUI() != null && Global.getSector().getCampaignUI().isShowingDialog()) continue;
                     show();
                     e.consume();
@@ -117,7 +118,9 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
                 if (!down) continue;
                 List<HostSession.Player> ps = players();
                 List<PersonAPI> os = OfficerLinks.officers();
-                if (key == 1 || (key == 38 && ctrl)) { close(); break; }                         // Esc, Ctrl+Shift+L
+                if (key == 1 && KeyHelp.isOpen("Officer links")) KeyHelp.close();                // Esc: the key list first
+                else if (key == 1 || mine) { close(); break; }                                   // Esc, its key
+                else if (key == 59) KeyHelp.toggle("Officer links");                                         // F1: the keys
                 else if (key == 203 && !os.isEmpty()) officer = Math.max(0, officer - 1);                       // Left: the officer before
                 else if (key == 205 && !os.isEmpty()) officer = Math.min(os.size() - 1, officer + 1);           // Right: the officer after
                 else if (key == 200 && !os.isEmpty()) officer = officer >= COLS ? officer - COLS : officer;     // Up: the row above
@@ -179,6 +182,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
+        boolean pushed = Style.push();
+        try { renderScaled(viewport); if (isOpen()) KeyHelp.draw("Officer links"); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(ViewportAPI viewport) {
         if (broken || !open) { wasDown = false; return; }
         seenAt = System.currentTimeMillis();
         try {
@@ -205,7 +213,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         boolean press = down && !wasDown;
         wasDown = down;
         if (!press || hits.empty()) return;
-        String id = hits.at(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+        String id = hits.at(Style.mx(), Style.my());
         if (id == null) { close(); return; } // a click off the page closes it
         if (!id.isEmpty()) act(id);
     }
@@ -282,7 +290,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
     void draw(View v) {
         hits.clear();
         String body = Style.body();
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         float w = Math.min(1240f, sw - 60f), h = Math.min(720f, sh - 60f);
         float x = (sw - w) / 2f, y = (sh - h) / 2f;
         Style.fill(0f, 0f, sw, sh, Widgets.BACKDROP);
@@ -348,7 +356,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         // footer
         Style.fill(x + 1f, y + foot, w - 2f, 1f, Style.RULE);
         if (!v.message.isEmpty()) Style.text(Widgets.fit(v.message, body, w - 40f), body, v.messageColor, x + 18f, y + foot - 8f, w - 36f);
-        else Style.text("Click: choose     Arrows: officer     Tab / Shift+Tab: friend     Enter: link     Delete: unlink     Esc: close",
+        else Style.text("Click: choose     Arrows: officer     Tab / Shift+Tab: friend     Enter: link     Delete: unlink     F1: keys     Esc: close",
                 Style.SMALL_FONT, Style.FAINT, x + 18f, y + foot - 11f, w - 36f);
     }
 

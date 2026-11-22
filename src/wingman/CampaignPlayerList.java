@@ -63,6 +63,11 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {
+        boolean pushed = Style.push();
+        try { renderScaled(viewport); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(ViewportAPI viewport) {
         bottom = Float.MAX_VALUE; // until it is drawn this frame
         settingsButton = null;
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN || CampaignSettings.isOpen() || FriendRefitPanel.isOpen() || OfficerLinkPanel.isOpen() || WishListPanel.isOpen()) { hits.clear(); return; }
@@ -73,8 +78,17 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             if (!cfg.playerList || s == null || s.getPlayers().isEmpty()) { hits.clear(); return; }
             CampaignUIAPI ui = Global.getSector().getCampaignUI();
             if (ui == null || ui.isShowingDialog() || ui.getCurrentCoreTab() != null) { hits.clear(); return; } // only over the map itself
+            if (ChatBox.host.sender == null) ChatBox.host.sender = new ChatBox.Sender() {
+                public boolean send(String text) {
+                    HostSession hs = HostSession.active();
+                    if (hs == null) return false;
+                    hs.chat(1, cfg.playerName, text);
+                    return true;
+                }
+            };
             clicks();
             draw(rows(s, now), FriendRefit.pending.size());
+            KeyHelp.draw("CO-OP panel");
             shownAt = now;
             failures = 0;
         } catch (Throwable t) {
@@ -94,10 +108,21 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
     public void processCampaignInputPreCore(List<InputEventAPI> events) {
         if (broken || events == null || hits.empty() || !showing()) return;
         try {
-            float scale = Global.getSettings().getScreenScaleMult();
+            float scale = Style.eventScale();
             for (InputEventAPI e : events) {
-                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                if (e.isConsumed()) continue;
+                if (e.isKeyboardEvent()) { // the chat: while typing every key is its own; otherwise only its key
+                    boolean down = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown(), alt = e.isAltDown();
+                    int key = e.getEventValue();
+                    char ch = e.getEventChar();
+                    if (KeyHelp.isOpen("CO-OP panel") && down && (key == 1 || key == 59)) { KeyHelp.close(); e.consume(); continue; }
+                    if (ChatBox.host.typing) { e.consume(); if (down) ChatBox.host.key(key, ch, ctrl, shift, alt); continue; }
+                    if (down && !Pages.anyOpen() && ChatBox.host.key(key, ch, ctrl, shift, alt)) e.consume();
+                    continue;
+                }
+                if (!e.isMouseEvent() || e.isMouseMoveEvent()) continue;
                 float mx = e.getX() / scale, my = e.getY() / scale;
+                if (ChatBox.host.at(mx, my) != null) { e.consume(); continue; } // (clicks are read while drawing)
                 String id = hits.at(mx, my);
                 if (id == null || id.equals("settings")) continue; // (the settings page takes its own button)
                 if (e.isMouseScrollEvent()) { scroll = Math.max(0, scroll + (e.getEventValue() > 0 ? -1 : 1)); e.consume(); continue; }
@@ -117,7 +142,11 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         boolean press = down && !wasDown;
         wasDown = down;
         if (!press || hits.empty()) return;
-        String id = hits.at(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+        String chat = ChatBox.host.at(Style.mx(), Style.my());
+        if (chat != null) { ChatBox.host.click(chat); return; }
+        ChatBox.host.typing = false; // a click anywhere else: done typing
+        if (KeyHelp.isOpen("CO-OP panel")) { KeyHelp.close(); return; }
+        String id = hits.at(Style.mx(), Style.my());
         if (id != null && !id.isEmpty() && !id.equals("settings")) act(id); // (the settings page takes its own button)
     }
 
@@ -137,6 +166,8 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             HostSession.Player open = bySlot(String.valueOf(openSlot));
             if (open != null) OfficerLinkPanel.openFor(open.name);
             else OfficerLinkPanel.open();
+        } else if (p[0].equals("keys")) {
+            KeyHelp.toggle("CO-OP panel");
         } else if (p[0].equals("refits")) {
             FriendRefitPanel.openFor(null);
         } else if (p[0].equals("officer") && pl != null) {
@@ -175,6 +206,8 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         int slot;
         String name = "", ship = "";
         boolean quiet, host;
+        /** Round trip to us (ms), -1 unknown. */
+        int ping = -1;
         /** Their linked officer ("" none), its portrait, level and personality. */
         String officer = "", portrait = "", officerNote = "";
         /** 0 look only, 1 ask, 2 trust. */
@@ -211,6 +244,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
                 r.slot = p.slot;
                 r.name = p.name;
                 r.quiet = p.conn.idleMillis() > 1500;
+                r.ping = p.conn.rttMs();
                 String pick = WingmanAPI.reservedShip(p.name), ship = pick == null ? null : ships.get(pick);
                 r.ship = ship == null ? "" : ship;
                 PersonAPI o = OfficerLinks.officerOf(p.name);
@@ -249,11 +283,12 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         String body = Style.body();
         float headH = Style.lineHeight(Style.SMALL_FONT) + 16f;
         float footH = 30f + 14f + Style.lineHeight(Style.SMALL_FONT) + 4f, moreH = 22f; // the OFFICER LINKS button, and a line under it
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         // Room for friends: up to most of the screen's height; past that the list scrolls (the wheel, or the arrows).
         Row host = rows.isEmpty() ? null : rows.get(0);
         List<Row> friends = rows.size() > 1 ? rows.subList(1, rows.size()) : new ArrayList<Row>();
-        float room = Math.max(ROW_H * 3f, sh * 0.62f - headH - footH - ROW_H);
+        float chatH = ChatBox.host.height(ChatBox.HEAD_H + ChatBox.LINES_H + ChatBox.INPUT_H + 12f) + 6f;
+        float room = Math.max(ROW_H * 3f, Math.min(sh * 0.62f, sh - 30f - chatH) - headH - footH - ROW_H);
         float all = 0f;
         for (Row r : friends) all += height(r);
         boolean scrolls = all > room;
@@ -278,7 +313,6 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         }
         float h = headH + footH + 4f + (host == null ? 0f : ROW_H) + used + (scrolls ? (upLine ? 2f : 1f) * moreH : 0f);
         float x = sw - W - 10f, y = sh - h - 10f;
-        bottom = y;
         hits.add(x, y, W, h, ""); // the panel: clicks on it go no further
         Style.frame(x, y, W, h, new Color(6, 12, 20, 228), Style.EDGE, 6f);
         float hy = y + h - headH;
@@ -294,6 +328,9 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         settingsButton = new float[] { right - sbw, by, sbw, bh };
         hits.add(right - sbw, by, sbw, bh, "settings");
         right -= sbw + 6f;
+        Widgets.box(right - bh, by, bh, bh, "?", Style.TEXT, KeyHelp.isOpen("CO-OP panel"));
+        hits.add(right - bh, by, bh, bh, "keys");
+        right -= bh + 6f;
         if (waiting > 0) {
             String rt = "REFITS  " + waiting;
             float rbw = Style.width(rt, Style.SMALL_FONT) + 16f;
@@ -314,9 +351,17 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         Style.fill(x + 8f, y + footH - 2f, W - 16f, 1f, Style.alpha(Style.RULE, 60));
         String ol = "OFFICER LINKS";
         Widgets.box(x + 12f, fy, W - 24f, 30f, ol, Style.ACCENT, false);
-        Style.textRight("Ctrl+Shift+L", Style.SMALL_FONT, Style.FAINT, x + W - 20f, fy + (30f + Style.lineHeight(Style.SMALL_FONT)) / 2f);
+        Style.textRight(Keys.name("officerLinks"), Style.SMALL_FONT, Style.FAINT, x + W - 20f, fy + (30f + Style.lineHeight(Style.SMALL_FONT)) / 2f);
         hits.add(x + 12f, fy, W - 24f, 30f, "links");
         Style.text("Click a friend to manage them.", Style.SMALL_FONT, Style.FAINT, x + 12f, fy - 4f, W - 24f);
+        // The chat, under it all: folded to one line until opened.
+        bottom = ChatBox.host.draw(x, y - 6f, W, Math.max(ChatBox.HEAD_H, y - 16f));
+    }
+
+    /** A round trip's colour: fine, slow, bad. */
+    static Color pingColor(int ms) {
+        int g = wingman.net.Pings.grade(ms);
+        return g < 0 ? Style.FAINT : g == 0 ? Style.DIM : g == 1 ? Panel.WARN : Panel.BAD;
     }
 
     private float height(Row r) { return ROW_H + (r.slot == openSlot && !r.host ? openHeight(r) : 0f); }
@@ -369,6 +414,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
                 rx = Style.textRight(first, body, Panel.GOOD, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
             }
             if (r.quiet) rx = Style.textRight("link quiet", body, Panel.WARN, rx, top - (ROW_H - Style.lineHeight(body)) / 2f) - 10f;
+            else if (r.ping >= 0) rx = Style.textRight(wingman.net.Pings.text(r.ping), Style.SMALL_FONT, pingColor(r.ping), rx, top - (ROW_H - Style.lineHeight(Style.SMALL_FONT)) / 2f) - 10f;
         }
         float tw = Math.max(40f, rx - tx);
         float ny = Style.text(Widgets.fit(r.name, body, tw), body, r.host ? Style.TEXT : c, tx, top - 5f, tw);

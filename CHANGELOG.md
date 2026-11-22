@@ -2,6 +2,25 @@
 
 ## Next (on the test branch)
 
+- **Chat on the campaign map.** For anyone who'd rather not talk on Discord: a CHAT box under the host's CO-OP
+  panel and under PLAYERS in a joiner's lobby. The host's starts folded (one line: how many new, and the newest,
+  faint), so it stays out of the way. Click the line under it or press **Ctrl+Shift+C**, type, Enter sends.
+  Lines are kept short and a flood is cut off on the host.
+- **Ping readout.** Each joiner's round trip to the host is measured every 2 s and shown on the host's CO-OP panel
+  and in everyone's lobby (grey, orange, red). In a battle, your own ping sits at the top of the screen and says
+  SPIKE when it jumps; setting *Ping in battle* can show everyone's instead, or nothing.
+- **Rejoin after a drop.** A joiner whose link drops in the lobby is reconnected as soon as the host can be
+  reached (3 s, 5 s, then every 10 s, for 10 minutes). Not after a refusal or a kick. Setting
+  *Rejoin by myself after a drop*, on by default.
+- **Size of Wingman's pages** (Settings, Interface): 0.75 to 2, on top of the game's own UI scale. Every page was
+  checked at 1280 x 720: the refit page folds its stats on a short screen, its weapon-group buttons use shorter
+  words, and the lobby's report keeps each figure on one line.
+- **Colour-blind player colours** (Settings, Interface), after Okabe and Ito's palette.
+- **Keys can be changed** (Settings, Keys): settings, chat, officer links, friend refits, wish lists, player tags,
+  and the host's take-back and remove. A key used twice is pointed out. Messages name the key as set.
+- **F1 lists the keys** on the officer links, friend refits and wish list pages, and **?** on the CO-OP panel.
+- Fixed: on the refit page's weapon groups, "1-5 of 7 weapons" was drawn over the first weapon.
+- Protocol 62: host and joiners need this build.
 - **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
   is open, or where you left it. Ctrl+Shift+L still works.
 - **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)

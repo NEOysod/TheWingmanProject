@@ -745,7 +745,7 @@ final class FriendRefit {
             return;
         }
         send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
-        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". " + Keys.name("friendRefits") + " to look at it.");
     }
 
     /**

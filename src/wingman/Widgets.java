@@ -55,7 +55,7 @@ final class Widgets {
             boolean down;
             try { down = Mouse.isButtonDown(0); } catch (Throwable t) { down = false; }
             String out = null;
-            if (down && !wasDown) out = at(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+            if (down && !wasDown) out = at(Style.mx(), Style.my());
             wasDown = down;
             return out == null || out.isEmpty() ? null : out;
         }

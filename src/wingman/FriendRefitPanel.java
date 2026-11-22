@@ -58,7 +58,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             List<FriendRefit.Pending> list = requests();
             if (list.isEmpty()) { open = false; return; }
             if (open && Pages.stale(seenAt)) { open = false; hits.clear(); Global.getLogger(FriendRefitPanel.class).info("Wingman: the friend refit page wasn't being drawn and was closed"); }
-            float scale = Global.getSettings().getScreenScaleMult();
+            float scale = Style.eventScale();
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
                 // A click on the panel or its buttons must not also land on the dialog's options underneath.
@@ -69,16 +69,19 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 if (e.isMouseEvent() && !e.isMouseMoveEvent() && overUs(e.getX() / scale, e.getY() / scale)) { e.consume(); continue; }
                 if (!e.isKeyboardEvent()) continue;
                 // Everything about the key is read first: the game refuses any read of an event once it is consumed.
-                boolean keyDown = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown();
+                boolean keyDown = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown(), alt = e.isAltDown();
                 int key = e.getEventValue();
+                boolean mine = Keys.is("friendRefits", key, ctrl, shift, alt);
                 if (!open) {
-                    if (keyDown && ctrl && shift && key == 19 && !Pages.anyOpen()) { open = true; seenAt = System.currentTimeMillis(); message = ""; e.consume(); } // Ctrl+Shift+R
+                    if (keyDown && mine && !Pages.anyOpen()) { open = true; seenAt = System.currentTimeMillis(); message = ""; e.consume(); } // Ctrl+Shift+R
                     continue;
                 }
                 e.consume(); // while the panel is up, keys are its own
                 if (!keyDown) continue;
                 at = Math.max(0, Math.min(list.size() - 1, at));
-                if (key == 1 || (key == 19 && ctrl)) open = false;                           // Esc, Ctrl+Shift+R
+                if (key == 1 && KeyHelp.isOpen("Friend refits")) KeyHelp.close();           // Esc: the key list first
+                else if (key == 1 || mine) open = false;                                     // Esc, its key
+                else if (key == 59) KeyHelp.toggle("Friend refits");                         // F1: the keys
                 else if (key == 203) at = (at + list.size() - 1) % list.size();                // Left
                 else if (key == 205) at = (at + 1) % list.size();                              // Right
                 else if (key == 32) { deny(list.get(at)); break; }                             // D: deny (the list changed)
@@ -173,8 +176,13 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
+        boolean pushed = Style.push();
+        try { renderScaled(viewport); if (isOpen()) KeyHelp.draw("Friend refits"); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(ViewportAPI viewport) {
         if (broken || Global.getCurrentState() != GameState.CAMPAIGN) return;
-        bottom = Math.min(Global.getSettings().getScreenHeight(), CampaignPlayerList.bottom); // no button: under the player list
+        bottom = Math.min(Style.sh(), CampaignPlayerList.bottom); // no button: under the player list
         try {
             FriendRefit.applyWaiting(); // (also from the lobby's script, which may not run under a core screen)
             List<FriendRefit.Pending> list = requests();
@@ -216,7 +224,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         hits.clear();
         FriendRefit.Pending pd = list.get(at);
         String body = Style.body();
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         float w = Math.min(1120f, sw - 60f), h = Math.min(720f, sh - 60f);
         float x = (sw - w) / 2f, y = (sh - h) / 2f;
         Style.fill(0f, 0f, sw, sh, Widgets.BACKDROP);
@@ -309,7 +317,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         hits.add(dx, by, dw, bh, "deny");
         Style.button(ax, by, aw, bh, acc, Panel.GOOD, canAccept, canAccept && Widgets.over(ax, by, aw, bh));
         hits.add(ax, by, aw, bh, "accept");
-        String m = message.isEmpty() ? "Left/Right: another refit     Esc: close" : message;
+        String m = message.isEmpty() ? "Left/Right: another refit     F1: keys     Esc: close" : message;
         Style.text(Widgets.fit(m, body, dx - bx - 16f), body, message.isEmpty() ? Style.FAINT : messageColor, bx, by + (bh + Style.lineHeight(body)) / 2f, dx - bx - 16f);
     }
 
@@ -359,7 +367,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
             buttonText = text;
         }
         float w = buttonLabel.computeTextWidth(text) + 30f, h = buttonLabel.getPosition().getHeight() + 16f;
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         float x = sw - w - 10f, y = Math.min(sh, CampaignPlayerList.bottom) - h - 10f; // under the player list, if it shows
         boolean over = LobbyScreen.inside(x, y, w, h);
         boolean pulse = (System.currentTimeMillis() / 600) % 2 == 0;

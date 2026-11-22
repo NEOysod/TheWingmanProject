@@ -270,6 +270,19 @@ final class Screens {
         new FriendRefitPanel().draw(Arrays.asList(pd, pd2), 0);
     }
 
+    /** A few lines said, and everyone's round trip. */
+    static void chat() {
+        wingman.net.ChatLog.clear();
+        wingman.net.ChatLog.add(2, "Kyrizion", "anyone got a spare heavy autocannon?");
+        wingman.net.ChatLog.add(1, "NEOysod", "check the wish list, I'll grab one at the next market");
+        wingman.net.ChatLog.add(3, "Cy", "gonna take the Dominator if nobody minds");
+        wingman.net.ChatLog.add(4, "Mosk", "lag is bad tonight, sorry if I drift off");
+        wingman.net.ChatLog.add(2, "Kyrizion", "ty!");
+        java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+        m.put(2, 54); m.put(3, 213); m.put(4, 96);
+        wingman.net.Pings.onMessage(wingman.net.Pings.encode(m));
+    }
+
     static void playerList() throws Exception {
         CampaignPlayerList pl = new CampaignPlayerList();
         set(pl, "openSlot", 2);
@@ -280,6 +293,7 @@ final class Screens {
             CampaignPlayerList.Row r = new CampaignPlayerList.Row();
             r.slot = (Integer) x[0]; r.name = (String) x[1]; r.ship = (String) x[2]; r.quiet = (Boolean) x[3]; r.host = r.slot == 1;
             r.officer = (String) x[4]; r.permission = (Integer) x[5]; r.refitShip = (String) x[6];
+            r.ping = r.slot == 2 ? 54 : r.slot == 3 ? 213 : -1;
             if (!r.officer.isEmpty()) r.officerNote = "Level 5, aggressive  -  captains the ship " + r.name + " picks";
             rows.add(r);
         }
@@ -338,8 +352,8 @@ final class Screens {
         out.add(new Shot("coop-connected", 1920, 1080, -1, -1, new Runnable() { public void run() { coop(true); } }));
         out.add(new Shot("coop-join-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(false); } }));
         out.add(new Shot("coop-connected-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(true); } }));
-        out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 6); } }));
-        out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(3, 1); } }));
+        out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(3, 6); } }));
+        out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(5, 1); } }));
         out.add(new Shot("help", 1920, 1080, -1, -1, new Runnable() { public void run() {
             mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
         } }));
@@ -382,6 +396,36 @@ final class Screens {
         out.add(new Shot("big-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
         out.add(new Shot("big-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
         out.add(new Shot("officers-1366", 1366, 768, -1, -1, new Runnable() { public void run() { whole = true; officers(); whole = false; } }));
+        out.add(new Shot("settings-interface", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 0); } }));
+        out.add(new Shot("settings-keys", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(2, 1); } }));
+        out.add(new Shot("chat-host-open", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = true; ChatBox.host.typing = true; ChatBox.host.draft.append("docking at Jangala, refits in a sec");
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            ChatBox.host.open = false; ChatBox.host.typing = false; ChatBox.host.draft.setLength(0);
+        } }));
+        out.add(new Shot("chat-host-folded", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+        } }));
+        out.add(new Shot("chat-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));
+        out.add(new Shot("chat-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));
+        out.add(new Shot("ping-mine", 1920, 1080, -1, -1, new Runnable() { public void run() { PingReadout.draw("mine", 212, 540, null); } }));
+        out.add(new Shot("ping-everyone", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            m.put(1, 0); m.put(2, 54); m.put(3, 213); m.put(4, 96); m.put(5, 260);
+            PingReadout.draw("everyone", 54, 60, m);
+        } }));
+        out.add(new Shot("keyhelp-officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); KeyHelp.toggle("Officer links"); KeyHelp.draw("Officer links"); KeyHelp.close(); } }));
+        out.add(new Shot("keyhelp-coop", 1280, 720, -1, -1, new Runnable() { public void run() {
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            KeyHelp.toggle("CO-OP panel"); KeyHelp.draw("CO-OP panel"); KeyHelp.close();
+        } }));
+        out.add(new Shot("colorblind-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { PlayerTags.colorblind = true; big = 10; lobby(LobbyScreen.FLEET, true); big = 0; PlayerTags.colorblind = false; } }));
+        out.add(new Shot("scale-125-player-list", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            Style.ui = 1.25f; chat(); ChatBox.host.open = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            ChatBox.host.open = false; Style.ui = 1f;
+        } }));
+        out.add(new Shot("scale-075-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { Style.ui = 0.75f; lobby(LobbyScreen.FLEET, false); Style.ui = 1f; } }));
         out.add(new Shot("lobby-levelup", 1920, 1080, -1, -1, new Runnable() { public void run() { levelUp(); } }));
         out.add(new Shot("lobby-levelup-1366", 1366, 768, -1, -1, new Runnable() { public void run() { levelUp(); } }));
         return out;

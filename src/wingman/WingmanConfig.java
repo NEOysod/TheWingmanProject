@@ -112,6 +112,16 @@ public final class WingmanConfig {
     public java.util.List<String> neverMirrorSystems = new java.util.ArrayList<String>();
     /** Joiner: the password typed into the join form. */
     public String joinPassword = "";
+    /** Size of Wingman's pages and panels on this PC (1 = as designed; on top of the game's own UI scaling). */
+    public float uiScale = 1f;
+    /** "standard" or "colorblind": the players' colours on this PC. */
+    public String playerColors = "standard";
+    /** Round trips shown in a battle on this PC: "mine", "everyone" or "off". */
+    public String pingReadout = "mine";
+    /** Joiner: after the link to the host drops on the campaign map or the title screen, keep trying to get back in. */
+    public boolean autoRejoin = true;
+    /** Wingman's keys as changed ("key.<id>" -> "Ctrl+Shift+L"); see Keys. */
+    public java.util.Map<String, String> keys = new java.util.LinkedHashMap<String, String>();
 
     public static WingmanConfig load() {
         WingmanConfig c = fromFile();
@@ -130,10 +140,18 @@ public final class WingmanConfig {
             c.joinPassword = saved.password;
         } catch (Throwable t) { /* the file's values stand */ }
         c.tidy(true);
+        c.applyLocal();
         // The connection is made from more than one place (title screen, join mission): it reads these.
         wingman.net.Conn.compression = c.compressLink;
         wingman.net.Conn.udp = c.useUdp;
         return c;
+    }
+
+    /** What these settings change on this PC at once: the keys, the pages' size, the players' colours. */
+    void applyLocal() {
+        try { Keys.apply(keys); } catch (Throwable t) { /* the defaults stand */ }
+        Style.ui = uiScale;
+        PlayerTags.colorblind = "colorblind".equals(playerColors);
     }
 
     private static JSONObject fileJson;
@@ -195,6 +213,15 @@ public final class WingmanConfig {
             c.shotCounts = j.optBoolean("shotCounts", c.shotCounts);
             c.shieldGrace = j.optBoolean("shieldGrace", c.shieldGrace);
             c.trimUnseen = j.optBoolean("trimUnseen", c.trimUnseen);
+            c.uiScale = (float) j.optDouble("uiScale", c.uiScale);
+            c.playerColors = j.optString("playerColors", c.playerColors).trim().toLowerCase();
+            c.pingReadout = j.optString("pingReadout", c.pingReadout).trim().toLowerCase();
+            c.autoRejoin = j.optBoolean("autoRejoin", c.autoRejoin);
+            JSONObject ks = j.optJSONObject("keys");
+            if (ks != null) for (java.util.Iterator<?> it = ks.keys(); it.hasNext();) {
+                String k = String.valueOf(it.next());
+                c.keys.put(Keys.setting(k), ks.optString(k, ""));
+            }
             c.password = j.optString("password", c.password).trim();
             c.maxShipSize = j.optString("maxShipSize", c.maxShipSize).trim().toUpperCase();
             org.json.JSONArray never = j.optJSONArray("neverMirrorSystems");
@@ -255,6 +282,14 @@ public final class WingmanConfig {
         if ("shieldGrace".equals(key)) return String.valueOf(shieldGrace);
         if ("password".equals(key)) return password;
         if ("maxShipSize".equals(key)) return maxShipSize;
+        if ("uiScale".equals(key)) return trim(uiScale);
+        if ("playerColors".equals(key)) return playerColors;
+        if ("pingReadout".equals(key)) return pingReadout;
+        if ("autoRejoin".equals(key)) return String.valueOf(autoRejoin);
+        if (key != null && key.startsWith("key.") && Keys.ALL.containsKey(key.substring(4))) {
+            String v = keys.get(key);
+            return v == null || Keys.parse(v) == null ? Keys.ALL.get(key.substring(4)).def : v;
+        }
         return null;
     }
 
@@ -314,6 +349,11 @@ public final class WingmanConfig {
             else if ("shieldGrace".equals(key)) shieldGrace = yes(value);
             else if ("password".equals(key)) password = value;
             else if ("maxShipSize".equals(key)) maxShipSize = value.toUpperCase();
+            else if ("uiScale".equals(key)) uiScale = Float.parseFloat(value);
+            else if ("playerColors".equals(key)) playerColors = value.toLowerCase();
+            else if ("pingReadout".equals(key)) pingReadout = value.toLowerCase();
+            else if ("autoRejoin".equals(key)) autoRejoin = yes(value);
+            else if (key.startsWith("key.") && Keys.ALL.containsKey(key.substring(4)) && Keys.parse(value) != null) keys.put(key, value);
         } catch (NumberFormatException e) { /* not a number: the old value stands */ }
     }
 
@@ -345,5 +385,9 @@ public final class WingmanConfig {
         c.maxPlayers = Math.max(2, Math.min(wingman.net.HostSession.MAX_PLAYERS, c.maxPlayers));
         c.snapshotRate = Math.max(5, Math.min(60, c.snapshotRate));
         if (c.port < 1024 || c.port > 65535) c.port = 24816;
+        if (!(c.uiScale >= 0.5f)) c.uiScale = 1f;
+        c.uiScale = Math.min(2f, c.uiScale);
+        if (!"standard".equals(c.playerColors) && !"colorblind".equals(c.playerColors)) c.playerColors = "standard";
+        if (!"mine".equals(c.pingReadout) && !"everyone".equals(c.pingReadout) && !"off".equals(c.pingReadout)) c.pingReadout = "mine";
     }
 }

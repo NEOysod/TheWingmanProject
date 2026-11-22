@@ -166,8 +166,8 @@ final class Tips {
         float h = pad + Style.lineHeight(Style.TITLE_FONT) + 4f + Style.height(t.kind, Style.SMALL_FONT, inner) + 8f
                 + t.stats.size() * rowH + 6f
                 + (t.text.isEmpty() ? 0f : Style.height(t.text, body, inner) + 10f) + pad;
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
-        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        float sw = Style.sw(), sh = Style.sh();
+        float mx = Style.mx(), my = Style.my();
         float x = mx + 20f, y = my - h - 10f;
         if (x + w > sw - 4f) x = mx - w - 20f;
         if (y < 4f) y = Math.min(sh - h - 4f, my + 20f);

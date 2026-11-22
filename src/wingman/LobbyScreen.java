@@ -122,6 +122,11 @@ final class LobbyScreen {
     }
 
     void render(View v) {
+        boolean pushed = Style.push();
+        try { renderScaled(v); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(View v) {
         if (broken) return;
         try {
             if (body == null) body = Global.getSettings().getString("defaultFont");
@@ -130,7 +135,7 @@ final class LobbyScreen {
             listBox = null;
             playersBox = null;
             loadBudget = 4;
-            float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+            float sw = Style.sw(), sh = Style.sh();
             float m = Math.max(24f, sw * 0.022f);
             fill(0f, 0f, sw, sh, new Color(4, 7, 12, 238));
 
@@ -166,7 +171,7 @@ final class LobbyScreen {
                 y = Math.min(y, by - 4f);
             }
             y -= 10f;
-            if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H - 8f);
+            if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H / Style.ui - 8f);
             fill(m, y, sw - 2 * m, 1f, LINE);
             float contentTop = y - 14f;
 
@@ -174,7 +179,7 @@ final class LobbyScreen {
             String keys = page == REFIT ? "Click: choose     Mouse wheel: scroll the lists     Esc: back"
                     : page == FLEET
                     ? "Up/Down: choose     PgUp/PgDn: page     F: pick this ship     Delete: no pick     " + (v.hostInBattle ? "Enter: join the battle" : "Enter: pick")
-                            + (v.roster != null && v.roster.pickOf(v.me) != null && !v.hostInBattle ? "     R: refit" : "") + "     Tab: last battle     F1: how to     Esc: back"
+                            + (v.roster != null && v.roster.pickOf(v.me) != null && !v.hostInBattle ? "     R: refit" : "") + "     " + Keys.name("chat") + ": chat     Tab: last battle     F1: how to     Esc: back"
                     : "Tab: the fleet     " + (v.hostInBattle ? "Enter: join the battle     " : "") + "Esc: back";
             List<String[]> k = Style.keys(keys);
             float keysH = Style.keysHeight(k, sw - 2 * m);
@@ -206,7 +211,7 @@ final class LobbyScreen {
     boolean isBroken() { return broken; }
 
     static boolean inside(float x, float y, float w, float h) {
-        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        float mx = Style.mx(), my = Style.my();
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
@@ -219,7 +224,7 @@ final class LobbyScreen {
         if (luna == null) {
             try { luna = Global.getSettings().getModManager().isModEnabled("lunalib"); } catch (Throwable t) { luna = Boolean.FALSE; }
         }
-        return luna.booleanValue() ? LUNA_BUTTONS_W : 0f;
+        return luna.booleanValue() ? LUNA_BUTTONS_W / Style.ui : 0f; // (LunaLib's buttons are in real units)
     }
 
     private static String sizeTag(String hullSize) {
@@ -521,8 +526,18 @@ final class LobbyScreen {
             text("Click for the full report.", body, over ? Panel.TEXT : Panel.DIM, px, ly, pw);
             hits.add(new float[] { x, top - h, w, lastH, TAB, REPORT, 0 });
         }
-        // Players, between
+        // Players, between, and the chat under them
         float pTop = top - yoursH - gap, pH = h - yoursH - gap - (r == null ? 0f : lastH + gap);
+        // (the players keep room for up to four of them, each with their ship; the chat gets the rest, folded if that is too little)
+        int shownPlayers = Math.min(4, v.roster == null ? 1 : v.roster.players.size() + 1);
+        float playersNeed = Style.BAR_H + 8f + shownPlayers * (2f * Style.lineHeight(body) + 8f);
+        if (ChatBox.joiner.typing) playersNeed = Style.BAR_H + 30f + 2f * Style.lineHeight(body); // typing: the chat gets the room
+        float chatRoom = Math.max(ChatBox.HEAD_H, Math.min(ChatBox.HEAD_H + ChatBox.LINES_H + ChatBox.INPUT_H + 12f, pH - playersNeed - gap));
+        float chatH = ChatBox.joiner.height(chatRoom);
+        if (pH - chatH - gap >= Style.BAR_H + 30f) {
+            ChatBox.joiner.draw(x, pTop - pH + chatH, w, chatRoom);
+            pH -= chatH + gap;
+        }
         if (pH < Style.BAR_H + 30f) return; // no room left for the players (the level-up cards take it for now)
         float y = Style.window(x, pTop - pH, w, pH, "PLAYERS", v.roster == null ? "" : String.valueOf(1 + v.roster.players.size())) - 8f;
         if (v.roster != null) {
@@ -625,6 +640,8 @@ final class LobbyScreen {
         Color pc = PlayerTags.color(slot);
         float cw = Style.chip("P" + slot, pc, x, top - 1f);
         float tx = x + Math.max(cw, Style.width("P00", Style.SMALL_FONT) + 10f) + 6f, tw = w - (tx - x);
+        int ping = wingman.net.Pings.of(slot);
+        if (slot != 1 && ping >= 0) tw = Style.textRight(wingman.net.Pings.text(ping), Style.SMALL_FONT, CampaignPlayerList.pingColor(ping), x + w, top - 2f) - 8f - tx;
         String nm = Widgets.fit(name + (me ? " (you)" : ""), body, tw * 0.6f);
         float nw = Style.width(nm, body);
         text(nm, body, me ? Panel.GOOD : Panel.TEXT, tx, top, tw);
@@ -636,7 +653,9 @@ final class LobbyScreen {
     private float player(int slot, String name, Roster.Member pick, boolean me, float x, float top, float w, float floor) {
         Color pc = PlayerTags.color(slot);
         float cw = Style.chip("P" + slot, pc, x, top - 3f);
-        float y = text(name + (me ? "  (you)" : ""), body, me ? Panel.GOOD : Panel.TEXT, x + cw + 8f, top - 2f, w - cw - 8f);
+        int ping = wingman.net.Pings.of(slot);
+        if (slot != 1 && ping >= 0) Style.textRight(wingman.net.Pings.text(ping), Style.SMALL_FONT, CampaignPlayerList.pingColor(ping), x + w, top - 4f);
+        float y = text(name + (me ? "  (you)" : ""), body, me ? Panel.GOOD : Panel.TEXT, x + cw + 8f, top - 2f, w - cw - 8f - (slot != 1 && ping >= 0 ? 60f : 0f));
         y = text(slot == 1 ? "commands the fleet" : pick == null ? "no ship picked" : Roster.label(pick), body, pick == null ? Style.FAINT : Panel.DIM, x + cw + 8f, y, w - cw - 8f);
         return y - 8f;
     }
@@ -695,7 +714,9 @@ final class LobbyScreen {
             if (p.slot > 0) Style.chip("P" + p.slot, PlayerTags.color(p.slot), px + 8f, y - (rowH - Style.chipHeight()) / 2f);
             for (int i = 1; i < cells.length; i++) {
                 float cw = (i + 1 < col.length ? col[i + 1] - col[i] : 0.10f) * (pw - 16f) - 6f;
-                text(cells[i], body, i == 3 ? (p.status == BattleReport.DESTROYED ? Panel.BAD : Panel.DIM) : c, px + 8f + col[i] * (pw - 16f), y - (rowH - bh) / 2f, Math.max(40f, cw));
+                String cell = cells[i];
+                if (i == 6 && p.shieldDamageDealt > 0 && Style.width(cell, body) > Math.max(40f, cw)) cell = num(p.damageDealt) + " (+" + num(p.shieldDamageDealt) + " sh)"; // a narrow column
+                text(Widgets.fit(cell, body, Math.max(40f, cw)), body, i == 3 ? (p.status == BattleReport.DESTROYED ? Panel.BAD : Panel.DIM) : c, px + 8f + col[i] * (pw - 16f), y - (rowH - bh) / 2f, Math.max(40f, cw) + 20f);
             }
             y -= rowH;
         }

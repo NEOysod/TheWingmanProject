@@ -246,7 +246,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShieldGrace.judged = 0;
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
         if (cfg.password.isEmpty()) Ui.say(engine, "Co-op: no join password is set, so anyone who can reach this PC on port " + cfg.port
-                + " can join. Set a join password in the settings (Ctrl+Shift+O) to change that.");
+                + " can join. Set a join password in the settings (" + Keys.name("settings") + ") to change that.");
         // Addresses are never written to the log, so a log can be shared without them. Players find them in the
         // CO-OP panel on the title screen; the host can also have them shown in the feed (never logged).
         if (cfg.announceAddresses) {
@@ -689,7 +689,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI mine = engine.getPlayerShip();
         ShipAPI target = mine == null ? null : mine.getShipTarget();
         HostSession.Player p = target == null ? null : pilotOf(target);
-        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press Ctrl+Shift+K to remove that player."); return; }
+        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press " + Keys.name("kickTargeted") + " to remove that player."); return; }
         kick(p.slot);
     }
 
@@ -698,7 +698,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI mine = engine.getPlayerShip();
         ShipAPI target = mine == null ? null : mine.getShipTarget();
         HostSession.Player p = target == null ? null : pilotOf(target);
-        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press Ctrl+Shift+T to take it back."); return; }
+        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press " + Keys.name("takeBack") + " to take it back."); return; }
         releaseShip(p);
         p.shipNetId = -1;
         p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, -1));
@@ -790,7 +790,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             if (!settings.open && cfg.playerTags) PlayerTags.toggleKey(events, engine);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
-                    if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
+                    if (!Keys.is("settings", e)) continue;
                     settings.open(cfg);
                     e.consume();
                 }
@@ -817,12 +817,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (!session.getPlayers().isEmpty()) {
             for (InputEventAPI e : events) { // host controls: Ctrl+Shift+number removes a player (Ctrl+Shift+K: the one flying the targeted ship), Ctrl+Shift+T takes a ship back
-                if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown()) continue;
+                if (e.isConsumed() || !e.isKeyDownEvent()) continue;
                 int key = e.getEventValue();
                 try {
-                    if (key >= 2 && key <= 10) { kick(key - 1); e.consume(); }
-                    else if (key == 20) { takeBack(); e.consume(); }
-                    else if (key == 37) { kickTargeted(); e.consume(); } // K
+                    if (Keys.is("takeBack", e)) { takeBack(); e.consume(); }
+                    else if (Keys.is("kickTargeted", e)) { kickTargeted(); e.consume(); }
+                    else if (e.isCtrlDown() && e.isShiftDown() && !e.isAltDown() && key >= 2 && key <= 10) { kick(key - 1); e.consume(); }
                 } catch (Throwable t) {
                     Global.getLogger(WingmanHostPlugin.class).warn("Wingman: host control failed", t);
                 }
@@ -832,7 +832,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (popup) { // its OK button (or close box) takes a click; no click on it fires the guns underneath
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
-                float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+                float mx = Style.mx(), my = Style.my();
                 if (!panel.contains(mx, my)) continue;
                 if (e.isLMBDownEvent() && panel.hitAt(mx, my) != null && panel.hitAt(mx, my).kind == Panel.Hit.KEY) {
                     alertTitle = null;
@@ -863,6 +863,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         if (cfg.playerTags && !session.getPlayers().isEmpty()) { // who is flying what: P1 is us
             tags.draw(viewport, engine.getPlayerShip(), 1, cfg.playerOutlines, cfg.playerName);
             for (HostSession.Player p : session.getPlayers()) if (p.ship != null) tags.draw(viewport, (ShipAPI) p.ship, p.slot, cfg.playerOutlines, p.name);
+        }
+        boolean pushed = Style.push(); // our panels in the size set for them (the tags above are on the ships)
+        try { panels(); } finally { Style.pop(pushed); }
+    }
+
+    private void panels() {
+        if ("everyone".equals(cfg.pingReadout) && !session.getPlayers().isEmpty()) {
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            for (HostSession.Player p : session.getPlayers()) m.put(p.slot, p.conn.rttMs());
+            try { PingReadout.draw("everyone", -1, -1, m); } catch (Throwable t) { /* a readout is not worth a failure */ }
         }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
@@ -2555,7 +2565,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 if (!lossWarned && engine.isInCampaign()) {
                     lossWarned = true;
                     Ui.say(engine, "Co-op: this is a campaign battle. A ship lost while a friend flies it is lost for real. "
-                            + "Ctrl+Shift+T on a targeted ship takes it back.");
+                            + Keys.name("takeBack") + " on a targeted ship takes it back.");
                 }
                 session.broadcastNotice(p.name + " is flying " + shipName + ".", p);
             }

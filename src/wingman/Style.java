@@ -19,6 +19,33 @@ import com.fs.starfarer.api.ui.LabelAPI;
 final class Style {
     private Style() {}
 
+    // ---- size: Wingman's pages and panels are drawn in units of the screen divided by this (setting uiScale) ----
+    static volatile float ui = 1f;
+
+    /** The screen's width and height in our units. */
+    static float sw() { return Global.getSettings().getScreenWidth() / ui; }
+    static float sh() { return Global.getSettings().getScreenHeight() / ui; }
+    /** The mouse in our units. */
+    static float mx() { return Global.getSettings().getMouseX() / ui; }
+    static float my() { return Global.getSettings().getMouseY() / ui; }
+    /** What an input event's place is divided by to be in our units. */
+    static float eventScale() { return Global.getSettings().getScreenScaleMult() * ui; }
+
+    /** Start drawing in our units (the matching pop() must follow, in a finally). Returns what pop() needs. */
+    static boolean push() {
+        if (depth++ > 0 || ui == 1f) return false; // (inside another push: already in our units)
+        GL11.glPushMatrix();
+        GL11.glScalef(ui, ui, 1f);
+        return true;
+    }
+
+    static void pop(boolean pushed) {
+        depth = Math.max(0, depth - 1);
+        if (pushed) GL11.glPopMatrix();
+    }
+
+    private static int depth;
+
     // ---- colours ----
     static final Color ACCENT = new Color(120, 210, 255);
     static final Color TEXT = new Color(220, 225, 230);
@@ -330,7 +357,7 @@ final class Style {
     /** True if the mouse is over that box. */
     static boolean over(float x, float y, float w, float h) {
         try {
-            float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+            float mx = mx(), my = my();
             return mx >= x && mx <= x + w && my >= y && my <= y + h;
         } catch (Throwable t) {
             return false;

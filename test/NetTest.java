@@ -159,6 +159,37 @@ public class NetTest {
         java.util.Set<Integer> slotsSeen = new java.util.HashSet<Integer>(); for (HostSession.Player hp : host.getPlayers()) slotsSeen.add(hp.slot);
         check("joiners are numbered P2 onwards, each a different number: " + slotsSeen, slotsSeen.size() == 4 && slotsSeen.contains(2) && slotsSeen.contains(5) && !slotsSeen.contains(1));
 
+        // round trips: the host echoes each joiner, a joiner may echo the host, and everyone hears everyone's
+        clients.get(0).measureLatency();
+        Conn.Packet pings = waitFor(clients.get(1), Msg.PINGS, host);
+        boolean allMeasured = true;
+        for (HostSession.Player hp : host.getPlayers()) allMeasured &= hp.conn.rttMs() >= 0 && hp.conn.rttMs() < 1000;
+        java.util.Map<Integer, Integer> told = pings == null ? null : wingman.net.Pings.decode(pings.data);
+        check("the host measures every joiner's round trip, and tells everyone (" + told + ")", allMeasured && told != null && told.size() == 4 && !told.containsValue(-1));
+        long waitEcho = System.currentTimeMillis() + 3000;
+        while (clients.get(0).rttMs() < 0 && System.currentTimeMillis() < waitEcho) { host.pump(); Thread.sleep(10); }
+        check("a joiner measures its own round trip to the host (" + clients.get(0).rttMs() + " ms)", clients.get(0).rttMs() >= 0);
+
+        // chat: a joiner's line goes to everyone, with who said it; a flood is cut short; control characters go
+        wingman.net.ChatLog.clear();
+        clients.get(2).send(Msg.CHAT, Msg.utf("hello\u0007 there\nfriends"));
+        Conn.Packet heard = waitFor(clients.get(0), Msg.CHAT, host);
+        In hin = heard == null ? null : Msg.reader(heard.data);
+        int hslot = hin == null ? -1 : (hin.readByte() & 0xFF);
+        String hname = hin == null ? "" : hin.readUTF(), htext = hin == null ? "" : hin.readUTF();
+        HostSession.Player third = null;
+        for (HostSession.Player hp : host.getPlayers()) if (hp.name.equals("P3")) third = hp;
+        check("a chat line reaches the other joiners with its sender (" + hslot + " " + hname + ": " + htext + ")",
+                third != null && hslot == third.slot && hname.equals("P3") && htext.equals("hello there friends"));
+        check("the host keeps it too", wingman.net.ChatLog.size() == 1 && wingman.net.ChatLog.last(1).get(0).text.equals("hello there friends"));
+        for (int i = 0; i < 10; i++) clients.get(2).send(Msg.CHAT, Msg.utf("spam " + i));
+        long waitFlood = System.currentTimeMillis() + 600;
+        while (System.currentTimeMillis() < waitFlood) { host.pump(); Thread.sleep(10); }
+        check("a flood of chat lines is cut to six in ten seconds (" + wingman.net.ChatLog.size() + " kept)", wingman.net.ChatLog.size() == 6);
+        StringBuilder longLine = new StringBuilder();
+        for (int i = 0; i < 500; i++) longLine.append('x');
+        check("a chat line is cut to " + wingman.net.ChatLog.MAX_LINE + " characters", wingman.net.ChatLog.clean(longLine.toString()).length() == wingman.net.ChatLog.MAX_LINE);
+
         // version mismatch
         Conn bad = Conn.open("127.0.0.1", port);
         Msg.W w = new Msg.W(); w.out.writeInt(999); w.out.writeUTF("old"); MODS.write(w.out); bad.send(Msg.HELLO, w.done());

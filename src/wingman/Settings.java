@@ -20,8 +20,10 @@ import com.fs.starfarer.api.input.InputEventAPI;
 final class Settings {
     private static final String FILE = "wingman_settings";
 
-    static final int HOST = 1, JOINER = 2, BOTH = 3;
+    static final int HOST = 1, JOINER = 2, BOTH = 3, LOCAL = 4;
     private static final String[] YES_NO = { "true", "false" };
+    /** A key, set by pressing it (see Keys). */
+    static final String[] KEY = {};
 
     static final class Item {
         final String key, label, help;
@@ -34,9 +36,9 @@ final class Settings {
         }
     }
 
-    static final String[] PAGES = { "HOSTING AND JOINING", "SMOOTHNESS", "KEEPING THE GAMES ALIKE", "TROUBLESHOOTING" };
+    static final String[] PAGES = { "HOSTING AND JOINING", "INTERFACE", "KEYS", "SMOOTHNESS", "KEEPING THE GAMES ALIKE", "TROUBLESHOOTING" };
     /** The same pages, short enough for tabs. */
-    static final String[] PAGE_TABS = { "Connection", "Smoothness", "Sync", "Troubleshooting" };
+    static final String[] PAGE_TABS = { "Connection", "Interface", "Keys", "Smoothness", "Sync", "Troubleshooting" };
     static final List<Item> ITEMS = new ArrayList<Item>();
     static {
         ITEMS.add(new Item(0, "hostEnabled", "Friends can join my battles", HOST, false, YES_NO,
@@ -73,70 +75,82 @@ final class Settings {
         ITEMS.add(new Item(0, "port", "Port", BOTH, false, null,
                 "Type a number. Must be the same for everyone; the host needs this TCP port reachable. Normally 24816."));
 
-        ITEMS.add(new Item(1, "snapshotRate", "Updates per second", HOST, true, new String[] { "10", "15", "20", "30", "45", "60" },
+        ITEMS.add(new Item(1, "uiScale", "Size of Wingman's pages and panels", LOCAL, true, new String[] { "0.75", "0.85", "1", "1.1", "1.25", "1.5", "1.75", "2" },
+                "On top of the game's own UI scaling. Bigger for a 4K screen, smaller to see more of the map. At 1280 x 720, 1 is the largest that fits everything."));
+        ITEMS.add(new Item(1, "playerColors", "Player colours", LOCAL, true, new String[] { "standard", "colorblind" },
+                "colorblind: colours told apart with any kind of colour blindness (yellow, sky blue, orange, white, purple, teal, red, blue...). The P number is always shown with them."));
+        ITEMS.add(new Item(1, "pingReadout", "Ping in battle", LOCAL, true, new String[] { "mine", "everyone", "off" },
+                "mine: your own round trip to the host, at the top of the screen; it turns orange or red when the link is slow or spiking. everyone: every player's. The CO-OP panel and the lobby always show everyone's."));
+        ITEMS.add(new Item(1, "autoRejoin", "Rejoin by myself after a drop", JOINER, true, YES_NO,
+                "On: if the link to the host drops while you are in the lobby, you are reconnected as soon as the host can be reached again (for 10 minutes; a host who removed you is not retried)."));
+        for (Keys.Bind b : Keys.list()) {
+            ITEMS.add(new Item(2, Keys.setting(b.id), b.label, LOCAL, true, KEY, "Where: " + b.where + ". Enter (or a click), then press the new key with any Ctrl, Shift or Alt. Delete puts it back to " + b.def + "."));
+        }
+
+        ITEMS.add(new Item(3, "snapshotRate", "Updates per second", HOST, true, new String[] { "10", "15", "20", "30", "45", "60" },
                 "How often the host sends positions. 30 is the best balance; more costs bandwidth and, on an uneven connection, is less smooth."));
-        ITEMS.add(new Item(1, "sendEverything", "Send everything, every update", HOST, true, YES_NO,
+        ITEMS.add(new Item(3, "sendEverything", "Send everything, every update", HOST, true, YES_NO,
                 "On: smoothest (anything moving just as expected is left out anyway). Off: fighters every other update and less precise; less bandwidth."));
-        ITEMS.add(new Item(1, "compactUpdates", "Send updates as changes only", HOST, true, YES_NO,
+        ITEMS.add(new Item(3, "compactUpdates", "Send updates as changes only", HOST, true, YES_NO,
                 "On: each update carries only what changed since the one before; about a third of the size, nothing lost."));
-        ITEMS.add(new Item(1, "compressLink", "Compress the connection", BOTH, false, YES_NO,
+        ITEMS.add(new Item(3, "compressLink", "Compress the connection", BOTH, false, YES_NO,
                 "On: everything sent is compressed, if the other side can read it. Used from the next time you connect."));
-        ITEMS.add(new Item(1, "useUdp", "Updates and controls by UDP", BOTH, false, YES_NO,
+        ITEMS.add(new Item(3, "useUdp", "Updates and controls by UDP", BOTH, false, YES_NO,
                 "On: a lost packet costs one update, not a freeze. Falls back to TCP by itself where UDP can't get through. Needed on both; used from the next time you connect."));
-        ITEMS.add(new Item(1, "bandwidthLimit", "Bandwidth limit per joiner (KB/s)", HOST, true, new String[] { "off", "24", "32", "48", "64", "96", "128" },
+        ITEMS.add(new Item(3, "bandwidthLimit", "Bandwidth limit per joiner (KB/s)", HOST, true, new String[] { "off", "24", "32", "48", "64", "96", "128" },
                 "When a big battle needs more than this, what matters most to each joiner (near their ship, ships before fighters before missiles, anything firing) goes first; the rest a moment later."));
-        ITEMS.add(new Item(1, "trimUnseen", "Send unseen enemies less often", HOST, true, YES_NO,
+        ITEMS.add(new Item(3, "trimUnseen", "Send unseen enemies less often", HOST, true, YES_NO,
                 "On: enemies nobody on your side can see are reported about once a second. Saves bandwidth in big battles."));
-        ITEMS.add(new Item(1, "predictOwnShip", "My ship answers my controls at once", JOINER, true, YES_NO,
+        ITEMS.add(new Item(3, "predictOwnShip", "My ship answers my controls at once", JOINER, true, YES_NO,
                 "On: your ship moves straight away and is quietly kept in step with the host. Off: it waits for the host's answer."));
-        ITEMS.add(new Item(1, "hideLatency", "My flux and ammo answer at once", JOINER, true, YES_NO,
+        ITEMS.add(new Item(3, "hideLatency", "My flux and ammo answer at once", JOINER, true, YES_NO,
                 "On: your ship's flux bar and ammo change the moment you fire, raise shields or vent, and are kept in step with the host. Off: they show the host's figures, a moment late."));
-        ITEMS.add(new Item(1, "smoothCorrections", "Smooth corrections", JOINER, true, YES_NO,
+        ITEMS.add(new Item(3, "smoothCorrections", "Smooth corrections", JOINER, true, YES_NO,
                 "On: other ships follow the host's exactly, and each correction fades out over a few frames. Off: the older way (corrected only beyond a tolerance)."));
-        ITEMS.add(new Item(1, "jitterBuffer", "Jitter buffer (uneven connection)", JOINER, true, YES_NO,
+        ITEMS.add(new Item(3, "jitterBuffer", "Jitter buffer (uneven connection)", JOINER, true, YES_NO,
                 "On: other ships are shown a moment in the past (the link's unevenness, at most 0.25 s), so late updates make no difference. Your ship, shots and missiles are not delayed."));
-        ITEMS.add(new Item(1, "steadyControls", "Steady controls (lossy connection)", HOST, true, YES_NO,
+        ITEMS.add(new Item(3, "steadyControls", "Steady controls (lossy connection)", HOST, true, YES_NO,
                 "On: joiners send each set of controls with copies of the last two, and their ships play them back at an even pace, a little late. A lost or bunched-up packet then costs nothing."));
-        ITEMS.add(new Item(1, "syncTolerance", "Difference from the host left alone", JOINER, true, new String[] { "0", "0.5", "1", "1.5", "2", "3" },
+        ITEMS.add(new Item(3, "syncTolerance", "Difference from the host left alone", JOINER, true, new String[] { "0", "0.5", "1", "1.5", "2", "3" },
                 "1 is normal. Raise it if ships, fighters or missiles shake; lower it to follow the host more exactly."));
 
-        ITEMS.add(new Item(2, "scriptedHits", "Hits by shots with a script", JOINER, true, new String[] { "match", "host", "local" },
+        ITEMS.add(new Item(4, "scriptedHits", "Hits by shots with a script", JOINER, true, new String[] { "match", "host", "local" },
                 "match: your game's own hits count, and the host's are played out only where yours are missing. "
                 + "host: only the host's hits are shown. local: each PC judges for itself."));
-        ITEMS.add(new Item(2, "matchWindowMs", "Same-hit window (ms)", JOINER, true, new String[] { "30", "50", "100", "150", "200", "300" },
+        ITEMS.add(new Item(4, "matchWindowMs", "Same-hit window (ms)", JOINER, true, new String[] { "30", "50", "100", "150", "200", "300" },
                 "With \"match\": how far apart in time your hit and the host's may be and still count as the same one. 30 is about two frames."));
-        ITEMS.add(new Item(2, "wholeWrecks", "Wrecks stay whole", HOST, true, YES_NO,
+        ITEMS.add(new Item(4, "wholeWrecks", "Wrecks stay whole", HOST, true, YES_NO,
                 "On: wrecks never break into pieces, in your battles too, so every screen shows the same wrecks. Off: they break up as normal; the break lines may differ a little on joiners' screens."));
-        ITEMS.add(new Item(2, "shotCounts", "Weapons fire as often as the host's", JOINER, true, YES_NO,
+        ITEMS.add(new Item(4, "shotCounts", "Weapons fire as often as the host's", JOINER, true, YES_NO,
                 "On: each weapon on a copy of a ship fires exactly as many times as the real one did."));
-        ITEMS.add(new Item(2, "shieldGrace", "Joiners' shields forgive the delay", HOST, true, YES_NO,
+        ITEMS.add(new Item(4, "shieldGrace", "Joiners' shields forgive the delay", HOST, true, YES_NO,
                 "On: a shot that a joiner's raised shield (or phase cloak) stopped on their screen, but that hit their ship here before their shield came up, is given back: hull and armor restored, the shield's flux added instead."));
-        ITEMS.add(new Item(2, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,
+        ITEMS.add(new Item(4, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,
                 "Speed, turn rate, flux, ranges, rate of fire. The host sends them, the joiner applies them: needed on both."));
-        ITEMS.add(new Item(2, "syncScriptMemory", "Script memory follows the host", BOTH, true, YES_NO,
+        ITEMS.add(new Item(4, "syncScriptMemory", "Script memory follows the host", BOTH, true, YES_NO,
                 "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
-        ITEMS.add(new Item(2, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
+        ITEMS.add(new Item(4, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
-        ITEMS.add(new Item(2, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
+        ITEMS.add(new Item(4, "playerList", "Player list on the campaign map", HOST, true, YES_NO,
                 "A small list at the top right of the campaign map while friends are connected: each player in their colour, the ship they picked, and whose link has gone quiet."));
-        ITEMS.add(new Item(2, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
+        ITEMS.add(new Item(4, "keepRunningInCommandMap", "Battle keeps running in the command map", HOST, false, YES_NO,
                 "On: opening the command map (Tab) doesn't pause the battle while friends are in it (a pause on the host pauses everyone). Space still pauses."));
-        ITEMS.add(new Item(2, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,
+        ITEMS.add(new Item(4, "hostModSettings", "Mod settings follow the host", JOINER, false, YES_NO,
                 "Mods' LunaLib settings are the host's while a battle runs, so copies of the host's ships behave as there. Your own keys stay yours, and your settings come back after the battle."));
-        ITEMS.add(new Item(2, "shipMastery", "Ship Mastery follows the host", JOINER, false, YES_NO,
+        ITEMS.add(new Item(4, "shipMastery", "Ship Mastery follows the host", JOINER, false, YES_NO,
                 "With Ship Mastery System: the host's masteries (and the enemy's) apply to the copies of ships here. Needs the stand-in campaign. Off: if it misbehaves."));
-        ITEMS.add(new Item(2, "hostMessages", "Battle messages follow the host", BOTH, true, YES_NO,
+        ITEMS.add(new Item(4, "hostMessages", "Battle messages follow the host", BOTH, true, YES_NO,
                 "Lines mods' scripts write to the message feed (an objective's hail, a system's warning) come from the host's game, so every screen reads the same. Needed on both."));
-        ITEMS.add(new Item(2, "fighterHangars", "Fighters in their carriers' hangars", JOINER, false, YES_NO,
+        ITEMS.add(new Item(4, "fighterHangars", "Fighters in their carriers' hangars", JOINER, false, YES_NO,
                 "The host's fighters are put in the hangars of your copy of their carrier: the carrier panel shows them, and carrier scripts find them. Off: if carriers misbehave."));
-        ITEMS.add(new Item(2, "joinerSubsystems", "Extra abilities follow the joiner", BOTH, true, YES_NO,
+        ITEMS.add(new Item(4, "joinerSubsystems", "Extra abilities follow the joiner", BOTH, true, YES_NO,
                 "MagicLib subsystems (extra abilities on their own keys, as on many UAF ships) fire on the host when the joiner presses the key, not by the ship's AI. Needed on both."));
-        ITEMS.add(new Item(2, "damageReports", "Damage reports", BOTH, true, YES_NO,
+        ITEMS.add(new Item(4, "damageReports", "Damage reports", BOTH, true, YES_NO,
                 "The host reports damage that no weapon accounts for; a joiner plays out what its own game missed. Needed on both."));
 
-        ITEMS.add(new Item(3, "debugLog", "Detailed log for bug reports", BOTH, true, YES_NO,
+        ITEMS.add(new Item(5, "debugLog", "Detailed log for bug reports", BOTH, true, YES_NO,
                 "On: co-op diagnostics are written to starsector.log. Turn it on (on both PCs) before reproducing a problem."));
-        ITEMS.add(new Item(3, "hostTethering", "Host tethering", HOST, true, YES_NO,
+        ITEMS.add(new Item(5, "hostTethering", "Host tethering", HOST, true, YES_NO,
                 "On: if a mod's script moves you into an enemy ship, you are put straight back in your own, and the log names the script. Dev mode's own takeovers are left alone."));
     }
 
@@ -189,6 +203,8 @@ final class Settings {
         private WingmanConfig cfg, file;
         private Map<String, String> overrides = new LinkedHashMap<String, String>();
         private boolean inBattle, saveFailed;
+        /** A key row is waiting for the new key. */
+        private boolean capturing;
         /** Settings changed since the owner last looked; the owner empties it. */
         final List<String> changed = new ArrayList<String>();
 
@@ -203,6 +219,7 @@ final class Settings {
             overrides = loadOverrides();
             open = true;
             saveFailed = false;
+            capturing = false;
         }
 
         private List<Item> rows() {
@@ -215,6 +232,7 @@ final class Settings {
             String before = cfg.get(it.key);
             cfg.set(it.key, value);
             cfg.tidy(false);
+            cfg.applyLocal();
             String now = cfg.get(it.key);
             // The same as the file says: nothing to remember. (A half-typed port is remembered as typed.)
             if (it.options != null && now != null && now.equals(file.get(it.key))) overrides.remove(it.key);
@@ -234,7 +252,8 @@ final class Settings {
         }
 
         private void step(Item it, int dir) {
-            if (it.options == null) return;
+            if (it.options == KEY) { capturing = true; return; }
+            if (it.options == null || it.options.length == 0) return;
             String cur = cfg.get(it.key);
             int at = -1;
             for (int i = 0; i < it.options.length; i++) if (it.options[i].equalsIgnoreCase(cur)) at = i;
@@ -287,12 +306,18 @@ final class Settings {
                 boolean down = e.isKeyDownEvent();
                 int key = e.getEventValue();
                 char ch = e.getEventChar();
-                boolean shift = e.isShiftDown();
+                boolean shift = e.isShiftDown(), ctrl = e.isCtrlDown(), alt = e.isAltDown();
                 e.consume();
                 if (!down) continue;
                 List<Item> rows = rows();
                 if (row >= rows.size()) row = Math.max(0, rows.size() - 1);
                 Item it = rows.isEmpty() ? null : rows.get(row);
+                if (capturing) { // the new key for this row: the next one pressed, with its Ctrl, Shift and Alt
+                    if (key == 1) { capturing = false; continue; }                                    // Esc: as it was
+                    if (key == 29 || key == 157 || key == 42 || key == 54 || key == 56 || key == 184 || key == 219 || key == 220) continue; // a modifier alone
+                    if (it != null && it.options == KEY && Keys.bindable(key)) { put(it, Keys.format(key, ctrl, shift, alt)); capturing = false; }
+                    continue;
+                }
                 if (key == 1) { open = false; return; }                                              // Escape
                 if (key == 15) { page = (page + (shift ? PAGES.length - 1 : 1)) % PAGES.length; row = 0; continue; } // Tab
                 if (key == 200) { row = (row + rows.size() - 1) % Math.max(1, rows.size()); continue; } // up
@@ -301,8 +326,10 @@ final class Settings {
                 if (key == 211) { // Delete: back to what the file says
                     overrides.remove(it.key);
                     String before = cfg.get(it.key);
-                    cfg.set(it.key, file.get(it.key));
+                    if (it.key.startsWith("key.")) cfg.keys.remove(it.key);
+                    else cfg.set(it.key, file.get(it.key));
                     cfg.tidy(false);
+                    cfg.applyLocal();
                     saveFailed = !save(overrides);
                     if (before != null && !before.equals(cfg.get(it.key))) changed.add(it.key);
                     if ("debugLog".equals(it.key)) Dbg.on = cfg.debugLog;
@@ -341,7 +368,7 @@ final class Settings {
                 if ("true".equals(v)) v = "on"; else if ("false".equals(v)) v = "off";
                 if ("password".equals(it.key) && v.isEmpty() && i != row) v = "(none)";
                 if (it.options == null && i == row && blink) v += "_";
-                String who = it.who == HOST ? "host" : it.who == JOINER ? "joiner" : "both";
+                String who = it.who == HOST ? "host" : it.who == JOINER ? "joiner" : it.who == LOCAL ? "this PC" : "both";
                 lines.add((i == row ? ">  " : "    ") + it.label + ":   " + v + "     [" + who + "]"
                         + (overrides.containsKey(it.key) ? " *" : ""));
                 colors.add(i == row ? Panel.TEXT : Panel.DIM);
@@ -356,6 +383,8 @@ final class Settings {
                     try { typed = Integer.parseInt(shown(it)); } catch (Throwable t) { /* not a number yet */ }
                     when = typed < 1024 || typed > 65535 ? "Not a usable port yet (1024-65535): 24816 is used until it is."
                             : "Used from the next battle you host or join.";
+                } else if (it.who == LOCAL) {
+                    when = "Takes effect now, on this PC only.";
                 } else if (!inBattle) {
                     when = it.who == HOST ? "Matters when you host. Used from your next battle."
                             : it.who == JOINER ? "Matters when you join. Used from your next battle."
@@ -388,19 +417,27 @@ final class Settings {
                 if ("true".equals(v)) v = "on"; else if ("false".equals(v)) v = "off";
                 if ("password".equals(it.key) && v.isEmpty() && i != row) v = "none";
                 if (it.options == null && i == row && blink) v += "_";
-                String who = it.who == HOST ? "host" : it.who == JOINER ? "joiner" : "both";
+                if (it.options == KEY && i == row && capturing) v = blink ? "press a key..." : "";
+                String who = it.who == HOST ? "host" : it.who == JOINER ? "joiner" : it.who == LOCAL ? "this PC" : "both";
                 d.option(it.label, v, who, i == row, overrides.containsKey(it.key), it.options == null);
             }
             if (!rows.isEmpty()) {
                 Item it = rows.get(row);
                 d.section("About this setting");
                 d.line(it.help, Panel.TEXT);
+                if (it.options == KEY) {
+                    String clash = Keys.clash(it.key.substring(4), shown(it));
+                    if (capturing) d.line("Press the new key now (with Ctrl, Shift or Alt if you like). Esc: keep " + shown(it) + ".", Panel.WARN);
+                    if (!clash.isEmpty()) d.line("Also used by: " + clash + ". Both happen when it is pressed: change one of them.", Panel.BAD);
+                }
                 String when;
                 if ("port".equals(it.key)) {
                     int typed = -1;
                     try { typed = Integer.parseInt(shown(it)); } catch (Throwable t) { /* not a number yet */ }
                     when = typed < 1024 || typed > 65535 ? "Not a usable port yet (1024-65535): 24816 is used until it is."
                             : "Used from the next battle you host or join.";
+                } else if (it.who == LOCAL) {
+                    when = "Takes effect now, on this PC only.";
                 } else if (!inBattle) {
                     when = it.who == HOST ? "Matters when you host. Used from your next battle."
                             : it.who == JOINER ? "Matters when you join. Used from your next battle."

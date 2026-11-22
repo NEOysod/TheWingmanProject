@@ -154,8 +154,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         return Global.getCurrentState() == GameState.TITLE;
     }
 
-    private float bx() { return Global.getSettings().getScreenWidth() - W - MARGIN; }
-    private float by() { return Global.getSettings().getScreenHeight() - H - MARGIN; }
+    private float bx() { return Style.sw() - W - MARGIN; }
+    private float by() { return Style.sh() - H - MARGIN; }
 
     /**
      * How wide the panel under the button may be. The game draws its logo and main menu over anything of ours,
@@ -164,7 +164,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
      * takes its normal width and the menu may cover its lower left corner.
      */
     private float boxWidth() {
-        float clear = Global.getSettings().getScreenWidth() / 2f - 520f - MARGIN; // from the menu's right edge to ours
+        float clear = Style.sw() / 2f - 520f / Style.ui - MARGIN; // from the menu's right edge to ours (the menu is the game's, in real units)
         return clear >= 380f ? Math.min(560f, clear) : 560f;
     }
 
@@ -174,12 +174,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     private boolean overLobbyButton() {
         if (!lobbyButtonShown) return false;
-        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        float mx = Style.mx(), my = Style.my();
         return mx >= lbx() && mx <= lbx() + W && my >= by() && my <= by() + H;
     }
 
     private boolean overButton() {
-        float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+        float mx = Style.mx(), my = Style.my();
         return mx >= bx() && mx <= bx() + W && my >= by() && my <= by() + H;
     }
 
@@ -253,6 +253,15 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 join();
                 if (launchFailed) open = true;
             }
+            if (state != lastState && state == ClientLink.State.FAILED && lastState == ClientLink.State.CONNECTED && !rejoining && connectedRaw != null
+                    && link.refused == null && (cfg == null ? WingmanConfig.load() : cfg).autoRejoin) { // dropped: try to get back in by ourselves
+                rejoining = true;
+                rejoinStarted = now;
+                rejoinTries = 0;
+                nextRejoinAt = now + 3000;
+                Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: the link to the host dropped ("
+                        + wingman.net.Redact.scrub(link.getError()) + "); rejoining by ourselves");
+            }
             if (state != lastState) {
                 if (state == ClientLink.State.FAILED && !connectedTo.isEmpty()) {
                     if (form.status.isEmpty() || form.statusColor != Panel.BAD) { form.status = link.getError(); form.statusColor = Panel.BAD; }
@@ -267,6 +276,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 }
                 lastState = state;
             }
+            if (rejoining) rejoin(link, state, now);
             if (state != ClientLink.State.CONNECTED) return;
             if (AfterAction.unseen && helpPage < 0) { // back from a battle (or told of one): the lobby opens on its report
                 AfterAction.unseen = false;
@@ -382,6 +392,45 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    // ---- rejoining by ourselves after a drop (setting autoRejoin): 3 s, 5 s, then every 10 s, for 10 minutes ----
+    private boolean rejoining;
+    private long rejoinStarted, nextRejoinAt;
+    private int rejoinTries;
+    static final long REJOIN_FOR_MS = 10 * 60 * 1000L;
+
+    private void rejoin(ClientLink link, ClientLink.State state, long now) {
+        if (state == ClientLink.State.CONNECTED) {
+            rejoining = false;
+            form.status = "Reconnected to " + connectedTo + ".";
+            form.statusColor = Panel.GOOD;
+            Global.getLogger(WingmanTitlePlugin.class).info("Wingman title screen: rejoined after " + rejoinTries + " attempt(s)");
+            return;
+        }
+        if (link.refused != null) { // the host said no (removed us, full, a password): that stands
+            rejoining = false;
+            form.status = "The host refused the connection: " + link.refused.replace('\n', ' ');
+            form.statusColor = Panel.BAD;
+            return;
+        }
+        if (now - rejoinStarted > REJOIN_FOR_MS) {
+            rejoining = false;
+            form.status = "Couldn't reach the host for 10 minutes. CONNECT tries again.";
+            form.statusColor = Panel.BAD;
+            return;
+        }
+        if (state == ClientLink.State.CONNECTING) return;
+        long wait = Math.max(0, nextRejoinAt - now);
+        form.status = "The link to the host dropped. " + (wait > 0 ? "Trying again in " + (wait / 1000 + 1) + " s" : "Trying again now")
+                + (rejoinTries > 0 ? " (try " + (rejoinTries + 1) + ")" : "") + ". DISCONNECT stops.";
+        form.statusColor = Panel.WARN;
+        if (now < nextRejoinAt) return;
+        rejoinTries++;
+        nextRejoinAt = now + (rejoinTries == 1 ? 5000 : 10000);
+        WingmanConfig c = WingmanConfig.load();
+        cfg = c;
+        link.connect(c.hostAddress, c.port, c.playerName, Mods.enabled(), Mods.gameVersion(), c.joinPassword);
+    }
+
     private void fail(Throwable t) {
         broken = true;
         try { TitleMenu.show(); } catch (Throwable ignored) { /* nothing more to be done */ } // never left with the game's menu hidden
@@ -405,7 +454,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 events = all;
                 clicked.clear();
             }
-            float mx0 = Global.getSettings().getMouseX(), my0 = Global.getSettings().getMouseY();
+            float mx0 = Style.mx(), my0 = Style.my();
             boolean over = overButton() || overLobbyButton() || (shown != SHOWN_NONE && panel.contains(mx0, my0))
                     || (open && lobbyOpen && TitleMenu.isHidden() && ClientLink.get().getState() == ClientLink.State.CONNECTED)
                     || screenUp;
@@ -428,7 +477,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 }
                 if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.REFIT) { // the wheel scrolls the refit screen's lists
                     int dir = e.getEventValue();
-                    if (lobby.refit.scroll(Global.getSettings().getMouseX(), Global.getSettings().getMouseY(), dir)) e.consume();
+                    if (lobby.refit.scroll(Style.mx(), Style.my(), dir)) e.consume();
                     continue;
                 }
                 if (!e.isKeyboardEvent()) continue;
@@ -458,7 +507,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                     continue;
                 }
                 if (lobbyOpen && open && ClientLink.get().getState() == ClientLink.State.CONNECTED) { // the lobby takes every key while it is up
-                    if (e.isKeyDownEvent()) lobbyKey(e.getEventValue(), e.getEventChar(), e.isCtrlDown(), e.isShiftDown());
+                    if (e.isKeyDownEvent()) {
+                        int key = e.getEventValue();
+                        char ch = e.getEventChar();
+                        boolean ctrl = e.isCtrlDown(), shift = e.isShiftDown(), alt = e.isAltDown();
+                        if (lobby.page == LobbyScreen.REFIT || !ChatBox.joiner.key(key, ch, ctrl, shift, alt)) lobbyKey(key, ch, ctrl, shift); // the chat first, while typing
+                    }
                     e.consume();
                     continue;
                 }
@@ -803,6 +857,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     /** DISCONNECT: leave the host (or stop connecting); the connection page stays up to connect again. */
     private void disconnect() {
+        rejoining = false;
         if (lobby.page == LobbyScreen.REFIT) closeRefit(null);
         ClientLink.get().disconnect();
         OfficerChoice.forget();
@@ -986,6 +1041,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
+        boolean pushed = Style.push();
+        try { renderScaled(viewport); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(ViewportAPI viewport) {
         if (broken || !onTitle()) return;
         try {
             ClientLink.State state = ClientLink.get().getState();
@@ -1016,7 +1076,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             screenUp = anything && !lobby.isBroken() && TitleMenu.hide();
             boolean disconnectShown = state == ClientLink.State.CONNECTED || state == ClientLink.State.CONNECTING;
             if (screenUp && down && !wasClickDown && wasUp) { // the header's buttons, as drawn last frame
-                int a = screen.hitAt(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+                int a = screen.hitAt(Style.mx(), Style.my());
                 if (a != 0) {
                     sound();
                     if (a == CoopScreen.MAIN_MENU) toMainMenu();
@@ -1047,13 +1107,19 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             boolean full = screenUp && open && lobbyOpen && state == ClientLink.State.CONNECTED;
             if (!screenUp) { TitleMenu.show(); screen.clear(); }
             boolean click = down && !wasClickDown;
-            float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+            float mx = Style.mx(), my = Style.my();
             if (click && shown != SHOWN_NONE && panel.contains(mx, my)) { // the corner window (drawn last frame) is on top
                 panelClick(panel.hitAt(mx, my));
                 click = false;
             }
             if (full) {
                 float[] b = lobby.refitButton; // drawn last frame: a click on it opens the refit screen
+                if (ChatBox.joiner.sender == null) ChatBox.joiner.sender = new ChatBox.Sender() {
+                    public boolean send(String text) { return ClientLink.get().chat(text); }
+                };
+                String chatHit = click && lobby.page != LobbyScreen.REFIT ? ChatBox.joiner.at(mx, my) : null;
+                if (chatHit != null) { ChatBox.joiner.click(chatHit); click = false; }
+                else if (click) ChatBox.joiner.typing = false; // a click anywhere else: done typing
                 float[] lh = click ? lobby.hitAt(mx, my) : null;
                 if (lh != null) lobbyClick(lh);
                 else if (click && b != null && lobby.page == LobbyScreen.FLEET && LobbyScreen.inside(b[0], b[1], b[2], b[3])) openRefit();
@@ -1061,7 +1127,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                 LobbyScreen.View v = lobbyView();
                 v.reserveRight = CoopScreen.buttonsWidth(disconnectShown) + 14f;
                 lobby.render(v);
-                float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+                float sw = Style.sw(), sh = Style.sh();
                 screen.buttons(sw - CoopScreen.margin(), sh - CoopScreen.margin() + 2f, disconnectShown);
             } else if (screenUp) { // the backdrop and header under the window drawn below
                 headerBottom = screen.frame(screenTitle(), screenLine(state), state == ClientLink.State.CONNECTED ? Panel.GOOD : Panel.DIM, disconnectShown);

@@ -55,7 +55,7 @@ final class CampaignSettings implements CampaignInputListener, CampaignUIRenderi
         if (broken || events == null || Global.getCurrentState() != GameState.CAMPAIGN) return;
         if (menu.open && Pages.stale(seenAt)) close("wasn't being drawn");
         try {
-            float scale = Global.getSettings().getScreenScaleMult();
+            float scale = Style.eventScale();
             if (!menu.open) {
                 if (Global.getSector().getCampaignUI() != null && Global.getSector().getCampaignUI().isShowingDialog()) return;
                 for (InputEventAPI e : events) { // Ctrl+Shift+O, or a click on SETTINGS in the player list
@@ -64,7 +64,7 @@ final class CampaignSettings implements CampaignInputListener, CampaignUIRenderi
                     boolean clickedButton = e.isMouseEvent() && b != null && !e.isMouseMoveEvent() && !e.isMouseScrollEvent()
                             && e.getX() / scale >= b[0] && e.getX() / scale <= b[0] + b[2] && e.getY() / scale >= b[1] && e.getY() / scale <= b[1] + b[3];
                     if (clickedButton && !e.isLMBDownEvent()) { e.consume(); continue; } // the rest of that click goes no further
-                    boolean keys = e.isKeyDownEvent() && e.isCtrlDown() && e.isShiftDown() && e.getEventValue() == 24;
+                    boolean keys = !clickedButton && Keys.is("settings", e);
                     if (!keys && !(clickedButton && e.isLMBDownEvent())) continue;
                     if (Pages.anyOpen()) continue; // another page is up: one at a time
                     menu.open(null);
@@ -119,6 +119,11 @@ final class CampaignSettings implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
+        boolean pushed = Style.push();
+        try { renderScaled(viewport); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(ViewportAPI viewport) {
         if (broken || !menu.open) return;
         seenAt = System.currentTimeMillis();
         try {

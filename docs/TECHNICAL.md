@@ -111,7 +111,13 @@ connect timeout) if they load, else NIO channels (`ChannelIO`), which use no `ja
   first byte, for life. Joiner-side links take up to 4 MB.
 - **Dead link:** nothing heard for 12 s (`HostSession.LINK_TIMEOUT_MS`), checked by `HostSession.pump()` and
   `ClientLink.getState()`.
-- **Taps:** `Conn.Tap` sees messages on the reader thread first; `ClientLink` uses it for the UDP plumbing.
+- **Taps:** `Conn.Tap` sees messages on the reader thread first; `ClientLink` uses it for the UDP plumbing, and
+  to read `PINGS`, `CHAT` and `REJECT` wherever the joiner is (title screen or battle).
+- **Round trip:** once `measureLatency()` is called (the host on each welcomed joiner, the joiner on its link),
+  the writer sends `ECHO` (its clock, 8 bytes) every 2 s, ahead of whatever is queued but never reordering it;
+  the other side's reader thread answers `ECHO_BACK` at once. `rttMs()` is smoothed (0.7 old, 0.3 new); an
+  echo more than 4.5 s overdue counts as that long, so a stalled link reads slow before it times out.
+  `worstRecentMs()` is the worst of the last five (10 s), for spikes.
 
 ### 4.3 Compression (`Zip`)
 
@@ -174,7 +180,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 60 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 62 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -237,6 +243,9 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 63 | REFIT_ASK | joiner → host | the fleet member whose refit screen the joiner opened (≤ 64 characters; "" closed it; the last one counts; 6.8) |
 | 65 | REFIT_REQUEST | joiner → host | the refit wanted (`RefitRequest`, 6.8): member id, note (≤ 160), changes (≤ 200: slot or bay, item, from, to), hull mods added / removed / built in (≤ 100 each), vents, capacitors, the credits and story points shown; ≤ 64 KB; the last one counts |
 | 66 | REFIT_RESULT | host → joiner | what became of it (`RefitResult`): received, accepted, denied, refused, withdrawn; text ≤ 1,000 (lines) |
+| 73 / 74 | ECHO / ECHO_BACK | both | the sender's clock (ms); answered by the connection itself, never reaches the game (4.2) |
+| 75 | PINGS | host → joiners | every 2 s: count, then per joiner its P number and round trip to the host (ms, −1 unknown); `Pings` |
+| 76 | CHAT | both | joiner → host: a line (≤ 200 characters, ≤ 6 per 10 s, control characters dropped). Host → all: P number, name, line; `ChatLog` keeps the last 100 on each PC |
 | 64 | REFIT_DATA | host → joiner | what the refit screen shows (`RefitData`, 6.8): the ship (weapons by slot ≤ 160, bays ≤ 20, hull mods, S-mods, permanent mods ≤ 600 each; OP, vents, capacitors and S-mods with their limits), credits, story points, cargo, storage, submarkets (≤ 8: name, tariff, usable or why not, stock, what each won't sell or buy), known hull mods (≤ 600), base values (≤ 2,000); ≤ 300 items per list |
 
 ### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
@@ -1515,3 +1524,37 @@ its five private fields, the message line class, and the teleporter system class
 message feed's two ways in (o00000 to super): `tools/GameNames` finds them by their parameters and `build.sh`
 renames MessageSpy's overrides to match. To find a renamed class, compare shapes: a class's fields and methods with
 the game's own (non-API) types counted as one, against each class of the new build in the same package.
+
+## UI size, keys and colours (this PC only)
+
+- **Size** (`uiScale`): Wingman's pages and panels are laid out in the screen's size divided by the setting
+  (`Style.sw()`, `sh()`, `mx()`, `my()`, `eventScale()`) and drawn inside `Style.push()` / `pop()`, a GL scale.
+  Pushes nest (only the outermost scales), so a page drawn by a panel drawn by the title screen is scaled once.
+  Player tags stay on the ships, unscaled. Every page fits at 1280 x 720 at size 1; the joiner's refit page
+  folds its stats once on a short screen (`RefitScreen.compact`), and the lobby chat folds when there is no room.
+- **Keys** (`Keys`): the keys that work outside a page (settings, chat, officer links, friend refits, wish lists,
+  tags, the host's take-back and remove) are kept as text ("Ctrl+Shift+L") under `key.<id>` with the other
+  in-game settings, and matched with exact Ctrl, Shift and Alt. The settings' KEYS page takes the next key
+  pressed. Keys inside an open page stay fixed: a page takes every key while it is up.
+- **Key help** (`KeyHelp`): F1 on the campaign pages (officer links, friend refits, wish lists) or "?" on the
+  CO-OP panel draws that page's keys and Wingman's own over it; it closes with F1, Esc, or its page.
+- **Colours** (`playerColors`): `PlayerTags.color()` reads a second set after Okabe and Ito's palette when
+  `colorblind` is chosen; every P colour is drawn with its P number.
+
+## Chat and round trips
+
+- **Chat** (`ChatBox`, `ChatLog`): one box per PC: the host's under the CO-OP panel (folded until opened; folded
+  it shows how many lines are new and the newest, faint), the joiner's under PLAYERS in the lobby. Typing starts
+  with a click on its line or the chat key; while typing, every key is the chat's (consumed before the
+  campaign sees it). The host's own lines go out as P1. Nothing in a line is ever acted on.
+- **Round trips** (`Pings`, `PingReadout`): the CO-OP panel and the lobby show each joiner's (grey under 120
+  ms, orange under 220, red past it). In a battle, setting `pingReadout`: "mine" (a joiner's own, at the top,
+  with SPIKE when the worst of the last 10 s is well past the usual), "everyone", or "off".
+
+## Rejoining (`autoRejoin`, joiner, on by default)
+
+On the title screen, a link that drops (and wasn't refused: `ClientLink.refused` holds the host's reason) is
+tried again after 3 s, 5 s, then every 10 s, for 10 minutes, with what was typed into the join form. DISCONNECT
+stops it. The host keeps a returning player's P number (same name, same PC). In a battle the existing reconnect
+(about half a minute) runs first; when it gives up, the title screen carries on.
+

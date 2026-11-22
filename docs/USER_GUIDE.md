@@ -116,6 +116,11 @@ and in a campaign friends can connect as soon as you load your save, while you a
      the next battle; **Delete** drops your pick. Ships marked *flagship*, *mothballed*, *can't fly* or with
      another player's name can't be picked.
    - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
+   - **PLAYERS** shows each player's round trip to the host (grey is fine, orange slow, red very slow). Under it,
+     **CHAT**: click its line (or **Ctrl+Shift+C**), type, **Enter** sends, **Esc** stops typing. Everyone in
+     the game sees it, the host on their CO-OP panel.
+   - If the link to the host drops, you are reconnected by yourself as soon as the host can be reached again
+     (setting *Rejoin by myself after a drop*).
    - **Refit:** while the host is docked at a market, the lobby says so, and the card of the ship you picked has
      a **REFIT (R)** button. It opens your ship with what the host has to fit it with: cargo, storage and each
      market there.
@@ -238,6 +243,8 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Refit screen (joiner) | Mouse (keys also: Up/Down, Left/Right, Enter, Delete, B, S, Z, Ctrl+Enter) | Click a ring or tile, then a card; buttons for the rest; the wheel scrolls |
 | Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D), T | Friends' refits: accept / deny; trust that friend |
 | Campaign map (host) | **Ctrl+Shift+L** | Officer links: give a friend one of your officers |
+| Campaign map (host), lobby (joiner) | **Ctrl+Shift+C** | Chat: start typing (Enter sends, Esc stops typing) |
+| Officer links, friend refits, wish lists | F1 | The keys on that page |
 | Lobby (joiner, title screen) | 1 to 8 | Pick your officer's next skill (when it can level up) |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
@@ -248,6 +255,11 @@ start **Wingman: Join Game** instead. It does the same thing.
 
 ---
 
+Wingman's keys that work outside its pages (settings, chat, officer links, friend refits, wish lists, player
+tags, the host's take-back and remove) can be changed in **Settings, Keys**, in case another mod uses the same.
+The table shows the defaults. **F1** on the officer links, friend refits and wish list pages (and **?** on the
+CO-OP panel) lists the keys there.
+
 ## 6. Settings
 
 Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle or on the campaign map.
@@ -256,8 +268,8 @@ Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle or on t
 - **Delete** puts a setting back to its default.
 - Text settings (password, port) are typed directly; Backspace deletes.
 - Changes are saved as you make them. A `*` marks a setting you have changed.
-- Each line says who it matters to: **[host]**, **[joiner]** or **[both]**. A "both" setting must be set
-  on both PCs.
+- Each line says who it matters to: **[host]**, **[joiner]**, **[both]** or **[this PC]**. A "both" setting must be
+  set on both PCs; a "this PC" setting changes only your own screen, at once.
 - In a battle, the page says whether a change takes effect now or from the next battle.
 
 You do not need to change anything to play. The defaults aim for the smoothest picture.
@@ -278,6 +290,18 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Friends can connect on the campaign map | on | Friends connect as soon as you load a save, see your fleet and pick their ships. Off: only once a battle starts. |
 | Mod list check | content | content: mods must match except utility mods. all: every mod. off: no check. |
 | Port | 24816 | Must be the same for everyone. |
+
+### Interface
+| Setting | Default | What it does |
+|---|---|---|
+| Size of Wingman's pages and panels | 1 | 0.75 to 2, on top of the game's own UI scaling. Bigger for a 4K screen. At 1280 x 720, 1 is the largest that fits everything. |
+| Player colours | standard | colorblind: colours told apart with any kind of colour blindness. The P number is always shown with them. |
+| Ping in battle | mine | mine: your round trip to the host at the top of the screen (orange or red when slow, SPIKE when it jumps). everyone: every player's. off. |
+| Rejoin by myself after a drop | on | Joiner: if the link drops while you are in the lobby, you are reconnected as soon as the host can be reached (for 10 minutes). Not after the host removed you. |
+
+### Keys
+Each of Wingman's keys that work outside its pages. Press **Enter** (or click the row) and then the new key,
+with any Ctrl, Shift or Alt. **Delete** puts it back. A key used twice is pointed out.
 
 ### Smoothness
 | Setting | Default | What it does |

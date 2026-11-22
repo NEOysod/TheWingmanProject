@@ -1933,7 +1933,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (!settings.open && cfg != null && cfg.playerTags) PlayerTags.toggleKey(events, engine);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
-                    if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
+                    if (!Keys.is("settings", e)) continue;
                     settings.open(cfg);
                     e.consume();
                 }
@@ -1957,7 +1957,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (popup) { // a popup's buttons take clicks (and no click on it fires the guns underneath)
             for (InputEventAPI e : events) {
                 if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
-                float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+                float mx = Style.mx(), my = Style.my();
                 if (!panel.contains(mx, my)) continue;
                 if (e.isLMBDownEvent()) {
                     Panel.Hit h = panel.hitAt(mx, my);
@@ -2408,6 +2408,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         marks.apply();
     }
 
+    /** Everyone's P number and round trip for the readout (the host's is 0). */
+    private java.util.Map<Integer, Integer> readoutSlots() {
+        java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+        m.put(1, 0);
+        if (lobby != null) for (Lobby.Entry e : lobby.players) m.put(e.slot, wingman.net.Pings.of(e.slot));
+        return m;
+    }
+
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
         if (disabled || !ready) return;
@@ -2420,6 +2428,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     if (pp != null) tags.draw(viewport, pp.ship, e.slot, cfg.playerOutlines, e.name);
                 }
             }
+        }
+        boolean pushed = Style.push(); // our panels in the size set for them (the tags above are on the ships)
+        try { panels(); } finally { Style.pop(pushed); }
+    }
+
+    private void panels() {
+        if (!joinScreen && cfg != null && !"off".equals(cfg.pingReadout)) {
+            try { PingReadout.draw(cfg.pingReadout, link.rttMs(), link.worstRecentMs(), readoutSlots()); } catch (Throwable t) { /* a readout is not worth a failure */ }
         }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
@@ -2457,7 +2473,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (retreatOffered && (lobby == null || !lobby.readyCheck)) {
             float w = 330f;
-            panel.button((Global.getSettings().getScreenWidth() - w) / 2f, 150f, w, 46f, "RETREAT", "Enter: leave the battle with this ship", false);
+            panel.button((Style.sw() - w) / 2f, 150f, w, 46f, "RETREAT", "Enter: leave the battle with this ship", false);
         }
         if (hostPaused && (lobby == null || !lobby.readyCheck)) {
             panel.banner("PAUSED", "The host has paused the battle.", Panel.WARN);

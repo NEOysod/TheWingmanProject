@@ -83,6 +83,8 @@ final class RefitScreen {
    private float[] groupArea;
    private int groupScroll;
    private final Set<String> folded = new HashSet<>();
+   /** The screen is short: the ship's picture is smaller, and the stats were folded once (see ship()). */
+   private boolean compact, compactFolded;
    private boolean availableOnly = true;
    private int shownMax = 20;
    private static final int PAGE = 20;
@@ -1480,6 +1482,12 @@ final class RefitScreen {
 
    private void ship(RefitPlan var1, Roster.Member var2, RefitScreen.Row var3, List<RefitScreen.Row> var4, float var5, float var6, float var7, float var8) {
       String var9 = this.ui.body;
+      // A short screen (1280 x 720): the stats start folded, once, so limits, cost and what to fix fit (a click opens them).
+      this.compact = var6 - var8 < 620.0F;
+      if (this.compact && !this.compactFolded) {
+         this.compactFolded = true;
+         this.folded.add("l:stats");
+      }
       var6 = this.foldHead("l:ship", "Ship", this.data.hullId, var5, var6, var7) - 4.0F;
       float var10 = var6;
       if (!this.isFolded("l:ship")) {
@@ -1492,7 +1500,7 @@ final class RefitScreen {
             "l:limits", "Limits", "OP " + var1.opUsed + " / " + this.data.opMax + (var1.opUsed > this.data.opMax ? "  OVER" : ""), var5, var10, var7
          )
          - 2.0F;
-      if (!this.isFolded("l:limits")) {
+      if (!this.isFolded("l:limits") && var10 - 90.0F >= var8) {
          var10 = this.limit("Ordnance points", var1.opUsed, this.data.opMax, var5, var10, var7) - 4.0F;
          var10 = this.limit("Flux vents", this.req.vents, this.data.maxVents, var5, var10, var7) - 4.0F;
          var10 = this.limit("Flux capacitors", this.req.caps, this.data.maxCaps, var5, var10, var7) - 4.0F;
@@ -1507,8 +1515,11 @@ final class RefitScreen {
          : (var1.buy > 0 ? "pay " + grouped((long)var1.buy) : "")
             + (var1.buy > 0 && var1.sell > 0 ? ",  " : "")
             + (var1.sell > 0 ? "receive " + grouped((long)var1.sell) : "");
+      if (var10 - 20.0F < var8) {
+         return; // (no room for more: fold a section above to see the rest)
+      }
       var10 = this.foldHead("l:cost", "Cost", var12 + (var1.storyPoints > 0 ? ",  " + var1.storyPoints + " SP" : ""), var5, var10, var7) - 2.0F;
-      if (!this.isFolded("l:cost")) {
+      if (!this.isFolded("l:cost") && var10 - 50.0F >= var8) {
          var10 = this.pair(
                "Credits",
                var12,
@@ -1582,7 +1593,7 @@ final class RefitScreen {
       var10 = this.wishListView(var5, var10, var7, var8);
       List var38 = var1.allProblems();
       var38.removeAll(var1.unavailableWhy);
-      if (!var38.isEmpty()) {
+      if (!var38.isEmpty() && var10 - 20.0F >= var8) {
          var10 = this.foldHead("l:fix", "To fix before sending", String.valueOf(var38.size()), var5, var10, var7) - 2.0F;
          if (!this.isFolded("l:fix")) {
             for (int var39 = 0; var39 < var38.size(); var39++) {
@@ -1599,7 +1610,7 @@ final class RefitScreen {
 
    private float shipPicture(Roster.Member var1, RefitScreen.Row var2, float var3, float var4, float var5, float var6) {
       String var7 = this.ui.body;
-      float var8 = Math.min(var5, Math.max(100.0F, (var4 - var6) * (this.docked() ? 0.30F : 0.26F))); // (the stats go under it)
+      float var8 = Math.min(var5, Math.max(this.compact ? 70.0F : 100.0F, (var4 - var6) * (this.compact ? 0.22F : this.docked() ? 0.30F : 0.26F))); // (the stats go under it)
       float var9 = var3 + var5 / 2.0F;
       float var10 = var4 - var8 / 2.0F;
       LobbyScreen.fill(var3, var4 - var8, var5, var8, Style.WELL);
@@ -2898,12 +2909,15 @@ final class RefitScreen {
             Style.callout("The host's Wingman is an older version that doesn't send weapon groups. Once the host updates, they can be set here.", Panel.WARN, x, y, w);
             return;
         }
-        float bx = button(x, y - 30f, 170f, 30f, "AUTO-ARRANGE", CYAN, true, B_ARRANGE) + 8f;
+        boolean narrow = w < 520f; // (a short screen's column: shorter words on the buttons)
+        float bx = button(x, y - 30f, narrow ? 120f : 170f, 30f, narrow ? "ARRANGE" : "AUTO-ARRANGE", CYAN, true, B_ARRANGE) + 8f;
         boolean groupsChanged = changed(new Row(GROUPS, ""));
         if (groupsChanged) bx = button(bx, y - 30f, 90f, 30f, "UNDO", Panel.WARN, true, B_UNDO) + 8f;
+        String setLabel = "SET GROUPS NOW";
         if (data.liveGroups) { // the host sets them at once, apart from the rest of the plan
-            float sw = Math.max(150f, x + w - bx);
-            button(x + w - sw, y - 30f, sw, 30f, "SET GROUPS NOW", Panel.GOOD, groupsChanged, B_GROUPS_NOW);
+            float sw = Math.max(110f, x + w - bx);
+            if (sw < 200f) setLabel = "SET NOW";
+            button(x + w - sw, y - 30f, sw, 30f, setLabel, Panel.GOOD, groupsChanged, B_GROUPS_NOW);
         }
         y -= 42f;
         List<RefitData.Group> gs = viewGroups();
@@ -2946,7 +2960,7 @@ final class RefitScreen {
         List<String> slots = groupSlots();
         Map<String, String> planned = plannedWeapons();
         ShipHullSpecAPI hull = hull();
-        String note = (data.liveGroups ? "SET GROUPS NOW puts them on the ship at once (no market or yes needed); weapons your plan adds are grouped when the refit is done. " : "")
+        String note = (data.liveGroups ? setLabel + " puts them on the ship at once (no market or yes needed); weapons your plan adds are grouped when the refit is done. " : "")
                 + "Click a box to put a weapon in that group; click it again to leave the weapon to the game, which places any weapon in no group when the refit is done."
                 + " LNK fires the group's weapons together, ALT one after another.";
         float noteH = Style.height(note, body, w) + lh + 12f;
@@ -2984,7 +2998,7 @@ final class RefitScreen {
             }
             y -= rowH;
         }
-        if (slots.size() > fit) line((groupScroll + 1) + "-" + Math.min(slots.size(), groupScroll + fit) + " of " + slots.size() + " weapons (wheel to scroll)", body, Panel.DIM, x, listFloor + noteH - 4f, w);
+        if (slots.size() > fit) line((groupScroll + 1) + "-" + Math.min(slots.size(), groupScroll + fit) + " of " + slots.size() + " weapons (wheel to scroll)", body, Panel.DIM, x, listFloor - 4f, w);
         ui.text(note, body, Style.FAINT, x, floor + Style.height(note, body, w) + 2f, w);
     }
 

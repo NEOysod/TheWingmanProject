@@ -42,6 +42,9 @@ public final class HostSession {
         /** Other mods' messages from this player in the current second (see ModChannel). */
         long modWindow;
         int modsInWindow;
+        /** Chat lines from this player in the current 10 seconds. */
+        long chatWindow;
+        int chatsInWindow;
         /** Ready-check report from this player; watching: they chose to go without a ship. */
         public boolean ready, watching;
         /** A pick from the pre-battle lobby (Msg.PICK) waiting for the game thread: fleet member id, "" for none. */
@@ -538,6 +541,7 @@ public final class HostSession {
                 w.out.writeInt(snapshotRate);
                 w.out.writeUTF(hostName);
                 h.send(Msg.WELCOME, w.done());
+                h.measureLatency();
                 if (steadyControls) h.send(Msg.INPUT_MODE, new byte[] { 1 });
                 h.offerCompression();
                 try {
@@ -622,6 +626,13 @@ public final class HostSession {
                         if (++pl.modsInWindow > ModChannel.PER_PLAYER_PER_SECOND) ModChannel.dropped.incrementAndGet();
                         else if (!ModChannel.received(pl.name, pl.id, p.data) && ++pl.badMessages > 20) bye = true;
                     }
+                    else if (p.type == Msg.CHAT) {
+                        long now = System.currentTimeMillis();
+                        if (now - pl.chatWindow > 10000) { pl.chatWindow = now; pl.chatsInWindow = 0; }
+                        String text = ChatLog.clean(Msg.readUtf(p.data));
+                        // Guard rail: a few lines at a time, each short; past that they are dropped, quietly.
+                        if (!text.isEmpty() && p.data.length <= 1024 && ++pl.chatsInWindow <= 6) chat(pl.slot, pl.name, text);
+                    }
                     else if (p.type == Msg.BYE) bye = true;
                 } catch (IOException e) {
                     // Guard rail: one garbled message is skipped. Only a player who keeps sending them is dropped.
@@ -654,7 +665,24 @@ public final class HostSession {
                 if (!pl.replaced) ModChannel.post(pl.name, pl.id, ModChannel.LEFT);
             }
         }
+        long nowPing = System.currentTimeMillis();
+        if (nowPing - pingsSentAt >= 2000 && !players.isEmpty()) { // everyone's round trip, for everyone's player lists
+            pingsSentAt = nowPing;
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            for (Player q : players) m.put(q.slot, q.conn.rttMs());
+            broadcastAll(Msg.PINGS, Pings.encode(m));
+        }
         return events;
+    }
+
+    private long pingsSentAt;
+
+    /** A chat line (from a joiner, or the host as P1): kept here and handed to every joiner, the one who said it too. */
+    public void chat(int slot, String name, String text) {
+        text = ChatLog.clean(text);
+        if (text.isEmpty()) return;
+        ChatLog.add(slot, name, text);
+        broadcastAll(Msg.CHAT, ChatLog.encode(slot, name, text));
     }
 
     /** The PC a connection comes from, without the port. */
