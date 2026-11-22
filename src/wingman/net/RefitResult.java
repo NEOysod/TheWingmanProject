@@ -9,6 +9,8 @@ import java.io.IOException;
  */
 public final class RefitResult {
     public static final int RECEIVED = 0, ACCEPTED = 1, DENIED = 2, REFUSED = 3, WITHDRAWN = 4;
+    /** The weapon groups asked for at once (RefitRequest.groupsNow) are on the ship; the rest of the plan is the joiner's still. */
+    public static final int GROUPS_SET = 5;
     public static final int MAX_TEXT = 1000;
 
     public int status;
@@ -31,7 +33,7 @@ public final class RefitResult {
         In in = Msg.reader(data);
         RefitResult r = new RefitResult();
         r.status = in.readByte();
-        if (r.status < RECEIVED || r.status > WITHDRAWN) throw new IOException("unknown refit result");
+        if (r.status < RECEIVED || r.status > GROUPS_SET) throw new IOException("unknown refit result");
         String t = in.readUTF();
         if (t.length() > MAX_TEXT) throw new IOException("text too long");
         // one line each, printable characters only

@@ -2,6 +2,10 @@
 
 ## Next (on the test branch)
 
+- **Weapon groups set live:** on a joiner's refit page, SET GROUPS NOW puts the groups as planned on the ship at
+  once, without a market or the host's yes (they cost nothing): one press sends them, not every click. The rest of
+  the plan stays as it was; weapons it adds are grouped when that refit is done. Needs a host on this version (the
+  button only shows then); an older host still takes groups with a refit.
 - **Fix: the officer page couldn't be clicked**, and the arrow keys couldn't reach the middle column of officer
   cards (Left/Right changed the friend). Clicks are now read from the mouse while the page is drawn, as the friend
   refit page does (the CO-OP panel too); the arrows move through the cards, and Tab / Shift+Tab change the friend.

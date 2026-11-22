@@ -98,6 +98,8 @@ public final class RefitData {
      * host trying each step on a copy of the ship (ModRefit.Loadouts); empty from a host that doesn't send them.
      */
     public List<Loadout> loadouts = new ArrayList<Loadout>();
+    /** The host sets weapon groups at once when asked (RefitRequest.groupsNow): false from a host that doesn't. */
+    public boolean liveGroups;
 
     /** One selector's cycle: its options in order, the one on the ship, and what each puts in the slots it owns. */
     public static final class Loadout {
@@ -316,7 +318,8 @@ public final class RefitData {
             writeItems(o, setAside);
             writeItems(o, heldForOthers);
             if (groups != null) writeGroups(o, groups); // a host without groups stops before this
-            if (groups != null && !loadouts.isEmpty()) writeLoadouts(o, loadouts); // last: a host without loadouts stops before this
+            if (groups != null) writeLoadouts(o, loadouts); // a host without loadouts stops before this
+            if (groups != null) o.writeByte(liveGroups ? 1 : 0); // last: what the host does besides (bit 1: weapon groups at once)
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -410,6 +413,7 @@ public final class RefitData {
         readItems(in, d.heldForOthers);
         if (in.remaining() > 0) d.groups = readGroups(in); // (a host without groups stops here)
         if (in.remaining() > 0) d.loadouts = readLoadouts(in); // (a host without loadouts stops here)
+        if (in.remaining() > 0) d.liveGroups = (in.readByte() & 1) != 0;
         return d;
     }
 

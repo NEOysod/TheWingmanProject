@@ -178,7 +178,7 @@ final class Screens {
     static void refit(boolean changed) { refit(changed, true); }
 
     static String searchFor = "";
-    static boolean whole, loadouts;
+    static boolean whole, loadouts, groupsShot;
     /** Players in the game for the big-game shots (0: the usual four). */
     static int big;
     static final String[] BIG_NAMES = { "Vex", "Halcyon", "Brightwater", "Okonkwo", "Rook", "Tamsin", "Juniper", "Faraday", "Quill", "Marlowe", "Sable", "Ivo",
@@ -222,6 +222,20 @@ final class Screens {
                 java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
                 List<?> rs = (List<?>) rows.invoke(l.refit);
                 for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 9) { set(l.refit, "rowAt", i); break; }
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+        if (groupsShot) {
+            v.refitData.groups = new ArrayList<wingman.net.RefitData.Group>();
+            v.refitData.liveGroups = true;
+            l.refit.setData(v.refitData);
+            wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
+            q.groups = new ArrayList<wingman.net.RefitData.Group>();
+            wingman.net.RefitData.Group g1 = new wingman.net.RefitData.Group(); g1.slots.addAll(v.refitData.fitSlots.subList(0, Math.min(2, v.refitData.fitSlots.size())));
+            q.groups.add(g1);
+            try {
+                java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
+                List<?> rs = (List<?>) rows.invoke(l.refit);
+                for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 8) { set(l.refit, "rowAt", i); break; }
             } catch (Exception e) { throw new RuntimeException(e); }
         }
         if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
@@ -347,6 +361,7 @@ final class Screens {
         } }));
         out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
         out.add(new Shot("refit-tip", 1920, 1080, 1600, 770, new Runnable() { public void run() { refit(false); try { Thread.sleep(300); } catch (Exception e) { } refit(false); } }));
+        out.add(new Shot("refit-groups", 1920, 1080, -1, -1, new Runnable() { public void run() { groupsShot = true; refit(false); groupsShot = false; } }));
         out.add(new Shot("refit-loadout", 1920, 1080, -1, -1, new Runnable() { public void run() { loadouts = true; refit(false); loadouts = false; } }));
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));

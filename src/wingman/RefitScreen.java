@@ -48,6 +48,8 @@ final class RefitScreen {
    static final int SEND = 2;
    /** G: refit this ship in the game's own refit screen instead (see GameRefit). */
    static final int GAME_REFIT = 3;
+   /** SET GROUPS NOW: the weapon groups as planned, sent on their own (groupsNow()). */
+   static final int GROUPS_NOW = 4;
    private RefitRequest req;
    private RefitData data;
    private int rowAt = -1;
@@ -77,7 +79,7 @@ final class RefitScreen {
    /** Buttons LOADOUT_PICK + n pick option n of the marked loadout. */
    private static final int LOADOUT_PICK = 1000;
    /** Weapon groups editor: a weapon's box for a group, a group's fire mode, its autofire; and AUTO-ARRANGE. */
-   private static final int H_GCELL = 8, H_GMODE = 9, H_GAUTO = 10, B_ARRANGE = 21;
+   private static final int H_GCELL = 8, H_GMODE = 9, H_GAUTO = 10, B_ARRANGE = 21, B_GROUPS_NOW = 22;
    private float[] groupArea;
    private int groupScroll;
    private final Set<String> folded = new HashSet<>();
@@ -221,11 +223,30 @@ final class RefitScreen {
          case 2:
             this.statusColor = Panel.WARN;
             break;
+         case 5: // the groups are on the ship now: no longer part of the plan
+            this.statusColor = Panel.GOOD;
+            if (this.req != null) {
+               this.req.groups = null;
+            }
+            break;
          default:
             this.statusColor = Panel.BAD;
       }
 
       this.status = var1.text;
+   }
+
+   /** The weapon groups as planned, on their own, to be set on the ship at once (the host answers GROUPS_SET). */
+   RefitRequest groupsNow() {
+      RefitRequest var1 = new RefitRequest();
+      var1.memberId = this.req.memberId;
+      var1.vents = this.data.vents;
+      var1.caps = this.data.caps;
+      var1.groups = this.req.groups;
+      var1.groupsNow = true;
+      this.status = "Setting the weapon groups...";
+      this.statusColor = Panel.DIM;
+      return var1;
    }
 
    RefitRequest request() {
@@ -1205,6 +1226,8 @@ final class RefitScreen {
                         case B_ARRANGE:
                            this.autoArrange();
                            return 0;
+                        case B_GROUPS_NOW:
+                           return this.req != null && this.req.groups != null && this.changed(new RefitScreen.Row(GROUPS, "")) ? GROUPS_NOW : 0;
                         default:
                            if (var5.index >= LOADOUT_PICK) {
                               RefitData.Loadout var15 = this.loadout(var6);
@@ -2876,7 +2899,12 @@ final class RefitScreen {
             return;
         }
         float bx = button(x, y - 30f, 170f, 30f, "AUTO-ARRANGE", CYAN, true, B_ARRANGE) + 8f;
-        if (changed(new Row(GROUPS, ""))) button(bx, y - 30f, 90f, 30f, "UNDO", Panel.WARN, true, B_UNDO);
+        boolean groupsChanged = changed(new Row(GROUPS, ""));
+        if (groupsChanged) bx = button(bx, y - 30f, 90f, 30f, "UNDO", Panel.WARN, true, B_UNDO) + 8f;
+        if (data.liveGroups) { // the host sets them at once, apart from the rest of the plan
+            float sw = Math.max(150f, x + w - bx);
+            button(x + w - sw, y - 30f, sw, 30f, "SET GROUPS NOW", Panel.GOOD, groupsChanged, B_GROUPS_NOW);
+        }
         y -= 42f;
         List<RefitData.Group> gs = viewGroups();
         float cell = 36f, cg = 4f, gridW = GROUPS_SHOWN * cell + (GROUPS_SHOWN - 1) * cg;
@@ -2918,7 +2946,8 @@ final class RefitScreen {
         List<String> slots = groupSlots();
         Map<String, String> planned = plannedWeapons();
         ShipHullSpecAPI hull = hull();
-        String note = "Click a box to put a weapon in that group; click it again to leave the weapon to the game, which places any weapon in no group when the refit is done."
+        String note = (data.liveGroups ? "SET GROUPS NOW puts them on the ship at once (no market or yes needed); weapons your plan adds are grouped when the refit is done. " : "")
+                + "Click a box to put a weapon in that group; click it again to leave the weapon to the game, which places any weapon in no group when the refit is done."
                 + " LNK fires the group's weapons together, ALT one after another.";
         float noteH = Style.height(note, body, w) + lh + 12f;
         float listFloor = floor + noteH;

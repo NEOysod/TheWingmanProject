@@ -39,6 +39,11 @@ public final class RefitRequest {
     public int expectCredits, expectStoryPoints;
     /** The weapon groups wanted, group 1 first; null leaves them as they are (new weapons placed by the game). */
     public List<RefitData.Group> groups;
+    /**
+     * Only the weapon groups, set on the ship as it is now, at once (no market, no yes from the host needed): the
+     * joiner's SET GROUPS NOW. Sent after the groups; a host that doesn't know it takes it as an ordinary refit.
+     */
+    public boolean groupsNow;
 
     /** The change for a slot or bay, or null. */
     public Change change(String place, boolean wing) {
@@ -89,7 +94,8 @@ public final class RefitRequest {
             o.writeVarInt(Math.max(0, Math.min(1000, caps)));
             o.writeInt(expectCredits);
             o.writeVarInt(Math.max(0, Math.min(1000, expectStoryPoints)));
-            if (groups != null) { o.writeByte(1); RefitData.writeGroups(o, groups); } // last: an older host reads up to here
+            if (groups != null) { o.writeByte(1); RefitData.writeGroups(o, groups); } // an older host reads up to here
+            if (groups != null && groupsNow) o.writeByte(1); // last
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -122,6 +128,7 @@ public final class RefitRequest {
         r.expectStoryPoints = in.readVarInt();
         if (r.expectStoryPoints < 0 || r.expectStoryPoints > 1000) throw new IOException("impossible story points");
         if (in.remaining() > 0 && in.readByte() == 1) r.groups = RefitData.readGroups(in);
+        if (r.groups != null && in.remaining() > 0) r.groupsNow = in.readByte() == 1;
         return r;
     }
 }

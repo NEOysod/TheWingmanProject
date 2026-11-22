@@ -357,7 +357,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         lobby.refit.onResult(r);
                         if (r.status == wingman.net.RefitResult.ACCEPTED && !sentMember.isEmpty()) Drafts.forget(sentMember);
                         Global.getLogger(WingmanTitlePlugin.class).info("Wingman: the host on our refit: " + r.text.replace('\n', ' '));
-                        if (r.status == wingman.net.RefitResult.ACCEPTED && !refitMember.isEmpty()) {
+                        if ((r.status == wingman.net.RefitResult.ACCEPTED || r.status == wingman.net.RefitResult.GROUPS_SET) && !refitMember.isEmpty()) {
                             // the ship has changed: what the screen shows is out of date until the host sends it afresh
                             refitData = null;
                             c.send(Msg.REFIT_ASK, Msg.utf(refitMember));
@@ -629,6 +629,12 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
             GameRefit.offer(refitData, name);
             lobby.refit.say("Ready: leave CO-OP (Esc), open Missions > Wingman: Refit, click the ship, then Refit. Come back here when done:"
                     + " your changes load on this page.", Panel.GOOD);
+            return;
+        }
+        if (action == RefitScreen.GROUPS_NOW) {
+            Conn c = ClientLink.get().getConn();
+            if (c == null || ClientLink.get().getState() != ClientLink.State.CONNECTED) { note("Not connected.", Panel.BAD); return; }
+            c.send(Msg.REFIT_REQUEST, lobby.refit.groupsNow().encode());
             return;
         }
         if (action == RefitScreen.CLOSE) closeRefit(null);

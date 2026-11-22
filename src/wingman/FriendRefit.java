@@ -426,6 +426,7 @@ final class FriendRefit {
             d.groups = groups;
         } catch (Throwable t) { /* not sent: the joiner can't change them */ }
         d.loadouts = ModRefit.Loadouts.find(v);
+        d.liveGroups = true;
         return d;
     }
 
@@ -706,6 +707,7 @@ final class FriendRefit {
     private static void receive(HostSession.Player p, byte[] data, WingmanConfig cfg) {
         RefitRequest r;
         try { r = RefitRequest.decode(data); } catch (java.io.IOException e) { return; } // garbled: nothing to answer
+        if (r.groupsNow) { groupsNow(p, r, cfg); return; }
         String why = refusal(p, r.memberId, cfg);
         if (why != null) {
             Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + why);
@@ -744,6 +746,37 @@ final class FriendRefit {
         }
         send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
         CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+    }
+
+    /**
+     * Weapon groups set at once (the joiner's SET GROUPS NOW): they cost nothing and touch nothing else, so no market,
+     * no yes and no refit setting is needed, only that the ship is theirs to refit.
+     */
+    private static void groupsNow(HostSession.Player p, RefitRequest r, WingmanConfig cfg) {
+        String why = refusalToPlan(p, r.memberId, cfg);
+        FleetMemberAPI m = why == null ? member(r.memberId) : null;
+        if (m == null) {
+            send(p, new RefitResult(RefitResult.REFUSED, "Can't set weapon groups: " + (why == null ? "that ship is no longer in the fleet" : why) + "."));
+            return;
+        }
+        try {
+            ShipVariantAPI nv = m.getVariant().clone();
+            nv.setSource(VariantSource.REFIT);
+            applyGroups(nv, r.groups);
+            m.setVariant(nv, false, true);
+        } catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: weapon groups from " + p.name + " not set", t);
+            send(p, new RefitResult(RefitResult.REFUSED, "The weapon groups couldn't be set on the host's ship."));
+            return;
+        }
+        String ship = CampaignLobby.label(m);
+        CampaignLobby.forgetLoadout(m.getId());
+        lastSent.remove(p.id); // their refit page gets the ship afresh
+        lastChecked = 0;
+        Pending pd = pending.get(p.id); // a refit of theirs waiting: checked again against the new groups
+        if (pd != null) check(pd, m);
+        send(p, new RefitResult(RefitResult.GROUPS_SET, "Weapon groups set on " + ship + "."));
+        Global.getLogger(FriendRefit.class).info("Wingman: weapon groups set for " + p.name + " on " + ship);
     }
 
     /** The host changed how a player's refits are taken (CO-OP panel): a waiting one, now trusted, is done if it can be. */

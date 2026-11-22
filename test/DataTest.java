@@ -248,6 +248,20 @@ public class DataTest {
             pick.removeMods.clear();
             check(new wingman.net.RefitPlan(ld2, pick).allProblems().toString().contains("Loadout"), "a loadout option asked for without the fitted one off is a problem");
         }
+        { // weapon groups at once: the host says it can, the request says so, and both read back
+            wingman.net.RefitData gd = wingman.net.RefitData.decode(rd.encode());
+            gd.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            check(!wingman.net.RefitData.decode(gd.encode()).liveGroups, "refit data: weapon groups at once off unless the host says so");
+            gd.liveGroups = true;
+            check(wingman.net.RefitData.decode(gd.encode()).liveGroups, "refit data: weapon groups at once read back");
+            wingman.net.RefitRequest gq = new wingman.net.RefitRequest(); gq.memberId = "m1";
+            gq.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            check(!wingman.net.RefitRequest.decode(gq.encode()).groupsNow, "refit request: an ordinary one isn't groups-at-once");
+            gq.groupsNow = true;
+            wingman.net.RefitRequest gq2 = wingman.net.RefitRequest.decode(gq.encode());
+            check(gq2.groupsNow && gq2.groups != null, "refit request: groups at once read back");
+            check(wingman.net.RefitResult.decode(new wingman.net.RefitResult(wingman.net.RefitResult.GROUPS_SET, "ok").encode()).status == wingman.net.RefitResult.GROUPS_SET, "refit result: groups set reads back");
+        }
         wingman.net.RefitPlan pl = new wingman.net.RefitPlan(rd, rq2);
         // OP: 148 - 12 (mauler) + 4 (light AC) + 6 (wasps) = 146. Credits: buy 130, sell the mauler (no value given: 0).
         check(pl.opUsed == 146 && pl.buy == 130 && pl.sell == 0 && pl.net() == 130 && pl.allProblems().isEmpty() && !pl.isEmpty(), "refit plan: ordnance points and credits " + pl.opUsed + " " + pl.buy + " " + pl.allProblems());
