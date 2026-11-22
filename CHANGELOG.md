@@ -2,6 +2,11 @@
 
 ## Next (on the test branch)
 
+- **Fix: joiners didn't hear (or see) overloads.** A ship's copy on a joiner's screen is put into its overload by the
+  host's word, and the game plays the overload sound and shows "OVERLOADED" only for one it reaches itself. Now an
+  overload that has just begun on the host is heard and shown on joiners' screens too, for every ship, theirs
+  included. Likewise a ship system that the copy couldn't switch on itself (its flux or cooldown here stood in the
+  way) and was pushed into running plays its start sound.
 - **Fix: the build stamp in the log** ("Wingman: build ...") had said 0.9.3-beta since 0.9.3; build.sh now writes the
   version and build time into every jar.
 - **Log: what a joiner's controls change.** The joiner's two-minute traffic line now ends with which controls were

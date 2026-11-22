@@ -98,6 +98,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float[] lastCooldown, lastShotAt, aheadSince;
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
+        /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
+        boolean hostOverloaded, overloadKnown;
         float blinkSeen = -100f; // when it last was
         boolean probing;        // diagnostics: leave this puppet completely alone for a frame
         final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // its recent states, for smooth corrections and the jitter buffer
@@ -2174,7 +2176,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -4254,6 +4256,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (apart < patience + 0.3f) return apart;
         }
         sys.forceState(want, Math.max(0f, Math.min(1f, progress)));
+        // Pushed into running from rest (this copy couldn't start it itself): the system's own sound, which only
+        // a proper start plays, so the host's ship is heard switching it on here as well.
+        if (restHave && running(want)) {
+            try {
+                String sound = sys.getSpecAPI() == null ? null : sys.getSpecAPI().getUseSound();
+                if (sound != null && !sound.isEmpty() && ship != null) { Global.getSoundPlayer().playSound(sound, 1f, 1f, ship.getLocation(), ship.getVelocity()); systemSoundsPlayed++; }
+            } catch (Throwable th) { /* silent, as before */ }
+        }
         // A cooldown pushed in from outside may start with nothing left of it, which reads as idle at once. The
         // host's has only just begun: give this copy its full length, which then runs down by its own clock.
         if (want == ShipSystemAPI.SystemState.COOLDOWN) {
@@ -4264,7 +4274,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         systemsForced++;
         return 0f;
     }
-    private int systemsForced, systemsStarted, systemsStopped;
+    private int systemsForced, systemsStarted, systemsStopped, systemSoundsPlayed, overloadsHeard;
 
     // ---- How a teleport looks on someone else's ship ----
     // A teleporter (vanilla Phase Skimmer, mods' blinks) is never run on a copy of someone else's ship: the copy
@@ -4790,8 +4800,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // has been drawn once, as after a refresh from the host): then it is simply tried again next frame.
         try {
             boolean overloaded = (t.flags & Snapshot.F_OVERLOADED) != 0;
-            if (overloaded && !flux.isOverloaded()) flux.forceOverload(0f);
+            if (overloaded && !flux.isOverloaded()) {
+                flux.forceOverload(0f);
+                // Pushed into an overload, the game's copy is silent: its sound and "OVERLOADED" come only with an
+                // overload it reaches itself. One that has just begun on the host is heard and shown here too
+                // (not one already under way when this ship was first seen or made afresh).
+                if (pp.overloadKnown && !pp.hostOverloaded) {
+                    try { flux.playOverloadSound(); flux.showOverloadFloatyIfNeeded(); overloadsHeard++; } catch (Throwable th) { /* silent, as before */ }
+                }
+            }
             else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
+            pp.hostOverloaded = overloaded;
+            pp.overloadKnown = true;
             if (!own) {
                 boolean venting = (t.flags & Snapshot.F_VENTING) != 0;
                 if (venting && !flux.isVenting() && !flux.isOverloaded()) flux.ventFlux();
