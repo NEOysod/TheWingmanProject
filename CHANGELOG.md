@@ -2,6 +2,9 @@
 
 ## Next (on the test branch)
 
+- **Log: what a joiner's controls change.** The joiner's two-minute traffic line now ends with which controls were
+  sent as changed and how often ("controls changed: accelerate 240, shield/phase 3900, ..."), so a control that
+  flickers frame to frame, or a ship acting on its own, shows in a playtest's log.
 - **Weapon groups set live:** on a joiner's refit page, SET GROUPS NOW puts the groups as planned on the ship at
   once, without a market or the host's yes (they cost nothing): one press sends them, not every click. The rest of
   the plan stays as it was; weapons it adds are grouped when that refit is done. Needs a host on this version (the

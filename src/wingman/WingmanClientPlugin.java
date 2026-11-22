@@ -565,7 +565,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman traffic (joiner): " + brief
                         + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : "")
                         + (roundTrip >= 0f ? "; round trip " + Math.round(roundTrip * 1000f) + " ms" : "")
-                        + "; point defense pointed at its own target " + aimsUsed + " gun-frames, by the host's angle " + aimsDeclined);
+                        + "; point defense pointed at its own target " + aimsUsed + " gun-frames, by the host's angle " + aimsDeclined
+                        + controlChanges());
                 aimsUsed = 0;
                 aimsDeclined = 0;
                 lateSum = 0f;
@@ -621,6 +622,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 seqNumber[ownSeq & 255] = ownSeq;
                 seqClock[ownSeq & 255] = clock;
                 if (link.sendControls(controls, decoder.ackEpoch(), decoder.ackTick())) {
+                    if (edge) noteChanges();
                     udpRepeats = edge && !floorDue ? 1 : 0;
                     lastControls = controls;
                     lastInputSentNanos = nowNanos;
@@ -5216,6 +5218,45 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (slotsMissing.add(hullId + "/" + slot)) Global.getLogger(WingmanClientPlugin.class).info("Wingman: " + hullId + " has no slot " + slot
                 + " here (the host's ship has " + weapon + " in it, put there by a script); built without it, the host's ship fires it");
         return false;
+    }
+
+    // ---- what changed in the controls sent at once (keys, buttons...), for the log: a control that flickers every
+    // frame shows here, and so does a ship that the joiner's own keys don't account for ----
+
+    private static final String[] FLAG_NAMES = { "accelerate", "back", "decelerate", "turn left", "turn right", "strafe left", "strafe right",
+        "fire", "shield/phase", "system", "vent", "pull back", "autopilot", "retreat", "retreat now", "hold fire" };
+    private final int[] changeCounts = new int[FLAG_NAMES.length + 7];
+    private int sentFlags, sentGroup = -2, sentTarget = -2, sentAutofire = -1, sentSys = -1, sentOrders = -1, sentTaps = -1;
+    private int[] sentKeys;
+
+    private void noteChanges() {
+        int d = input.flags ^ sentFlags;
+        for (int b = 0; b < FLAG_NAMES.length; b++) if ((d & (1 << b)) != 0) changeCounts[b]++;
+        int k = FLAG_NAMES.length;
+        if (input.group != sentGroup) changeCounts[k]++;
+        if (input.target != sentTarget) changeCounts[k + 1]++;
+        if (input.autofire != sentAutofire) changeCounts[k + 2]++;
+        if (input.sysUses != sentSys) changeCounts[k + 3]++;
+        if (input.sysOrders != sentOrders) changeCounts[k + 4]++;
+        if (input.fireTaps != sentTaps) changeCounts[k + 5]++;
+        if (!java.util.Arrays.equals(input.keys, sentKeys)) changeCounts[k + 6]++;
+        sentFlags = input.flags; sentGroup = input.group; sentTarget = input.target; sentAutofire = input.autofire;
+        sentSys = input.sysUses; sentOrders = input.sysOrders; sentTaps = input.fireTaps; sentKeys = input.keys;
+    }
+
+    /** "; controls changed: accelerate 120, shield/phase 4000, ..." (the most first), and the counts reset. */
+    private String controlChanges() {
+        String[] other = { "weapon group", "target", "autofire", "system uses", "drone orders", "fire taps", "mods' keys" };
+        java.util.List<int[]> l = new java.util.ArrayList<int[]>();
+        for (int i = 0; i < changeCounts.length; i++) if (changeCounts[i] > 0) l.add(new int[] { i, changeCounts[i] });
+        java.util.Collections.sort(l, new java.util.Comparator<int[]>() { public int compare(int[] a, int[] b) { return b[1] - a[1]; } });
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < l.size() && i < 8; i++) {
+            int id = l.get(i)[0];
+            b.append(b.length() == 0 ? "" : ", ").append(id < FLAG_NAMES.length ? FLAG_NAMES[id] : other[id - FLAG_NAMES.length]).append(' ').append(l.get(i)[1]);
+        }
+        java.util.Arrays.fill(changeCounts, 0);
+        return b.length() == 0 ? "" : "; controls changed: " + b;
     }
 
     private void captureInput(Puppet own) {
