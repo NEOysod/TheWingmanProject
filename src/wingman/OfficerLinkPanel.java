@@ -19,8 +19,8 @@ import wingman.net.HostSession;
 /**
  * The host's officer links on the campaign map: Ctrl+Shift+L, or ASSIGN/CHANGE on a friend in the CO-OP panel. The
  * connected friends are tabs along the top; the host's officers are cards (portrait, level, personality, skills,
- * who has them); the picked one's skills are listed at the side, with LINK and UNLINK. Keys as before: Left/Right a
- * friend, the arrows an officer, Enter links (or unlinks), Delete unlinks, Esc closes. A linked officer captains
+ * who has them); the picked one's skills are listed at the side, with LINK and UNLINK. Keys: Tab and Shift+Tab a
+ * friend, the arrows an officer (along and between the rows of cards), Enter links (or unlinks), Delete unlinks, Esc closes. A linked officer captains
  * whichever ship that friend picks (OfficerLinks). The campaign waits while it is open. Registered on each game load
  * as a transient listener.
  */
@@ -72,6 +72,8 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         if (open) return;
         open = true;
         message = "";
+        wasDown = true;
+        hits.clear();
         wasPaused = Global.getSector().isPaused();
         Global.getSector().setPaused(true);
     }
@@ -89,12 +91,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
                         if (over != null && over.startsWith("friend:")) tabFirst = Math.max(0, tabFirst + step); // over the friends: along them
                         else scroll = Math.max(0, scroll + step);
                     }
-                    else if (e.isLMBDownEvent()) {
-                        String id = hits.at(e.getX() / scale, e.getY() / scale);
-                        if (id == null) { close(); e.consume(); break; } // a click off the page closes it
-                        if (!id.isEmpty()) act(id);
-                    }
-                    if (!e.isMouseMoveEvent()) e.consume();
+                    if (!e.isMouseMoveEvent()) e.consume(); // (clicks are read while drawing: see clicks())
                     continue;
                 }
                 if (!e.isKeyboardEvent()) continue;
@@ -112,11 +109,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
                 List<HostSession.Player> ps = players();
                 List<PersonAPI> os = OfficerLinks.officers();
                 if (key == 1 || (key == 38 && ctrl)) { close(); break; }                         // Esc, Ctrl+Shift+L
-                else if (key == 203 && !ps.isEmpty() && !shift) player = (player + ps.size() - 1) % ps.size(); // Left
-                else if (key == 205 && !ps.isEmpty() && !shift) player = (player + 1) % ps.size();             // Right
-                else if (key == 200 && !os.isEmpty()) officer = Math.max(0, officer - COLS);                   // Up
-                else if (key == 208 && !os.isEmpty()) officer = Math.min(os.size() - 1, officer + COLS);       // Down
-                else if (key == 15 && !os.isEmpty()) officer = (officer + 1) % os.size();                      // Tab: the next
+                else if (key == 203 && !os.isEmpty()) officer = Math.max(0, officer - 1);                       // Left: the officer before
+                else if (key == 205 && !os.isEmpty()) officer = Math.min(os.size() - 1, officer + 1);           // Right: the officer after
+                else if (key == 200 && !os.isEmpty()) officer = officer >= COLS ? officer - COLS : officer;     // Up: the row above
+                else if (key == 208 && !os.isEmpty()) officer = Math.min(os.size() - 1, officer + COLS);       // Down: the row below
+                else if (key == 15 && !ps.isEmpty()) { player = shift ? (player + ps.size() - 1) % ps.size() : (player + 1) % ps.size(); message = ""; } // Tab, Shift+Tab: friend
                 else if (key == 211) act("unlink");                                                            // Delete
                 else if (key == 28) act("link");                                                               // Enter
             }
@@ -173,8 +170,10 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {}
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
-        if (broken || !open) return;
+        if (broken || !open) { wasDown = false; return; }
         try {
+            clicks();
+            if (!open) return;
             draw(view());
         } catch (Throwable t) {
             broken = true;
@@ -182,6 +181,23 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
             Style.forget();
             Global.getLogger(OfficerLinkPanel.class).warn("Wingman: the officer links page failed and was closed", t);
         }
+    }
+
+    private boolean wasDown = true; // (true: the click that opened the page isn't taken as one on it)
+
+    /**
+     * A click, read here while drawing (the mouse button itself, against what was drawn last frame), as the friend
+     * refit page does: the campaign's input events didn't bring this page its clicks while it is up.
+     */
+    private void clicks() {
+        boolean down;
+        try { down = org.lwjgl.input.Mouse.isButtonDown(0); } catch (Throwable t) { down = false; }
+        boolean press = down && !wasDown;
+        wasDown = down;
+        if (!press || hits.empty()) return;
+        String id = hits.at(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+        if (id == null) { close(); return; } // a click off the page closes it
+        if (!id.isEmpty()) act(id);
     }
 
     // ---- what it shows ----
@@ -322,7 +338,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         // footer
         Style.fill(x + 1f, y + foot, w - 2f, 1f, Style.RULE);
         if (!v.message.isEmpty()) Style.text(Widgets.fit(v.message, body, w - 40f), body, v.messageColor, x + 18f, y + foot - 8f, w - 36f);
-        else Style.text("Click: choose     Left/Right: friend     Arrows: officer     Enter: link     Delete: unlink     Esc: close",
+        else Style.text("Click: choose     Arrows: officer     Tab / Shift+Tab: friend     Enter: link     Delete: unlink     Esc: close",
                 Style.SMALL_FONT, Style.FAINT, x + 18f, y + foot - 11f, w - 36f);
     }
 

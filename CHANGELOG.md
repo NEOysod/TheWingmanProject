@@ -2,6 +2,9 @@
 
 ## Next (on the test branch)
 
+- **Fix: the officer page couldn't be clicked**, and the arrow keys couldn't reach the middle column of officer
+  cards (Left/Right changed the friend). Clicks are now read from the mouse while the page is drawn, as the friend
+  refit page does (the CO-OP panel too); the arrows move through the cards, and Tab / Shift+Tab change the friend.
 - **Starsector 0.98.5a-RC8.** The hotfix renamed game internals again: the title menu, the join mission, held-back
   objectives, carrier bays, the teleporter class and the battle message feed (whose way in is now named differently
   too: the build reads that name from the game as well, and points MessageSpy at it). RC8's names go first in each

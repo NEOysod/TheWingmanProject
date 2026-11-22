@@ -73,6 +73,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             if (!cfg.playerList || s == null || s.getPlayers().isEmpty()) { hits.clear(); return; }
             CampaignUIAPI ui = Global.getSector().getCampaignUI();
             if (ui == null || ui.isShowingDialog() || ui.getCurrentCoreTab() != null) { hits.clear(); return; } // only over the map itself
+            clicks();
             draw(rows(s, now), FriendRefit.pending.size());
             shownAt = now;
             failures = 0;
@@ -100,13 +101,24 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
                 String id = hits.at(mx, my);
                 if (id == null || id.equals("settings")) continue; // (the settings page takes its own button)
                 if (e.isMouseScrollEvent()) { scroll = Math.max(0, scroll + (e.getEventValue() > 0 ? -1 : 1)); e.consume(); continue; }
-                boolean press = e.isLMBDownEvent();
-                e.consume();
-                if (press && !id.isEmpty()) act(id);
+                e.consume(); // (clicks are read while drawing: see clicks())
             }
         } catch (Throwable t) {
             Global.getLogger(CampaignPlayerList.class).warn("Wingman: a click on the CO-OP panel failed", t);
         }
+    }
+
+    private boolean wasDown = true;
+
+    /** A click on the panel, read while drawing from the mouse button itself (against what was drawn last frame). */
+    private void clicks() {
+        boolean down;
+        try { down = org.lwjgl.input.Mouse.isButtonDown(0); } catch (Throwable t) { down = false; }
+        boolean press = down && !wasDown;
+        wasDown = down;
+        if (!press || hits.empty()) return;
+        String id = hits.at(Global.getSettings().getMouseX(), Global.getSettings().getMouseY());
+        if (id != null && !id.isEmpty() && !id.equals("settings")) act(id); // (the settings page takes its own button)
     }
 
     public void processCampaignInputPreFleetControl(List<InputEventAPI> events) {}
