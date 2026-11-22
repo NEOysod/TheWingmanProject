@@ -1954,24 +1954,26 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         watchTargetKey(events);
         boolean popup = alertTitle != null;
+        if (popup) { // a popup's buttons take clicks (and no click on it fires the guns underneath)
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY) popupKey(h.value, h.ctrl);
+                }
+                e.consume();
+            }
+            popup = alertTitle != null;
+        }
         boolean lobbyUp = lobby != null && lobby.readyCheck;
         if (!popup && !lobbyUp && !retreatOffered) return;
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent()) continue;
             int key = e.getEventValue();
-            if (popup && alertAction == 3 && Panel.isEnter(key)) { // stay unless Ctrl+Enter
-                boolean leave = e.isCtrlDown();
-                alertTitle = null;
-                alertLines.clear();
-                alertAction = 0;
-                if (leave) leaveBattle(false);
-                e.consume();
-                continue;
-            }
-            if (popup && alertAction != 0 && key == 14) { // Backspace: not now
-                alertTitle = null;
-                alertLines.clear();
-                e.consume();
+            if (popup) { // a popup takes the keys it answers to, and nothing else is acted on under it
+                if (popupKey(key, e.isCtrlDown())) e.consume();
                 continue;
             }
             boolean choosing = lobbyUp && stage() == 1;
@@ -2020,13 +2022,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 continue;
             }
             if (!Panel.isEnter(key)) continue;
-            if (popup) {
-                int action = alertAction;
-                alertTitle = null;
-                alertLines.clear();
-                alertAction = 0;
-                if (action != 0) leaveBattle(action == 2);
-            } else if (lobbyUp) {
+            if (lobbyUp) {
                 enterPressed = true;
             } else {
                 retreatNowUntil = System.currentTimeMillis() + 1500;
@@ -2034,6 +2030,41 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             e.consume();
         }
+    }
+
+    /** Ctrl+Enter, as a popup's button gives it (a button carries no Ctrl). */
+    private static final int CTRL_ENTER = 1028;
+
+    /**
+     * A key (or a popup button standing for one) on the popup: Enter does what it says, Backspace (or Esc, or the
+     * close box) is "not now" / dismiss, Ctrl+Enter leaves on a "keep waiting" one. Returns true if it answered.
+     */
+    private boolean popupKey(int key, boolean ctrl) {
+        if (alertTitle == null) return false;
+        boolean enter = Panel.isEnter(key) || key == CTRL_ENTER;
+        if (key == CTRL_ENTER) ctrl = true;
+        if (alertAction == 3 && enter) { // stay unless Ctrl+Enter
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            if (ctrl) leaveBattle(false);
+            return true;
+        }
+        if (alertAction != 0 && (key == 14 || key == 1)) { // Backspace (Esc, the close box): not now
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            return true;
+        }
+        if (enter || key == 1) {
+            int action = alertAction;
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            if (action != 0 && enter) leaveBattle(action == 2);
+            return true;
+        }
+        return false;
     }
 
     private void openJoinScreen(String status, Color color) {
@@ -2409,12 +2440,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             return;
         }
-        if (alertTitle != null) {
-            for (String line : alertLines) { lines.add(line); colors.add(Panel.WARN); }
-            panel.render(alertTitle, lines, colors, alertAction == 0 ? "Enter: dismiss"
+        if (alertTitle != null) { // clickable too: its buttons do what the keys do
+            Panel.Doc d = new Panel.Doc(alertTitle).keys(alertAction == 0 ? "Enter: dismiss"
                     : alertAction == 1 ? "Enter: leave the battle     Backspace: stay"
                     : alertAction == 3 ? "Enter: keep waiting     Ctrl+Enter: leave the battle"
                     : "Enter: leave and rejoin with the right map     Backspace: stay");
+            for (String line : lines) d.line(line, Panel.TEXT);
+            for (String line : alertLines) d.line(line, Panel.WARN);
+            if (alertAction == 0) d.buttons(Panel.Doc.button("OK", 28, Panel.GOOD));
+            else if (alertAction == 1) d.buttons(Panel.Doc.button("LEAVE THE BATTLE", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            else if (alertAction == 3) d.buttons(Panel.Doc.button("KEEP WAITING", 28, Panel.GOOD), Panel.Doc.button("LEAVE THE BATTLE", CTRL_ENTER, Panel.WARN));
+            else d.buttons(Panel.Doc.button("LEAVE AND REJOIN", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            panel.mouse = true;
+            try { panel.render(d); } finally { panel.mouse = false; }
             return;
         }
         if (retreatOffered && (lobby == null || !lobby.readyCheck)) {

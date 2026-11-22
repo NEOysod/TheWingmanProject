@@ -57,6 +57,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         try {
             List<FriendRefit.Pending> list = requests();
             if (list.isEmpty()) { open = false; return; }
+            if (open && Pages.stale(seenAt)) { open = false; hits.clear(); Global.getLogger(FriendRefitPanel.class).info("Wingman: the friend refit page wasn't being drawn and was closed"); }
             float scale = Global.getSettings().getScreenScaleMult();
             for (InputEventAPI e : events) {
                 if (e.isConsumed()) continue;
@@ -71,7 +72,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 boolean keyDown = e.isKeyDownEvent(), ctrl = e.isCtrlDown(), shift = e.isShiftDown();
                 int key = e.getEventValue();
                 if (!open) {
-                    if (keyDown && ctrl && shift && key == 19) { open = true; message = ""; e.consume(); } // Ctrl+Shift+R
+                    if (keyDown && ctrl && shift && key == 19 && !Pages.anyOpen()) { open = true; seenAt = System.currentTimeMillis(); message = ""; e.consume(); } // Ctrl+Shift+R
                     continue;
                 }
                 e.consume(); // while the panel is up, keys are its own
@@ -122,6 +123,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     private final Widgets.Hits hits = new Widgets.Hits();
     private int tabFirst;
+    private long seenAt;
 
     private boolean overUs(float mx, float my) {
         if (open && hits.over(mx, my)) return true;
@@ -131,11 +133,12 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
     /** Opens the page (from the CO-OP panel), on that player's refit if they have one waiting. */
     static void openFor(String name) {
         FriendRefitPanel p = instance;
-        if (p == null) return;
+        if (p == null || Pages.anyOpen()) return;
         List<FriendRefit.Pending> list = requests();
         if (list.isEmpty()) return;
         for (int i = 0; i < list.size(); i++) if (name != null && list.get(i).player.name.equalsIgnoreCase(name)) p.at = i;
         p.open = true;
+        p.seenAt = System.currentTimeMillis();
         p.message = "";
     }
 
@@ -194,11 +197,12 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
                 hits.clear();
                 if (CampaignPlayerList.showing()) { button = null; wasDown = down; return; } // its REFITS button stands for this one
                 drawButton(list.size());
-                if (down && !wasDown && button != null && LobbyScreen.inside(button[0], button[1], button[2], button[3])) { open = true; message = ""; }
+                if (down && !wasDown && button != null && LobbyScreen.inside(button[0], button[1], button[2], button[3]) && !Pages.anyOpen()) { open = true; seenAt = System.currentTimeMillis(); message = ""; }
                 wasDown = down;
                 return;
             }
             at = Math.max(0, Math.min(list.size() - 1, at));
+            seenAt = System.currentTimeMillis();
             draw(list, at);
         } catch (Throwable t) {
             open = false;

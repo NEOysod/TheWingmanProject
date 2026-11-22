@@ -68,9 +68,12 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         return l;
     }
 
+    private long seenAt;
+
     private void show() {
-        if (open) return;
+        if (open || Pages.anyOpen()) return;
         open = true;
+        seenAt = System.currentTimeMillis();
         message = "";
         wasDown = true;
         hits.clear();
@@ -80,6 +83,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
 
     public void processCampaignInputPreCore(List<InputEventAPI> events) {
         if (broken || events == null || Global.getCurrentState() != GameState.CAMPAIGN) return;
+        if (open && Pages.stale(seenAt)) { close(); Global.getLogger(OfficerLinkPanel.class).info("Wingman: the officer links page wasn't being drawn and was closed"); }
         try {
             float scale = Global.getSettings().getScreenScaleMult();
             for (InputEventAPI e : events) {
@@ -171,6 +175,7 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
 
     public void renderInUICoordsAboveUIAndTooltips(ViewportAPI viewport) {
         if (broken || !open) { wasDown = false; return; }
+        seenAt = System.currentTimeMillis();
         try {
             clicks();
             if (!open) return;

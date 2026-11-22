@@ -829,6 +829,19 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
         }
         boolean popup = alertTitle != null;
+        if (popup) { // its OK button (or close box) takes a click; no click on it fires the guns underneath
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Global.getSettings().getMouseX(), my = Global.getSettings().getMouseY();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent() && panel.hitAt(mx, my) != null && panel.hitAt(mx, my).kind == Panel.Hit.KEY) {
+                    alertTitle = null;
+                    alertLines.clear();
+                }
+                e.consume();
+            }
+            popup = alertTitle != null;
+        }
         if (!popup && readyPhase != 1) return;
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent() || !Panel.isEnter(e.getEventValue())) continue;
@@ -862,11 +875,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             return;
         }
-        if (alertTitle != null) {
-            for (String line : alertLines) { lines.add(line); colors.add(Panel.WARN); }
-            lines.add("The battle is paused. Unpause as usual when you want to carry on.");
-            colors.add(Panel.TEXT);
-            panel.render(alertTitle, lines, colors, "Enter: dismiss");
+        if (alertTitle != null) { // clickable too: OK does what Enter does
+            Panel.Doc d = new Panel.Doc(alertTitle).keys("Enter: dismiss");
+            for (String line : lines) d.line(line, Panel.TEXT);
+            for (String line : alertLines) d.line(line, Panel.WARN);
+            d.line("The battle is paused. Unpause as usual when you want to carry on.", Panel.TEXT);
+            d.buttons(Panel.Doc.button("OK", 28, Panel.GOOD));
+            panel.mouse = true;
+            try { panel.render(d); } finally { panel.mouse = false; }
             return;
         }
         if (readyPhase != 1) return;

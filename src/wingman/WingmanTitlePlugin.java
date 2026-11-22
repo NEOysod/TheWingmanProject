@@ -384,6 +384,8 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
 
     private void fail(Throwable t) {
         broken = true;
+        try { TitleMenu.show(); } catch (Throwable ignored) { /* nothing more to be done */ } // never left with the game's menu hidden
+        screenUp = false;
         Global.getLogger(WingmanTitlePlugin.class).error("Wingman: the title screen Co-op button failed and is switched off; "
                 + "the join screen inside the Wingman: Join Game mission still works", t);
     }

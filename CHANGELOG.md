@@ -2,6 +2,14 @@
 
 ## Next (on the test branch)
 
+- **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)
+  open one at a time (two at once each took the keys and fought over Esc), and a page that is open but no longer
+  drawn closes itself within a second and a half, so nothing invisible is left taking the keys or the mouse (and
+  the campaign runs on if it was running). The wish lists' key is now **Ctrl+Shift+W**: Ctrl+Shift+L opened the
+  officer links page first, so the wish lists could only be opened with their button. In battles, popups (a
+  disconnect, a wrong map, waiting for the host...) have buttons that take clicks as well as their keys, and a
+  click on a popup no longer fires the guns underneath. If the title screen's co-op button ever fails and switches
+  itself off, the game's own menu is shown again rather than left hidden.
 - **Fix: joiners' after-battle report sometimes didn't update.** It was sent only when the host's battle plugin saw
   the battle decided; a battle the host left another way (from the menu, or with everything retreated) ended with no
   report, and joiners kept the one before. The host now keeps the report up to date every two seconds, and whatever

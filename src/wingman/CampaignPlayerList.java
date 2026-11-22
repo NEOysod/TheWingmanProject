@@ -65,7 +65,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
     public void renderInUICoordsAboveUIBelowTooltips(ViewportAPI viewport) {
         bottom = Float.MAX_VALUE; // until it is drawn this frame
         settingsButton = null;
-        if (broken || Global.getCurrentState() != GameState.CAMPAIGN || CampaignSettings.isOpen() || FriendRefitPanel.isOpen() || OfficerLinkPanel.isOpen()) { hits.clear(); return; }
+        if (broken || Global.getCurrentState() != GameState.CAMPAIGN || CampaignSettings.isOpen() || FriendRefitPanel.isOpen() || OfficerLinkPanel.isOpen() || WishListPanel.isOpen()) { hits.clear(); return; }
         try {
             long now = System.currentTimeMillis();
             if (cfg == null || now - cfgAt > 5000) { cfg = WingmanConfig.load(); cfgAt = now; }

@@ -59,11 +59,19 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    private static final Color ROW_OVER = new Color(120, 210, 255, 24);
    private static final Color NAME_BACK = new Color(120, 210, 255, 16);
    private static boolean shownCache = true;
+   private static WishListPanel instance;
+   private long seenAt;
+
+   static boolean isOpen() {
+      return instance != null && instance.open;
+   }
    private static long shownAt;
 
    static void install() {
       try {
-         Global.getSector().getListenerManager().addListener(new WishListPanel(), true);
+         WishListPanel var0 = new WishListPanel();
+         Global.getSector().getListenerManager().addListener(var0, true);
+         instance = var0;
       } catch (Throwable var1) {
          Global.getLogger(WishListPanel.class).warn("Wingman: friends' wish lists can't be shown on the campaign map", var1);
       }
@@ -103,6 +111,12 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                return;
             }
 
+            if (this.open && Pages.stale(this.seenAt)) {
+               this.open = false;
+               this.hits.clear();
+               Global.getLogger(WishListPanel.class).info("Wingman: the wish list window wasn't being drawn and was closed");
+            }
+
             float var2 = Global.getSettings().getScreenScaleMult();
 
             for (InputEventAPI var4 : var1) {
@@ -122,8 +136,9 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      boolean var7 = var4.isShiftDown();
                      int var8 = var4.getEventValue();
                      if (!this.open) {
-                        if (var5 && var6 && var7 && var8 == 38) {
+                        if (var5 && var6 && var7 && var8 == 17 && !Pages.anyOpen()) { // Ctrl+Shift+W (L is the officer links page)
                            this.open = true;
+                           this.seenAt = System.currentTimeMillis();
                            this.message = "";
                            this.scroll = 0.0F;
                            var4.consume();
@@ -131,7 +146,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      } else {
                         var4.consume();
                         if (var5) {
-                           if (var8 != 1 && (var8 != 38 || !var6)) {
+                           if (var8 != 1 && (var8 != 17 || !var6)) {
                               if (var8 == 48) {
                                  this.act(1, null, null);
                               } else if (var8 == 200) {
@@ -278,8 +293,9 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                this.hits.clear();
                this.window = null;
                this.drawButton(WishList.wishedCount(), WishList.availableHere());
-               if (var3 && !this.wasDown && this.button != null && LobbyScreen.inside(this.button[0], this.button[1], this.button[2], this.button[3])) {
+               if (var3 && !this.wasDown && this.button != null && LobbyScreen.inside(this.button[0], this.button[1], this.button[2], this.button[3]) && !Pages.anyOpen()) {
                   this.open = true;
+                  this.seenAt = System.currentTimeMillis();
                   this.message = "";
                   this.scroll = 0.0F;
                }
@@ -289,6 +305,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
             }
 
             this.wasDown = var3;
+            this.seenAt = System.currentTimeMillis();
             this.drawWindow(var2);
          } catch (Throwable var8) {
             this.open = false;
@@ -560,7 +577,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    }
 
    private void drawButton(int var1, int var2) {
-      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     CTRL+SHIFT+L" : "WISH LISTS  (" + var1 + ")     CTRL+SHIFT+L";
+      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     CTRL+SHIFT+W" : "WISH LISTS  (" + var1 + ")     CTRL+SHIFT+W";
       if (this.buttonLabel == null || !var3.equals(this.buttonText)) {
          this.buttonLabel = Global.getSettings().createLabel(var3, "graphics/fonts/orbitron12condensed.fnt");
          this.buttonText = var3;

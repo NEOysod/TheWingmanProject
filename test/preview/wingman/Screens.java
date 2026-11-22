@@ -367,6 +367,15 @@ final class Screens {
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list-cy", 1920, 1080, 1700, 1000, new Runnable() { public void run() { whole = true; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } whole = false; } }));
+        out.add(new Shot("battle-popup", 1920, 1080, 960, 520, new Runnable() { public void run() {
+            Panel p = new Panel();
+            Panel.Doc d = new Panel.Doc("CONNECTION LOST").keys("Enter: leave the battle     Backspace: stay");
+            d.line("Nothing has come from the host for twelve seconds.", Panel.WARN);
+            d.line("Your game will try to reconnect by itself.", Panel.WARN);
+            d.buttons(Panel.Doc.button("LEAVE THE BATTLE", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            p.mouse = true;
+            p.render(d);
+        } }));
         out.add(new Shot("officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); } }));
         out.add(new Shot("big-officers", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; officers(); big = 0; } }));
         out.add(new Shot("big-player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } big = 0; } }));
