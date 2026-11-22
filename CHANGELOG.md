@@ -2,6 +2,8 @@
 
 ## Next (on the test branch)
 
+- **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
+  is open, or where you left it. Ctrl+Shift+L still works.
 - **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)
   open one at a time (two at once each took the keys and fought over Esc), and a page that is open but no longer
   drawn closes itself within a second and a half, so nothing invisible is left taking the keys or the mouse (and

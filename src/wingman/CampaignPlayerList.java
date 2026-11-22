@@ -133,6 +133,10 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         else if (p[0].equals("row")) {
             int slot = Integer.parseInt(p[1]);
             openSlot = openSlot == slot ? 0 : slot;
+        } else if (p[0].equals("links")) {
+            HostSession.Player open = bySlot(String.valueOf(openSlot));
+            if (open != null) OfficerLinkPanel.openFor(open.name);
+            else OfficerLinkPanel.open();
         } else if (p[0].equals("refits")) {
             FriendRefitPanel.openFor(null);
         } else if (p[0].equals("officer") && pl != null) {
@@ -244,7 +248,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         hits.clear();
         String body = Style.body();
         float headH = Style.lineHeight(Style.SMALL_FONT) + 16f;
-        float footH = Style.lineHeight(Style.SMALL_FONT) + 10f, moreH = 22f;
+        float footH = 30f + 14f + Style.lineHeight(Style.SMALL_FONT) + 4f, moreH = 22f; // the OFFICER LINKS button, and a line under it
         float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
         // Room for friends: up to most of the screen's height; past that the list scrolls (the wheel, or the arrows).
         Row host = rows.isEmpty() ? null : rows.get(0);
@@ -305,7 +309,14 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         if (upLine) top = more("up", scroll > 0 ? scroll + " more above" : "", x, top);
         for (int i = scroll; i <= last; i++) top = row(friends.get(i), x, top, body);
         if (scrolls) top = more("down", last < friends.size() - 1 ? (friends.size() - 1 - last) + " more below   (wheel to scroll)" : "", x, top);
-        Style.text("Click a friend to manage them.", Style.SMALL_FONT, Style.FAINT, x + 12f, y + footH - 4f, W - 24f);
+        // The foot: the officer links page for everyone (on the friend whose row is open, if one is).
+        float fy = y + footH - 8f - 30f;
+        Style.fill(x + 8f, y + footH - 2f, W - 16f, 1f, Style.alpha(Style.RULE, 60));
+        String ol = "OFFICER LINKS";
+        Widgets.box(x + 12f, fy, W - 24f, 30f, ol, Style.ACCENT, false);
+        Style.textRight("Ctrl+Shift+L", Style.SMALL_FONT, Style.FAINT, x + W - 20f, fy + (30f + Style.lineHeight(Style.SMALL_FONT)) / 2f);
+        hits.add(x + 12f, fy, W - 24f, 30f, "links");
+        Style.text("Click a friend to manage them.", Style.SMALL_FONT, Style.FAINT, x + 12f, fy - 4f, W - 24f);
     }
 
     private float height(Row r) { return ROW_H + (r.slot == openSlot && !r.host ? openHeight(r) : 0f); }

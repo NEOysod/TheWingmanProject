@@ -45,6 +45,11 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
 
     static boolean isOpen() { return instance != null && instance.open; }
 
+    /** Opens the page as it was last left (the CO-OP panel's OFFICER LINKS). */
+    static void open() {
+        if (instance != null) instance.show();
+    }
+
     /** Opens the page on that friend (from the CO-OP panel). */
     static void openFor(String name) {
         OfficerLinkPanel p = instance;
