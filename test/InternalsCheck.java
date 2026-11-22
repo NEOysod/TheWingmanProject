@@ -13,7 +13,7 @@ import java.util.List;
  * (those fail silently in play: a feature just turns itself off with a log line). Run it after a game update:
  *   java -cp build/test InternalsCheck /path/to/starsector-core jars/Wingman.jar
  * Classes are loaded without being started, so no game window or native library is needed.
- * The names here are for Starsector 0.98.5a and mirror the constants in the classes named in each check.
+ * The names here are for Starsector 0.98.5a-RC8 and mirror the constants in the classes named in each check.
  */
 public class InternalsCheck {
     static ClassLoader game;
@@ -21,6 +21,9 @@ public class InternalsCheck {
 
     static void ok(String what) { System.out.println("ok   " + what); }
     static void fail(String what, Object why) { System.out.println("FAIL " + what + ": " + why); fails++; }
+
+    /** n capital O's (the game names some classes "o" and 255 of them, say). */
+    static String os(int n) { return new String(new char[n]).replace((char) 0, 'O'); }
 
     static Class<?> cls(String name) throws Exception { return Class.forName(name, false, game); }
 
@@ -91,37 +94,40 @@ public class InternalsCheck {
         if (bay == null) fail("launch bay class", "none found");
         else {
             ok("launch bay class: " + show(bay));
-            hasField("BayQuiet PENDING", bay, "super.void$interface", "com.fs.starfarer.combat.ai.M$Oo", false);
+            hasField("BayQuiet PENDING", bay, "super.void$interface", "com.fs.starfarer.combat.ai.oO0O$Oo", false);
             hasField("BayQuiet TIMER", bay, "do.return$interface", "com.fs.starfarer.util.IntervalTracker", false);
-            hasField("BayQuiet SPARKS", bay, "øOõo00", "com.fs.starfarer.renderers.fx.A", false);
+            hasField("BayQuiet SPARKS", bay, "øOõo00", "com.fs.starfarer.renderers.fx.o" + os(255), false);
             hasField("BayQuiet QUEUED", bay, "ôOõo00", "int", false);
             hasField("BayLink FIELD", bay, "õ0õo00", "com.fs.starfarer.combat.CombatFleetManager$O0", false);
         }
         // WreckDice
-        hasField("WreckDice", "com.fs.starfarer.util.Tesselator", "Õ00000", "java.util.Random", true);
+        hasField("WreckDice", "com.fs.starfarer.util.Tesselator", "class", "java.util.Random", true);
         // TitleMenu
-        hasField("TitleMenu", "com.fs.starfarer.title.TitleScreenState", "titleWidget", "com.fs.starfarer.title.Object", false);
-        hasMethod("TitleMenu hide", "com.fs.starfarer.title.Object", "hide", "void");
-        hasMethod("TitleMenu show", "com.fs.starfarer.title.Object", "show", "void");
+        String widget = "com.fs.starfarer.title.Oo" + os(254);
+        hasField("TitleMenu", "com.fs.starfarer.title.TitleScreenState", "titleWidget", widget, false);
+        hasMethod("TitleMenu hide", widget, "hide", "void");
+        hasMethod("TitleMenu show", widget, "show", "void");
         // TitleLauncher
         hasMethod("TitleLauncher missions", "com.fs.starfarer.loading.SpecStore", "Ò00000", "java.util.List");
-        hasMethod("TitleLauncher mission id", "com.fs.starfarer.title.C.Oo0" + new String(new char[253]).replace((char) 0, 'O'), "Õ00000", "java.lang.String");
-        hasMethod("TitleLauncher accept", "com.fs.starfarer.title.TitleScreenState", "missionAccepted", "void", "com.fs.starfarer.title.C.K");
+        hasMethod("TitleLauncher mission id", "com.fs.starfarer.title.C.while", "class", "java.lang.String");
+        hasMethod("TitleLauncher accept", "com.fs.starfarer.title.TitleScreenState", "missionAccepted", "void", "com.fs.starfarer.title.C.for");
         hasMethod("TitleLauncher back", "com.fs.starfarer.title.TitleScreenState", "backToMenu", "void");
         try {
-            Constructor<?> k = cls("com.fs.starfarer.title.C.K").getConstructor(cls("com.fs.starfarer.title.C.Oo0" + new String(new char[253]).replace((char) 0, 'O')));
+            Constructor<?> k = cls("com.fs.starfarer.title.C.for").getConstructor(cls("com.fs.starfarer.title.C.while"));
             ok("TitleLauncher mission: " + k);
         } catch (Throwable t) { fail("TitleLauncher mission constructor", t); }
         // MessageTap, MessageSpy
         // (the feed's own names are read from the game by the build, tools/GameNames: checked here as built)
-        String feed = null, line = null;
+        String feed = null, line = null, call = null;
         try {
             Class<?> f = cls("com.fs.starfarer.combat.CombatState").getDeclaredField("messageWidget").getType();
             feed = f.getName();
-            line = f.getDeclaredMethod("o00000", Object[].class).getReturnType().getName();
-            ok("MessageTap feed: " + show(f.getName()));
+            for (Method m : f.getDeclaredMethods())
+                if (m.getParameterTypes().length == 1 && m.getParameterTypes()[0] == Object[].class && !m.getReturnType().isPrimitive()) { call = m.getName(); line = m.getReturnType().getName(); }
+            if (call == null) throw new NoSuchMethodException("(Object...) in the feed");
+            ok("MessageTap feed: " + show(f.getName()) + ", its way in " + show(call));
         } catch (Throwable t) { fail("MessageTap feed", t); }
-        if (feed != null) hasMethod("MessageSpy all lines", feed, "o00000", line, "int", "Object[]");
+        if (feed != null && call != null) hasMethod("MessageSpy all lines", feed, call, line, "int", "Object[]");
         if (a.length > 1) {
             try {
                 Class<?> spy = cls("wingman.MessageSpy");
@@ -130,19 +136,19 @@ public class InternalsCheck {
             } catch (Throwable t) { fail("MessageSpy as built", t); }
         }
         // ObjectiveMirror
-        hasMethod("ObjectiveMirror spec lookup", "com.fs.starfarer.loading.SpecStore", "super", "java.lang.Object", "java.lang.Class", "java.lang.String");
-        hasMethod("ObjectiveMirror set script", "com.fs.starfarer.loading.specs.supersuper", "Object", "void", "java.lang.String");
-        hasMethod("ObjectiveMirror its script", "com.fs.starfarer.loading.specs.supersuper", "Ô00000", "com.fs.starfarer.api.combat.BattleObjectiveEffect");
+        hasMethod("ObjectiveMirror spec lookup", "com.fs.starfarer.loading.SpecStore", "o00000", "java.lang.Object", "java.lang.Class", "java.lang.String");
+        hasMethod("ObjectiveMirror set script", "com.fs.starfarer.loading.specs.oOOo", "Ó00000", "void", "java.lang.String");
+        hasMethod("ObjectiveMirror its script", "com.fs.starfarer.loading.specs.oOOo", "String", "com.fs.starfarer.api.combat.BattleObjectiveEffect");
         // straight out of a battle (WingmanClientPlugin.straightOut), CampaignStandIn
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatEngine", "getStateToReturnTo", "java.lang.String");
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatEngine", "doEndOfCombatProcessing", "void");
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatState", "goToState", "void", "java.lang.String");
         hasField("straightOut", "com.fs.starfarer.title.TitleScreenState", "STATE_ID", "java.lang.String", true);
         // teleporting systems (WingmanClientPlugin.teleporters), Backdrop, GroupFire, FighterUnlock
-        hasClass("teleporter system", "com.fs.starfarer.combat.systems.I");
+        hasClass("teleporter system", "com.fs.starfarer.combat.systems.O0o" + os(253));
         hasField("Backdrop light", "com.fs.starfarer.combat.entities.terrain.Planet", "lightColorOverride", "java.awt.Color", false);
         hasMethod("GroupFire", "com.fs.starfarer.combat.systems.WeaponGroup", "setCurrentActive", "void", "int");
-        hasMethod("FighterUnlock", "com.fs.starfarer.combat.ai.M", "getLaunchCR", "float");
+        hasMethod("FighterUnlock", "com.fs.starfarer.combat.ai.oO0O", "getLaunchCR", "float");
         // the agent (Patcher.engineRules, Launch)
         hasMethod("agent Ship.advance", "com.fs.starfarer.combat.entities.Ship", "advance", "void", "float");
         hasClass("agent main class", "com.fs.starfarer.StarfarerLauncher");

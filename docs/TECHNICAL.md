@@ -1511,4 +1511,7 @@ catch is there (private fields, classes named in strings); what it can (direct c
 `agent/test/run.sh` runs the agent's own test, and `agent/test/AgentCheck.java` runs its patcher over whole jars.
 0.98a -> 0.98.5a moved: the objective spec class, the mission and mission-spec classes (now in a package named like
 a class, `title.Object`, so `TitleLauncher` finds them by name), the title menu's class, the launch bay class and
-its five private fields, the message line class, and the teleporter system class.
+its five private fields, the message line class, and the teleporter system class. RC7 -> RC8 also renamed the
+message feed's two ways in (o00000 to super): `tools/GameNames` finds them by their parameters and `build.sh`
+renames MessageSpy's overrides to match. To find a renamed class, compare shapes: a class's fields and methods with
+the game's own (non-API) types counted as one, against each class of the new build in the same package.

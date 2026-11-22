@@ -18,8 +18,14 @@ import com.fs.state.AppState;
 final class TitleMenu {
     private TitleMenu() {}
 
-    /** The menu's class by game build, newest first: 0.98.5a-RC6 "C", RC5 "Object" (0.98a: "Oo" and 254 more capital O's). Checked by test/InternalsCheck. */
-    private static final String[] WIDGET_CLASSES = { "com.fs.starfarer.title.C", "com.fs.starfarer.title.Object" };
+    /**
+     * The menu's class by game build, newest first: 0.98.5a-RC8 "Oo" and 254 more capital O's (as 0.98a), RC7 and RC5
+     * "Object", RC6 "C". Each is tried in full (the field's type must match), as a name can be another class in
+     * another build. Checked by test/InternalsCheck.
+     */
+    private static final String[] WIDGET_CLASSES = { "com.fs.starfarer.title.Oo" + repeat('O', 254), "com.fs.starfarer.title.Object", "com.fs.starfarer.title.C" };
+
+    private static String repeat(char c, int n) { StringBuilder sb = new StringBuilder(n); for (int i = 0; i < n; i++) sb.append(c); return sb.toString(); }
 
     private static MethodHandle getter, hide, show;
     private static boolean broken, hidden;
@@ -32,20 +38,24 @@ final class TitleMenu {
         try {
             Class<?> title = com.fs.starfarer.title.TitleScreenState.class;
             // By name: the game's script sandbox refuses java.lang.reflect (so not the field's own type).
-            Class<?> widget = null;
-            ClassNotFoundException missing = null;
-            for (String n : WIDGET_CLASSES) {
-                try { widget = Class.forName(n, false, title.getClassLoader()); break; } catch (ClassNotFoundException e) { missing = e; }
-            }
-            if (widget == null) throw missing;
             // MethodHandles.privateLookupIn (Java 9 on) is looked up by name so this builds for Java 8 too.
             MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                     MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
             MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(title, MethodHandles.lookup());
-            getter = l.findGetter(title, "titleWidget", widget);
-            hide = l.findVirtual(widget, "hide", MethodType.methodType(void.class));
-            show = l.findVirtual(widget, "show", MethodType.methodType(void.class));
-            return true;
+            Throwable missing = null;
+            for (String n : WIDGET_CLASSES) {
+                try {
+                    Class<?> widget = Class.forName(n, false, title.getClassLoader());
+                    MethodHandle g = l.findGetter(title, "titleWidget", widget);
+                    MethodHandle h = l.findVirtual(widget, "hide", MethodType.methodType(void.class));
+                    MethodHandle s = l.findVirtual(widget, "show", MethodType.methodType(void.class));
+                    getter = g; hide = h; show = s;
+                    return true;
+                } catch (ClassNotFoundException e) { missing = e; }
+                catch (NoSuchFieldException e) { missing = e; }
+                catch (NoSuchMethodException e) { missing = e; }
+            }
+            throw missing;
         } catch (Throwable t) {
             broken = true;
             Global.getLogger(TitleMenu.class).info("Wingman: the title menu can't be moved aside on this game version; the lobby is shown in the corner (" + t + ")");

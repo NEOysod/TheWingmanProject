@@ -34,11 +34,15 @@ final class ObjectiveMirror {
     private static boolean broken;
     private static long changedAt;
 
-    /** The objective spec class, the spec store's lookup (Class, String) and the spec's "effect class" setter: 0.98.5a-RC7, RC6, RC5. */
+    /**
+     * The objective spec class, the spec store's lookup (Class, String), the spec's "effect class" setter and its
+     * script getter (to be sure it is the right class): 0.98.5a-RC8, RC7, RC6, RC5.
+     */
     private static final String[][] NAMES = {
-        { "com.fs.starfarer.loading.specs.supersuper", "super", "Object" },
-        { "com.fs.starfarer.loading.specs.oOOo", "o00000", "\u00d300000" },
-        { "com.fs.starfarer.loading.specs.supersuper", "o00000", "\u00d300000" },
+        { "com.fs.starfarer.loading.specs.oOOo", "o00000", "\u00d300000", "String" },
+        { "com.fs.starfarer.loading.specs.supersuper", "super", "Object", "\u00d400000" },
+        { "com.fs.starfarer.loading.specs.oOOo", "o00000", "\u00d300000", "\u00d400000" },
+        { "com.fs.starfarer.loading.specs.supersuper", "o00000", "\u00d300000", "\u00d400000" },
     };
     private static MethodHandle lookupSpec, setEffect;
     private static Class<?> specClass;
@@ -54,7 +58,7 @@ final class ObjectiveMirror {
                 Class<?> c = Class.forName(n[0], false, cl);
                 MethodHandle look = l.findStatic(store, n[1], MethodType.methodType(Object.class, Class.class, String.class));
                 MethodHandle set = l.findVirtual(c, n[2], MethodType.methodType(void.class, String.class));
-                l.findVirtual(c, "\u00d400000", MethodType.methodType(com.fs.starfarer.api.combat.BattleObjectiveEffect.class)); // its script: the right class
+                l.findVirtual(c, n[3], MethodType.methodType(com.fs.starfarer.api.combat.BattleObjectiveEffect.class)); // its script: the right class
                 specClass = c; setEffect = set; lookupSpec = look;
                 return;
             } catch (ClassNotFoundException e) { missing = e; }

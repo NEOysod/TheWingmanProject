@@ -2,6 +2,11 @@
 
 ## Next (on the test branch)
 
+- **Starsector 0.98.5a-RC8.** The hotfix renamed game internals again: the title menu, the join mission, held-back
+  objectives, carrier bays, the teleporter class and the battle message feed (whose way in is now named differently
+  too: the build reads that name from the game as well, and points MessageSpy at it). RC8's names go first in each
+  table; RC7, RC6 and RC5 still work through the same tables (the message feed is built for RC8). The title menu's
+  candidates are each tried in full now, as a name can be another class in another build.
 - **Big games (checked with 32 players):** the CO-OP panel scrolls (the wheel, or the "more above/below" lines)
   once its friends fill most of the screen's height, keeping the host's row on top and an open row in view; the
   friends' tabs on the officer page and the refits' tabs on the friend refit page scroll left and right (arrows at the

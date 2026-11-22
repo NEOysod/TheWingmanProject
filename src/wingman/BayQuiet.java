@@ -26,14 +26,16 @@ final class BayQuiet {
     private BayQuiet() {}
 
     /**
-     * The bay's fields by game build, newest first (0.98.5a-RC7, RC6/RC5): the replacement under way (its class
+     * The bay's fields by game build, newest first (0.98.5a-RC8, RC7, RC6/RC5): the replacement under way (its class
      * and field), its build timer, the "being built" effect (class and field), further replacements asked for.
      */
     private static final String[][] NAMES = {
+        { "com.fs.starfarer.combat.ai.oO0O$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.o" + repeat('O', 255), "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
         { "com.fs.starfarer.combat.ai.M$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.A", "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
         { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
         { "com.fs.starfarer.combat.ai.N$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
     };
+    private static String repeat(char c, int n) { StringBuilder sb = new StringBuilder(n); for (int i = 0; i < n; i++) sb.append(c); return sb.toString(); }
     private static boolean broken;
     private static MethodHandle getPending, setPending, setTimer, setSparks, setQueued;
     static int cleared;
