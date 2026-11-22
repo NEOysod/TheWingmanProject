@@ -2,6 +2,10 @@
 
 ## Next (on the test branch)
 
+- **Fix: joiners' after-battle report sometimes didn't update.** It was sent only when the host's battle plugin saw
+  the battle decided; a battle the host left another way (from the menu, or with everything retreated) ended with no
+  report, and joiners kept the one before. The host now keeps the report up to date every two seconds, and whatever
+  ends the battle sends it if it hasn't gone out.
 - **Fix: joiners didn't hear (or see) overloads.** A ship's copy on a joiner's screen is put into its overload by the
   host's word, and the game plays the overload sound and shows "OVERLOADED" only for one it reaches itself. Now an
   overload that has just begun on the host is heard and shown on joiners' screens too, for every ship, theirs

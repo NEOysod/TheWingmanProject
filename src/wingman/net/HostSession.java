@@ -164,11 +164,23 @@ public final class HostSession {
     /** How many battles have been announced as over; for the log. */
     public volatile int battlesEnded;
 
+    /**
+     * The after-action report as it stood a moment ago (kept up to date by the host's battle plugin), and whether
+     * this battle's report has gone out. A battle can end without the plugin seeing it end (the host leaves it from
+     * the menu, or retreats everything): endBattle() then sends the last one kept, so joiners' reports still update.
+     */
+    public volatile byte[] latestReport;
+    public volatile boolean reportSent;
+
     /** The host's battle is over: tell everyone to leave it. They stay connected for the next one. */
     public void endBattle() {
         if (!battleOpen) return;
         battleOpen = false;
         battlesEnded++;
+        byte[] report = latestReport;
+        if (!reportSent && report != null) for (Player p : players) p.conn.send(Msg.REPORT, report); // before BATTLE_END
+        reportSent = true;
+        latestReport = null;
         for (Player p : players) {
             p.conn.send(Msg.BATTLE_END, Msg.EMPTY);
             p.shipNetId = -1;
@@ -355,6 +367,8 @@ public final class HostSession {
     /** A new battle started on the host: everyone must drop their ships and get a fresh list. */
     public void beginBattle() {
         battleOpen = true;
+        reportSent = false;
+        latestReport = null;
         for (Player p : players) {
             p.conn.send(Msg.RESET, Msg.EMPTY);
             p.needsSync = true;

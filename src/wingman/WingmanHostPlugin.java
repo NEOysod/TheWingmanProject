@@ -195,6 +195,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    private long reportKeptAt;
     private boolean wasPaused, wasInCommandMap;
     private int mapPausesUndone;
 
@@ -391,6 +392,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 wingman.net.BattleReport report = stats.build(session, slots);
                 byte[] m = report.encode();
                 for (HostSession.Player p : session.getPlayers()) p.conn.send(Msg.REPORT, m);
+                session.reportSent = true;
                 Global.getLogger(WingmanHostPlugin.class).info(BattleStats.describe(report));
             } catch (Throwable t) {
                 Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the after-action report could not be made", t);
@@ -403,6 +405,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             return;
         }
         if (endSent) return;
+        // The report as it stands, every two seconds: if the battle ends some way this plugin doesn't see (left from
+        // the menu, everything retreated), the session sends this one instead, so joiners' reports still update.
+        if (readyPhase == 2 && !engine.isSimulation() && System.currentTimeMillis() - reportKeptAt > 2000) {
+            reportKeptAt = System.currentTimeMillis();
+            try { session.latestReport = stats.build(session, slots).encode(); } catch (Throwable t) { /* the one before stays */ }
+        }
 
         // With nobody connected there is nobody to tell anything: the host's own game should not pay for co-op.
         // Ships are still counted now and then (the ready-check panel shows how many there are); everything
