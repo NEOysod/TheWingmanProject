@@ -100,6 +100,12 @@ public final class RefitData {
     public List<Loadout> loadouts = new ArrayList<Loadout>();
     /** The host sets weapon groups at once when asked (RefitRequest.groupsNow): false from a host that doesn't. */
     public boolean liveGroups;
+    /**
+     * Weapons the joiner can group but not change, by slot: those in built-in slots, including ones a hull mod or
+     * the variant put there rather than the hull's own list (a modded ship's built-in gun). Empty from an older host.
+     */
+    public java.util.Map<String, String> fixedWeapons = new java.util.LinkedHashMap<String, String>();
+    public static final int MAX_FIXED = 64;
 
     /** One selector's cycle: its options in order, the one on the ship, and what each puts in the slots it owns. */
     public static final class Loadout {
@@ -319,7 +325,17 @@ public final class RefitData {
             writeItems(o, heldForOthers);
             if (groups != null) writeGroups(o, groups); // a host without groups stops before this
             if (groups != null) writeLoadouts(o, loadouts); // a host without loadouts stops before this
-            if (groups != null) o.writeByte(liveGroups ? 1 : 0); // last: what the host does besides (bit 1: weapon groups at once)
+            if (groups != null) o.writeByte(liveGroups ? 1 : 0); // what the host does besides (bit 1: weapon groups at once)
+            if (groups != null) { // then the weapons that can be grouped but not changed
+                int n = Math.min(MAX_FIXED, fixedWeapons.size());
+                o.writeShort(n);
+                int k = 0;
+                for (java.util.Map.Entry<String, String> e : fixedWeapons.entrySet()) {
+                    if (k++ >= n) break;
+                    o.writeUTF(e.getKey());
+                    o.writeUTF(e.getValue());
+                }
+            }
         } catch (IOException ex) { throw new IllegalStateException(ex); }
         return w.done();
     }
@@ -414,6 +430,15 @@ public final class RefitData {
         if (in.remaining() > 0) d.groups = readGroups(in); // (a host without groups stops here)
         if (in.remaining() > 0) d.loadouts = readLoadouts(in); // (a host without loadouts stops here)
         if (in.remaining() > 0) d.liveGroups = (in.readByte() & 1) != 0;
+        if (in.remaining() > 0) { // (a host without them stops here)
+            int n = in.readShort() & 0xFFFF;
+            if (n > MAX_FIXED) throw new IOException("too many fixed weapons: " + n);
+            for (int i = 0; i < n; i++) {
+                String slot = in.readUTF(), id = in.readUTF();
+                if (slot.length() > 100 || id.length() > 200) throw new IOException("fixed weapon name too long");
+                d.fixedWeapons.put(slot, id);
+            }
+        }
         return d;
     }
 

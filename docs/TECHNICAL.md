@@ -180,7 +180,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 62 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 63 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 

@@ -297,7 +297,11 @@ final class FriendRefit {
             if (id == null) continue;
             try {
                 WeaponSlotAPI ws = v.getSlot(slot);
-                if (ws != null && (ws.isBuiltIn() || ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) continue;
+                if (ws != null && (ws.isBuiltIn() || ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) {
+                    // not the joiner's to change, but theirs to group (built in by the hull, a hull mod or the variant)
+                    if (groupable(ws) && d.fixedWeapons.size() < RefitData.MAX_FIXED) d.fixedWeapons.put(slot, id);
+                    continue;
+                }
             } catch (Throwable t) { /* listed */ }
             d.fitSlots.add(slot);
             d.fitWeapons.add(id);
@@ -1092,6 +1096,7 @@ final class FriendRefit {
                     String w = null;
                     for (RefitRequest.Change c : pd.request.changes) if (!c.wing && c.place.equals(slot)) w = c.item;
                     if (w == null) w = plan.d.weaponIn(slot);
+                    if (w == null) w = plan.d.fixedWeapons.get(slot);
                     if (w == null) { try { w = hull.getBuiltInWeapons().get(slot); } catch (Throwable t) { /* unnamed */ } }
                     if (w == null || w.isEmpty()) continue;
                     sb.append(sb.length() == 0 ? "" : ", ").append(n.item(RefitData.key(RefitData.WEAPON, w)));

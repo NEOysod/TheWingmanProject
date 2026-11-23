@@ -2,6 +2,13 @@
 
 ## Next (on the test branch)
 
+- Fixed: built-in weapons were missing from the refit page's weapon groups when a hull mod or the ship's variant
+  put them there (a modded hull's built-in gun), so a group holding one looked empty. The host now sends them; they
+  show as "(built in)", can be grouped, and count in the stats.
+- Fixed: a second set of flux, hull and CR bars on the host's ship, seen by a joiner who had taken a ship. It
+  belonged to the joiner's hidden stand-in ship, which rode along on the host's ship to keep the camera on the
+  fight; it now does that only while the joiner has no ship, and is parked out of sight otherwise.
+- Protocol 63.
 - **Chat on the campaign map.** For anyone who'd rather not talk on Discord: a CHAT box under the host's CO-OP
   panel and under PLAYERS in a joiner's lobby. The host's starts folded (one line: how many new, and the newest,
   faint), so it stays out of the way. Click the line under it or press **Ctrl+Shift+C**, type, Enter sends.
@@ -20,7 +27,6 @@
   and the host's take-back and remove. A key used twice is pointed out. Messages name the key as set.
 - **F1 lists the keys** on the officer links, friend refits and wish list pages, and **?** on the CO-OP panel.
 - Fixed: on the refit page's weapon groups, "1-5 of 7 weapons" was drawn over the first weapon.
-- Protocol 62: host and joiners need this build.
 - **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
   is open, or where you left it. Ctrl+Shift+L still works.
 - **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)

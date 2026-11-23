@@ -114,6 +114,9 @@ public final class GameRefit {
         for (int i = 0; i < d.fitSlots.size() && i < d.fitWeapons.size(); i++) {
             try { v.addWeapon(d.fitSlots.get(i), d.fitWeapons.get(i)); } catch (Throwable t) { /* a slot or weapon this game doesn't have */ }
         }
+        for (Map.Entry<String, String> e : d.fixedWeapons.entrySet()) { // built in by a hull mod or the variant, not the hull
+            try { if (v.getWeaponId(e.getKey()) == null) v.addWeapon(e.getKey(), e.getValue()); } catch (Throwable t) { /* unknown here */ }
+        }
         int builtInWings = 0;
         try { builtInWings = hull.getBuiltInWings().size(); } catch (Throwable t) { /* none */ }
         for (int i = builtInWings; i < d.wings.size(); i++) {

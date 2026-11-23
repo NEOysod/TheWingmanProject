@@ -2737,6 +2737,7 @@ final class RefitScreen {
     /** The weapon in a slot once the plan is done, built-in ones too, or null. */
     private String plannedWeaponIn(String slot, Map<String, String> planned, ShipHullSpecAPI hull) {
         String w = planned.get(slot);
+        if (w == null) w = data.fixedWeapons.get(slot); // built in, as the host's ship has it
         if (w == null && hull != null) { try { w = hull.getBuiltInWeapons().get(slot); } catch (Throwable t) { /* none */ } }
         return w == null || w.isEmpty() ? null : w;
     }
@@ -2831,10 +2832,13 @@ final class RefitScreen {
         if (statsBefore == null || !was.equals(beforeKey)) {
             Map<String, String> before = new java.util.LinkedHashMap<String, String>();
             for (String s : data.fitSlots) before.put(s, data.weaponIn(s));
+            for (Map.Entry<String, String> e : data.fixedWeapons.entrySet()) if (!before.containsKey(e.getKey())) before.put(e.getKey(), e.getValue());
             statsBefore = LoadoutStats.of(data.hullId, before, data.wings, data.hullmods, data.sMods, data.permaMods, data.vents, data.caps);
             beforeKey = was;
         }
-        statsNow = LoadoutStats.of(data.hullId, planned, wings, mods, sMods, data.permaMods, req.vents, req.caps);
+        Map<String, String> withFixed = new java.util.LinkedHashMap<String, String>(planned);
+        for (Map.Entry<String, String> e : data.fixedWeapons.entrySet()) if (!withFixed.containsKey(e.getKey())) withFixed.put(e.getKey(), e.getValue());
+        statsNow = LoadoutStats.of(data.hullId, withFixed, wings, mods, sMods, data.permaMods, req.vents, req.caps);
         statsKey = key;
     }
 
@@ -2982,7 +2986,7 @@ final class RefitScreen {
                 Tips.hover(key, false, data.hullSize, op == null ? -1 : op);
             }
             LobbyScreen.fill(x + 3f, y - rowH / 2f - 3f, 6f, 6f, typeColor(ws));
-            boolean builtIn = ws != null && ws.isBuiltIn();
+            boolean builtIn = (ws != null && ws.isBuiltIn()) || data.fixedWeapons.containsKey(slot);
             float[] fd = st == null ? null : st.perSlot.get(slot);
             String extra = fd == null ? "" : (fd[1] >= 0.5f ? "   " + Math.round(fd[1]) + " dps" : "") + (fd[0] >= 0.5f ? "   " + Math.round(fd[0]) + " flux/s" : "");
             line(names.item(key).replace(" LPC", "") + (builtIn ? " (built in)" : "") + extra, body, builtIn ? Panel.DIM : Panel.TEXT, x + 14f, y - (rowH - lh) / 2f, nameW - 16f);

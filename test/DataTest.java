@@ -168,6 +168,14 @@ public class DataTest {
         bm.id = "black_market"; bm.name = "Black Market"; bm.stock.add(new wingman.net.RefitData.Item(wingman.net.RefitData.WEAPON, "lightac", 4)); bm.cantBuy.add("w:lightac");
         rd.markets.add(om); rd.markets.add(mil); rd.markets.add(bm);
         rd.knownHullmods.add("heavyarmor"); rd.values.put("w:lightac", 100f); rd.values.put("w:hveldriver", 400f);
+        rd.fixedWeapons.put("WS0009", "mss_builtin_gun");
+        {
+            wingman.net.RefitData fx = wingman.net.RefitData.decode(rd.encode());
+            fx.groups = new java.util.ArrayList<wingman.net.RefitData.Group>(); // (a host that sends groups sends these after them)
+            fx.fixedWeapons.put("WS0009", "mss_builtin_gun");
+            fx = wingman.net.RefitData.decode(fx.encode());
+            check("mss_builtin_gun".equals(fx.fixedWeapons.get("WS0009")) && fx.fixedWeapons.size() == 1, "refit data: weapons built in by a hull mod or the variant reach the joiner, for groups");
+        }
         wingman.net.RefitData rd2 = wingman.net.RefitData.decode(rd.encode());
         check(rd2.market.equals("Jangala") && rd2.memberId.equals("m1") && rd2.hullId.equals("eagle") && rd2.opMax == 155 && rd2.opUsed == 148
                 && rd2.maxVents == 30 && rd2.maxSMods == 3 && rd2.fitWeapons.get(1).equals("hveldriver") && rd2.wings.get(1).isEmpty()

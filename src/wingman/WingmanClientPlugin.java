@@ -4223,12 +4223,26 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (ship.getHitpoints() > 0f) engine.applyDamage(ship, ship.getLocation(), 10000000f, DamageType.HIGH_EXPLOSIVE, 0f, true, false, null);
     }
 
+    /** The placeholder is the ship in our hands (drawn, if unseen) rather than parked (not drawn). */
+    private boolean placeholderShown = true;
+
     private void keepPlaceholderOutOfTheWay() {
         if (placeholder == null) return;
         Puppet follow = puppets.get(hostFlagship);
         Vector2f loc = placeholder.getLocation();
-        if (follow != null) { // ride along with the host so the camera shows the fight and ships are in reach
+        boolean inUse = engine.getPlayerShip() == placeholder;
+        if (inUse && follow != null) { // watching: ride along with the host so the camera shows the fight and ships are in reach
             loc.set(follow.ship.getLocation().x, follow.ship.getLocation().y);
+        } else if (!inUse) {
+            // Flying a ship of our own: parked in a far corner. Unseen as it is, the game still draws its flux, hull and
+            // CR bars, which sat on the host's ship as a second set (with this ship's CR) while it rode along.
+            float mw = 0f, mh = 0f;
+            try { mw = engine.getMapWidth(); mh = engine.getMapHeight(); } catch (Throwable t) { /* unknown: stays where it is */ }
+            if (mw > 0f && mh > 0f) loc.set(-mw / 2f + mw * 0.04f, -mh / 2f + mh * 0.06f); // (well inside the edge: nothing there counts as retreating)
+        }
+        if (inUse != placeholderShown) {
+            placeholderShown = inUse;
+            try { placeholder.setDoNotRender(!inUse); } catch (Throwable t) { /* invisible all the same */ }
         }
         placeholder.getVelocity().set(0f, 0f);
         placeholder.setAlphaMult(0f);
