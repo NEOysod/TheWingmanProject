@@ -1,5 +1,10 @@
 # Changelog
 
+## Next
+
+- Rebuilt for Starsector 0.98.5a-RC9 and Wingman 0.9.4 (test branch). No changes of its own: it uses only the game's
+  public API, so the hotfix's renamed internals don't touch it. Needs the Wingman build of the same date.
+
 ## 0.1.1-beta (public beta test)
 
 - For Starsector 0.98.5a and Wingman 0.9.3-beta.
