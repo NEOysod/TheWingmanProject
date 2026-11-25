@@ -18,17 +18,25 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * battle. So a bay's pending replacement is cleared here, the way the game itself clears it when a fighter is
  * finished, without anything being launched: the request, its timer, the sparks, and any queued requests.
  *
- * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.oOOO.B, as of 0.98.5a), set through
+ * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.A.new in 0.98.5a-RC9), set through
  * java.lang.invoke, which the script sandbox allows. Their names are obfuscated with accented letters, written as
  * escapes. If they can't be reached, the sparks show as before, with one log line.
  */
 final class BayQuiet {
     private BayQuiet() {}
 
-    private static final String PENDING = "\u00d8O\u00f5o00";        // the replacement under way (CombatFleetManager-side record)
-    private static final String TIMER = "oO\u00f5o00";      // its build timer
-    private static final String SPARKS = "class.void$interface"; // the "being built" effect
-    private static final String QUEUED = "new.void$interface";  // further replacements asked for
+    /**
+     * The bay's fields by game build, newest first (0.98.5a-RC9, RC8, RC7, RC6/RC5): the replacement under way (its
+     * class and field), its build timer, the "being built" effect (class and field), further replacements asked for.
+     */
+    private static final String[][] NAMES = {
+        { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.oOOO", "class.void$interface", "new.void$interface" },
+        { "com.fs.starfarer.combat.ai.oO0O$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.o" + repeat('O', 255), "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
+        { "com.fs.starfarer.combat.ai.M$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.A", "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
+        { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
+        { "com.fs.starfarer.combat.ai.N$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },
+    };
+    private static String repeat(char c, int n) { StringBuilder sb = new StringBuilder(n); for (int i = 0; i < n; i++) sb.append(c); return sb.toString(); }
     private static boolean broken;
     private static MethodHandle getPending, setPending, setTimer, setSparks, setQueued;
     static int cleared;
@@ -56,17 +64,23 @@ final class BayQuiet {
 
     private static boolean ready(Class<?> bayClass) throws Throwable {
         ClassLoader cl = bayClass.getClassLoader();
-        Class<?> pending = Class.forName("com.fs.starfarer.combat.ai.N$Oo", false, cl);
         Class<?> timer = Class.forName("com.fs.starfarer.util.IntervalTracker", false, cl);
-        Class<?> sparks = Class.forName("com.fs.starfarer.renderers.fx.super", false, cl);
         MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                 MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
         MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(bayClass, MethodHandles.lookup());
-        getPending = l.findGetter(bayClass, PENDING, pending);
-        setPending = l.findSetter(bayClass, PENDING, pending);
-        setTimer = l.findSetter(bayClass, TIMER, timer);
-        setSparks = l.findSetter(bayClass, SPARKS, sparks);
-        setQueued = l.findSetter(bayClass, QUEUED, int.class);
-        return true;
+        Throwable missing = null;
+        for (String[] n : NAMES) {
+            try {
+                Class<?> pending = Class.forName(n[0], false, cl);
+                Class<?> sparks = Class.forName(n[3], false, cl);
+                MethodHandle gp = l.findGetter(bayClass, n[1], pending), sp = l.findSetter(bayClass, n[1], pending);
+                MethodHandle st = l.findSetter(bayClass, n[2], timer), ss = l.findSetter(bayClass, n[4], sparks);
+                MethodHandle sq = l.findSetter(bayClass, n[5], int.class);
+                getPending = gp; setPending = sp; setTimer = st; setSparks = ss; setQueued = sq;
+                return true;
+            } catch (ClassNotFoundException e) { missing = e; }
+            catch (NoSuchFieldException e) { missing = e; }
+        }
+        throw missing;
     }
 }

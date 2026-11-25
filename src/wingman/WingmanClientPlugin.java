@@ -66,7 +66,7 @@ import wingman.net.Snapshot;
 public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private static final String NO_DAMAGE = "wingman_puppet";
     private static final float HULL_TRICKLE = 0.0001f;
-    private static final float INPUT_RATE = 60f, INPUT_FLOOR = 15f;
+    private static final float INPUT_RATE = 60f, MOUSE_RATE = 30f, INPUT_FLOOR = 15f;
     private byte[] lastControls;
     private long lastInputSentNanos, lastAsteroidSweep;
     private int inputsSent;
@@ -98,6 +98,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float[] lastCooldown, lastShotAt, aheadSince;
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
+        /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
+        boolean hostOverloaded, overloadKnown;
         float blinkSeen = -100f; // when it last was
         boolean probing;        // diagnostics: leave this puppet completely alone for a frame
         final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // its recent states, for smooth corrections and the jitter buffer
@@ -177,7 +179,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private boolean halted;
     private final List<MissilePuppet> recentBuilt = new ArrayList<MissilePuppet>();
     private boolean leaving, everUpdated, stallAlerted, helmHintsShown, watchNoticeShown;
-    private long leaveAtMillis, retreatNowUntil, lastResyncAt;
+    private long leaveAtMillis, retreatNowUntil, lastResyncAt, reboardUntil;
     private boolean retreatOffered;
     /** What Enter does on the alert that is showing: 0 dismiss it, 1 leave the battle, 2 leave and rejoin. */
     private int alertAction;
@@ -505,6 +507,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         removeLocalStrays();
         prof.mark(1);
         takeRememberedShip();
+        reboard();
         watchPlayerShip(conn);
         sendSubsystems(conn);
         reportReady(conn);
@@ -564,7 +567,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanClientPlugin.class).info("Wingman traffic (joiner): " + brief
                         + (lateN > 0 ? "; updates arrived on average " + Math.round(1000f * lateSum / lateN) + " ms later than the promptest ones" : "")
                         + (roundTrip >= 0f ? "; round trip " + Math.round(roundTrip * 1000f) + " ms" : "")
-                        + "; point defense pointed at its own target " + aimsUsed + " gun-frames, by the host's angle " + aimsDeclined);
+                        + "; point defense pointed at its own target " + aimsUsed + " gun-frames, by the host's angle " + aimsDeclined
+                        + controlChanges());
                 aimsUsed = 0;
                 aimsDeclined = 0;
                 lateSum = 0f;
@@ -594,29 +598,34 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             ownErrSum = 0f; ownErrN = 0; ownWorst = 0f; ownSnaps = 0;
         }
 
-        // Our controls are looked at every frame and sent at once when anything about them has changed (a key,
-        // the mouse, the heading), up to 60 times a second. While nothing changes they are repeated 15 times a second.
-        // (Both timers allow a few milliseconds' slack: frames don't land exactly on the tick, and waiting for
-        // the next frame each time would turn 15 a second into 10.)
-        // By UDP a set of controls can be lost on the way and is not sent again by the network, so a change is
-        // repeated in the next two frames (the host takes each numbered set once).
-        if (udpRepeats > 0 && lastControls != null && link.controlsByUdp()) {
+        // Our controls are looked at up to 60 times a second. A key or button pressed or let go (or another group,
+        // target, autofire, a counted press) is sent at once; the mouse and the heading alone at most 30 times a
+        // second (the host's updates come 30 times a second, so more told it nothing new: 0.9.3 sent up to 60 while
+        // the mouse moved, the main part of a joiner's upload). While nothing changes they are repeated 15 times a
+        // second. (The timers allow a few milliseconds' slack: frames don't land exactly on the tick.)
+        // By UDP a set can be lost on the way and is not sent again by the network, so a key change is repeated
+        // once in the next frame (the host takes each numbered set once). Not with steady controls: there every
+        // datagram already carries the two sets before it.
+        if (udpRepeats > 0 && lastControls != null && link.controlsByUdp() && !link.steady) {
             udpRepeats--;
             link.sendControls(lastControls, decoder.ackEpoch(), decoder.ackTick());
         }
         boolean floorDue = nowNanos - lastInputSentNanos >= (long) (1000000000L / INPUT_FLOOR) - 6000000L;
-        if (floorDue || nowNanos - lastInputSentNanos >= (long) (1000000000L / INPUT_RATE) - 3000000L) {
+        boolean mouseDue = nowNanos - lastInputSentNanos >= (long) (1000000000L / MOUSE_RATE) - 3000000L;
+        if (nowNanos - lastInputNanos >= (long) (1000000000L / INPUT_RATE) - 3000000L) {
             lastInputNanos = nowNanos;
             captureInput(own);
             byte[] controls = input.encode();
-            if (floorDue || InputState.differ(controls, lastControls)) {
+            boolean edge = InputState.edgeDiffer(controls, lastControls);
+            if (floorDue || edge || (mouseDue && InputState.differ(controls, lastControls))) {
                 // Numbered, and the moment noted, so the host's answer can be matched to it (see reconcile()).
                 input.seq = ++ownSeq;
                 controls = input.encode();
                 seqNumber[ownSeq & 255] = ownSeq;
                 seqClock[ownSeq & 255] = clock;
                 if (link.sendControls(controls, decoder.ackEpoch(), decoder.ackTick())) {
-                    if (!floorDue) udpRepeats = 2;
+                    if (edge) noteChanges();
+                    udpRepeats = edge && !floorDue ? 1 : 0;
                     lastControls = controls;
                     lastInputSentNanos = nowNanos;
                     inputsSent++;
@@ -673,9 +682,32 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         resyncs++;
         lastResyncAt = nowMs;
         reboardId = ownId;
+        reboardUntil = nowMs + 15000L;
         Global.getLogger(WingmanClientPlugin.class).warn("Wingman guard: " + why + "; asking the host for everything again (" + resyncs + " of 5)");
         Ui.say(engine, "Co-op: refreshing your copy of the battle from the host.");
         link.getConn().send(Msg.SYNC_REQ, Msg.EMPTY);
+    }
+
+    /**
+     * After a refresh of the whole battle: sit back down in the ship we were flying, as soon as it has been built
+     * again and while we sit in the stand-in. Tried on the host's answer and then every frame, for up to 15 seconds
+     * (0.9.3 tried only once, on the host's answer, which can come before the ship is rebuilt; then the player was
+     * left in the stand-in, or in the host's flagship, with no controls of their own). Sitting down goes the usual way (watchPlayerShip): the host is asked
+     * for the ship, our controls go to it, and the other copies are made inert again.
+     */
+    private void reboard() {
+        if (reboardId < 0) return;
+        if (System.currentTimeMillis() > reboardUntil) { reboardId = -1; return; }
+        ShipAPI now = engine.getPlayerShip();
+        Puppet in = now == null ? null : byShip.get(now);
+        if (in != null && in.netId == reboardId) { reboardId = -1; return; } // already back in it
+        // Anywhere else (the stand-in, or a ship that isn't ours: with lost messages the game could seat us in the
+        // host's flagship, the fleet's flagship here, and we were stuck there), into ours once it is built again.
+        Puppet back = puppets.get(reboardId);
+        if (back == null || back.ship == null || !back.ship.isAlive()) return; // not built again yet
+        engine.setPlayerShipExternal(back.ship);
+        Global.getLogger(WingmanClientPlugin.class).info("Wingman: back in our ship after the refresh");
+        reboardId = -1;
     }
 
     /** The notice shown while trying to get back in. Once dismissed it stays away, unless forced. */
@@ -1344,6 +1376,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Dbg.info(WingmanClientPlugin.class, "Wingman: " + describe(pp) + " is now on side " + side + " (as on the host)");
                 break;
             }
+            case Msg.HULL_SIZE: {
+                // A mod changed a ship's hull size on the host (a mech landing or taking off): the same here, so the
+                // two copies count ships and fighters alike.
+                In in = Msg.reader(p.data);
+                int id = in.readInt(), size = in.readByte();
+                if (size < 0 || size >= ShipAPI.HullSize.values().length) break;
+                Puppet pp = puppets.get(id);
+                if (pp == null) break;
+                applyHullSize(pp.ship, size);
+                if (pp.info != null) pp.info.hullSize = size;
+                Dbg.info(WingmanClientPlugin.class, "Wingman: " + describe(pp) + " is now a " + ShipAPI.HullSize.values()[size] + " hull (as on the host)");
+                break;
+            }
             case Msg.SPAWN:
                 spawn(viewed(ShipSpawn.decode(p.data)));
                 if (!hintShown && !puppets.isEmpty()) {
@@ -1462,12 +1507,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     }
                     rejoinShip = -1;
                 }
-                // After a refresh of the whole battle, sit back down in the ship we were flying.
-                if (reboardId >= 0 && id == reboardId && puppets.containsKey(id) && engine.getPlayerShip() == placeholder) {
-                    engine.setPlayerShipExternal(puppets.get(id).ship);
-                    lastPlayerShip = puppets.get(id).ship;
-                }
-                reboardId = -1;
+                // After a refresh of the whole battle, sit back down in the ship we were flying (see reboard()). The
+                // host says which ship is ours: if that is another one (ours was lost meanwhile), there is nothing to
+                // go back to.
+                if (reboardId >= 0 && id >= 0 && id != reboardId) reboardId = -1;
+                reboard();
                 // If the host has seen our latest request and still says the ship we sit in isn't ours, step out.
                 Puppet in2 = byShip.get(engine.getPlayerShip());
                 if (seq == claimSeq && in2 != null && in2.netId != ownId) toPlaceholder();
@@ -1889,7 +1933,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (!settings.open && cfg != null && cfg.playerTags) PlayerTags.toggleKey(events, engine);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
-                    if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
+                    if (!Keys.is("settings", e)) continue;
                     settings.open(cfg);
                     e.consume();
                 }
@@ -1910,86 +1954,131 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         watchTargetKey(events);
         boolean popup = alertTitle != null;
+        if (popup) { // a popup's buttons take clicks (and no click on it fires the guns underneath)
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY) popupKey(h.value, h.ctrl);
+                }
+                e.consume();
+            }
+            popup = alertTitle != null;
+        }
         boolean lobbyUp = lobby != null && lobby.readyCheck;
         if (!popup && !lobbyUp && !retreatOffered) return;
+        if (!popup && lobbyUp) { // the ready check's key hints take clicks (the battle hasn't started: no gun fires)
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY) readyKey(h.value, h.ctrl, true);
+                }
+                e.consume();
+            }
+        }
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent()) continue;
             int key = e.getEventValue();
-            if (popup && alertAction == 3 && Panel.isEnter(key)) { // stay unless Ctrl+Enter
-                boolean leave = e.isCtrlDown();
-                alertTitle = null;
-                alertLines.clear();
-                alertAction = 0;
-                if (leave) leaveBattle(false);
-                e.consume();
+            if (popup) { // a popup takes the keys it answers to, and nothing else is acted on under it
+                if (popupKey(key, e.isCtrlDown())) e.consume();
                 continue;
             }
-            if (popup && alertAction != 0 && key == 14) { // Backspace: not now
-                alertTitle = null;
-                alertLines.clear();
-                e.consume();
-                continue;
-            }
-            boolean choosing = lobbyUp && stage() == 1;
-            boolean takeKey = key == KEY_PICK || (choosing && Panel.isEnter(key) && !e.isCtrlDown());
-            if (!popup && choosing && (key == 200 || key == 208 || takeKey)) { // stage 1, the ship list: Up, Down, F or Enter
-                try {
-                    List<Puppet> ships = pickable();
-                    if (!ships.isEmpty()) {
-                        int at = 0;
-                        for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
-                        if (key == 200) at = (at + ships.size() - 1) % ships.size();
-                        else if (key == 208) at = (at + 1) % ships.size();
-                        Puppet chosen = ships.get(at);
-                        pickId = chosen.netId;
-                        if (takeKey) {
-                            String why = cannotFly(chosen);
-                            if (chosen.netId == ownId) { changingShip = false; pickNote = ""; } // keep the ship we have
-                            else if (why != null) pickNote = "That ship is " + why + ".";
-                            else { // the host is asked for it, as with Transfer Command; stage 2 once it says yes
-                                pickNote = "Asking the host for " + (chosen.ship.getName() == null ? chosen.ship.getHullSpec().getHullName() : chosen.ship.getName()) + "...";
-                                changingShip = false;
-                                watching = false;
-                                engine.setPlayerShipExternal(chosen.ship);
-                            }
-                        } else pickNote = "";
-                    }
-                } catch (Throwable t) {
-                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: choosing a ship from the list failed; use Transfer Command", t);
-                }
-                e.consume();
-                continue;
-            }
-            if (!popup && choosing && key == 17) { // W: go without a ship, watching
-                if (ownId >= 0) toPlaceholder();
-                watching = true;
-                changingShip = false;
-                pickNote = "";
-                e.consume();
-                continue;
-            }
-            if (!popup && lobbyUp && !choosing && key == 14) { // Backspace in stage 2: back to choosing a ship
-                changingShip = true;
-                iAmReady = false;
-                if (ownId >= 0) pickId = ownId;
-                e.consume();
-                continue;
-            }
-            if (!Panel.isEnter(key)) continue;
-            if (popup) {
-                int action = alertAction;
-                alertTitle = null;
-                alertLines.clear();
-                alertAction = 0;
-                if (action != 0) leaveBattle(action == 2);
-            } else if (lobbyUp) {
-                enterPressed = true;
-            } else {
-                retreatNowUntil = System.currentTimeMillis() + 1500;
-                Ui.say(engine, "Co-op: retreating. The ship leaves the battle under its own power.");
-            }
-            e.consume();
+            if (readyKey(key, e.isCtrlDown(), lobbyUp)) e.consume();
         }
+    }
+
+    /** A key (or a click on its hint) while the ready check, or the retreat offer, is up. True if it was acted on. */
+    private boolean readyKey(int key, boolean ctrl, boolean lobbyUp) {
+        boolean choosing = lobbyUp && stage() == 1;
+        boolean takeKey = key == KEY_PICK || (choosing && Panel.isEnter(key) && !ctrl);
+        if (choosing && (key == 200 || key == 208 || takeKey)) { // stage 1, the ship list: Up, Down, F or Enter
+            try {
+                List<Puppet> ships = pickable();
+                if (!ships.isEmpty()) {
+                    int at = 0;
+                    for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
+                    if (key == 200) at = (at + ships.size() - 1) % ships.size();
+                    else if (key == 208) at = (at + 1) % ships.size();
+                    Puppet chosen = ships.get(at);
+                    pickId = chosen.netId;
+                    if (takeKey) {
+                        String why = cannotFly(chosen);
+                        if (chosen.netId == ownId) { changingShip = false; pickNote = ""; } // keep the ship we have
+                        else if (why != null) pickNote = "That ship is " + why + ".";
+                        else { // the host is asked for it, as with Transfer Command; stage 2 once it says yes
+                            pickNote = "Asking the host for " + (chosen.ship.getName() == null ? chosen.ship.getHullSpec().getHullName() : chosen.ship.getName()) + "...";
+                            changingShip = false;
+                            watching = false;
+                            engine.setPlayerShipExternal(chosen.ship);
+                        }
+                    } else pickNote = "";
+                }
+            } catch (Throwable t) {
+                Global.getLogger(WingmanClientPlugin.class).warn("Wingman: choosing a ship from the list failed; use Transfer Command", t);
+            }
+            return true;
+        }
+        if (choosing && key == 17) { // W: go without a ship, watching
+            if (ownId >= 0) toPlaceholder();
+            watching = true;
+            changingShip = false;
+            pickNote = "";
+            return true;
+        }
+        if (lobbyUp && !choosing && key == 14) { // Backspace in stage 2: back to choosing a ship
+            changingShip = true;
+            iAmReady = false;
+            if (ownId >= 0) pickId = ownId;
+            return true;
+        }
+        if (!Panel.isEnter(key)) return false;
+        if (lobbyUp) {
+            enterPressed = true;
+        } else {
+            retreatNowUntil = System.currentTimeMillis() + 1500;
+            Ui.say(engine, "Co-op: retreating. The ship leaves the battle under its own power.");
+        }
+        return true;
+    }
+
+    /** Ctrl+Enter, as a popup's button gives it (a button carries no Ctrl). */
+    private static final int CTRL_ENTER = 1028;
+
+    /**
+     * A key (or a popup button standing for one) on the popup: Enter does what it says, Backspace (or Esc, or the
+     * close box) is "not now" / dismiss, Ctrl+Enter leaves on a "keep waiting" one. Returns true if it answered.
+     */
+    private boolean popupKey(int key, boolean ctrl) {
+        if (alertTitle == null) return false;
+        boolean enter = Panel.isEnter(key) || key == CTRL_ENTER;
+        if (key == CTRL_ENTER) ctrl = true;
+        if (alertAction == 3 && enter) { // stay unless Ctrl+Enter
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            if (ctrl) leaveBattle(false);
+            return true;
+        }
+        if (alertAction != 0 && (key == 14 || key == 1)) { // Backspace (Esc, the close box): not now
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            return true;
+        }
+        if (enter || key == 1) {
+            int action = alertAction;
+            alertTitle = null;
+            alertLines.clear();
+            alertAction = 0;
+            if (action != 0 && enter) leaveBattle(action == 2);
+            return true;
+        }
+        return false;
     }
 
     private void openJoinScreen(String status, Color color) {
@@ -2132,7 +2221,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -2333,6 +2422,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         marks.apply();
     }
 
+    /** Everyone's P number and round trip for the readout (the host's is 0). */
+    private java.util.Map<Integer, Integer> readoutSlots() {
+        java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+        m.put(1, 0);
+        if (lobby != null) for (Lobby.Entry e : lobby.players) m.put(e.slot, wingman.net.Pings.of(e.slot));
+        return m;
+    }
+
     @Override
     public void renderInUICoords(ViewportAPI viewport) {
         if (disabled || !ready) return;
@@ -2345,6 +2442,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     if (pp != null) tags.draw(viewport, pp.ship, e.slot, cfg.playerOutlines, e.name);
                 }
             }
+        }
+        boolean pushed = Style.push(); // our panels in the size set for them (the tags above are on the ships)
+        try { panels(); } finally { Style.pop(pushed); }
+    }
+
+    private void panels() {
+        if (!joinScreen && cfg != null && !"off".equals(cfg.pingReadout)) {
+            try { PingReadout.draw(cfg.pingReadout, link.rttMs(), link.worstRecentMs(), readoutSlots()); } catch (Throwable t) { /* a readout is not worth a failure */ }
         }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
@@ -2365,17 +2470,24 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             }
             return;
         }
-        if (alertTitle != null) {
-            for (String line : alertLines) { lines.add(line); colors.add(Panel.WARN); }
-            panel.render(alertTitle, lines, colors, alertAction == 0 ? "Enter: dismiss"
+        if (alertTitle != null) { // clickable too: its buttons do what the keys do
+            Panel.Doc d = new Panel.Doc(alertTitle).keys(alertAction == 0 ? "Enter: dismiss"
                     : alertAction == 1 ? "Enter: leave the battle     Backspace: stay"
                     : alertAction == 3 ? "Enter: keep waiting     Ctrl+Enter: leave the battle"
                     : "Enter: leave and rejoin with the right map     Backspace: stay");
+            for (String line : lines) d.line(line, Panel.TEXT);
+            for (String line : alertLines) d.line(line, Panel.WARN);
+            if (alertAction == 0) d.buttons(Panel.Doc.button("OK", 28, Panel.GOOD));
+            else if (alertAction == 1) d.buttons(Panel.Doc.button("LEAVE THE BATTLE", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            else if (alertAction == 3) d.buttons(Panel.Doc.button("KEEP WAITING", 28, Panel.GOOD), Panel.Doc.button("LEAVE THE BATTLE", CTRL_ENTER, Panel.WARN));
+            else d.buttons(Panel.Doc.button("LEAVE AND REJOIN", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            panel.mouse = true;
+            try { panel.render(d); } finally { panel.mouse = false; }
             return;
         }
         if (retreatOffered && (lobby == null || !lobby.readyCheck)) {
             float w = 330f;
-            panel.button((Global.getSettings().getScreenWidth() - w) / 2f, 150f, w, 46f, "RETREAT", "Enter: leave the battle with this ship", false);
+            panel.button((Style.sw() - w) / 2f, 150f, w, 46f, "RETREAT", "Enter: leave the battle with this ship", false);
         }
         if (hostPaused && (lobby == null || !lobby.readyCheck)) {
             panel.banner("PAUSED", "The host has paused the battle.", Panel.WARN);
@@ -2430,8 +2542,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (!pickNote.isEmpty()) { lines.add(pickNote); colors.add(Panel.WARN); }
             }
             String footer = !synced ? "Choose a ship once the battle has loaded."
-                    : "Up/Down: choose     Enter or F: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
-            panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer);
+                    : "Up: previous     Down: next     Enter: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
+            panel.mouse = true; // (the battle hasn't started: the hints take clicks)
+            try { panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer); } finally { panel.mouse = false; }
             return;
         }
         // Stage 2: the ready check.
@@ -2449,13 +2562,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (!synced) {
             footer = "Loading the battle: " + built + "/" + lobby.expected + " ships..." + back;
         } else if (skippedShips > 0 && !iAmReady) {
-            footer = skippedShips + " ships are missing on your side (mods differ from the host).  Enter: ready anyway" + back;
+            footer = skippedShips + " ships are missing on your side (mods differ from the host).     Enter: ready anyway" + back;
         } else if (!iAmReady) {
             footer = "Enter: ready" + back;
         } else {
-            footer = "You are ready. Waiting for the host to start.  Enter: not ready" + back;
+            footer = "You are ready. Waiting for the host to start.     Enter: not ready" + back;
         }
-        panel.render("2 / 2   READY CHECK", lines, colors, footer);
+        panel.mouse = true;
+        try { panel.render("2 / 2   READY CHECK", lines, colors, footer); } finally { panel.mouse = false; }
     }
 
     /** The host's battle is paused (as of the last update): shown in large letters, since only the host can unpause. */
@@ -2768,10 +2882,20 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // An allied ship (another fleet on the player's side) is marked so, as on the host: the game shows it as an
         // ally, and it can't be taken over (the host refuses that too).
         if (sp.ally && ship != null) { try { ship.setAlly(true); } catch (Throwable t) { /* shown as the player's */ } }
+        applyHullSize(ship, sp.hullSize); // a size a mod gave it in battle on the host (ShipAPI.setHullSize, 0.98.5a)
         // Arma Armatura sends a strikecraft that needs repairs to a carrier by itself. Here that is the host's
         // decision (a LANDING message says when): its own off switch is set for good on every copy.
         try { if (ship != null) ship.getCustomData().put(WingmanHostPlugin.ARMAA_NO_REFIT, 1e9f); } catch (Throwable t) { /* no such mod: nothing to do */ }
         return ship;
+    }
+
+    /** A ship's hull size set as on the host, if a mod changed it there (setHullSize is new in 0.98.5a). */
+    private static void applyHullSize(ShipAPI ship, int ordinal) {
+        if (ship == null || ordinal < 0 || ordinal >= ShipAPI.HullSize.values().length) return;
+        try {
+            ShipAPI.HullSize want = ShipAPI.HullSize.values()[ordinal];
+            if (ship.getHullSize() != want) ship.setHullSize(want);
+        } catch (Throwable t) { /* shown at its hull's size */ }
     }
 
     /**
@@ -4115,12 +4239,26 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (ship.getHitpoints() > 0f) engine.applyDamage(ship, ship.getLocation(), 10000000f, DamageType.HIGH_EXPLOSIVE, 0f, true, false, null);
     }
 
+    /** The placeholder is the ship in our hands (drawn, if unseen) rather than parked (not drawn). */
+    private boolean placeholderShown = true;
+
     private void keepPlaceholderOutOfTheWay() {
         if (placeholder == null) return;
         Puppet follow = puppets.get(hostFlagship);
         Vector2f loc = placeholder.getLocation();
-        if (follow != null) { // ride along with the host so the camera shows the fight and ships are in reach
+        boolean inUse = engine.getPlayerShip() == placeholder;
+        if (inUse && follow != null) { // watching: ride along with the host so the camera shows the fight and ships are in reach
             loc.set(follow.ship.getLocation().x, follow.ship.getLocation().y);
+        } else if (!inUse) {
+            // Flying a ship of our own: parked in a far corner. Unseen as it is, the game still draws its flux, hull and
+            // CR bars, which sat on the host's ship as a second set (with this ship's CR) while it rode along.
+            float mw = 0f, mh = 0f;
+            try { mw = engine.getMapWidth(); mh = engine.getMapHeight(); } catch (Throwable t) { /* unknown: stays where it is */ }
+            if (mw > 0f && mh > 0f) loc.set(-mw / 2f + mw * 0.04f, -mh / 2f + mh * 0.06f); // (well inside the edge: nothing there counts as retreating)
+        }
+        if (inUse != placeholderShown) {
+            placeholderShown = inUse;
+            try { placeholder.setDoNotRender(!inUse); } catch (Throwable t) { /* invisible all the same */ }
         }
         placeholder.getVelocity().set(0f, 0f);
         placeholder.setAlphaMult(0f);
@@ -4202,6 +4340,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (apart < patience + 0.3f) return apart;
         }
         sys.forceState(want, Math.max(0f, Math.min(1f, progress)));
+        // Pushed into running from rest (this copy couldn't start it itself): the system's own sound, which only
+        // a proper start plays, so the host's ship is heard switching it on here as well.
+        if (restHave && running(want)) {
+            try {
+                String sound = sys.getSpecAPI() == null ? null : sys.getSpecAPI().getUseSound();
+                if (sound != null && !sound.isEmpty() && ship != null) { Global.getSoundPlayer().playSound(sound, 1f, 1f, ship.getLocation(), ship.getVelocity()); systemSoundsPlayed++; }
+            } catch (Throwable th) { /* silent, as before */ }
+        }
         // A cooldown pushed in from outside may start with nothing left of it, which reads as idle at once. The
         // host's has only just begun: give this copy its full length, which then runs down by its own clock.
         if (want == ShipSystemAPI.SystemState.COOLDOWN) {
@@ -4212,7 +4358,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         systemsForced++;
         return 0f;
     }
-    private int systemsForced, systemsStarted, systemsStopped;
+    private int systemsForced, systemsStarted, systemsStopped, systemSoundsPlayed, overloadsHeard;
 
     // ---- How a teleport looks on someone else's ship ----
     // A teleporter (vanilla Phase Skimmer, mods' blinks) is never run on a copy of someone else's ship: the copy
@@ -4282,7 +4428,17 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int scriptEndsSeen, scriptEndsLocal, scriptEndsPlain, tendedTold;
     private final Set<String> plainEndWarned = new HashSet<String>();
     /** Classes of ship system that teleport the ship: learned from the game's own teleporters as they are met. */
-    private final Set<String> teleporters = new HashSet<String>(java.util.Arrays.asList("com.fs.starfarer.combat.systems.null"));
+    private final Set<String> teleporters = new HashSet<String>(java.util.Collections.singleton(teleporterClass()));
+
+    /** The game's teleporter system class in this build (the name differs build by build; others are learned as met). */
+    private static String teleporterClass() {
+        String v = Mods.gameVersion();
+        if (v.contains("RC9")) return "com.fs.starfarer.combat.systems.J";
+        if (v.contains("RC8")) { StringBuilder n = new StringBuilder("com.fs.starfarer.combat.systems.O0o"); for (int i = 0; i < 253; i++) n.append('O'); return n.toString(); }
+        if (v.contains("RC7")) return "com.fs.starfarer.combat.systems.I";
+        if (v.contains("RC6")) return "com.fs.starfarer.combat.systems.int";
+        return "com.fs.starfarer.combat.systems.null"; // RC5
+    }
 
     /**
      * Does this system move the ship by teleporting it? Such a system works out where it is going at the
@@ -4729,8 +4885,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // has been drawn once, as after a refresh from the host): then it is simply tried again next frame.
         try {
             boolean overloaded = (t.flags & Snapshot.F_OVERLOADED) != 0;
-            if (overloaded && !flux.isOverloaded()) flux.forceOverload(0f);
+            if (overloaded && !flux.isOverloaded()) {
+                flux.forceOverload(0f);
+                // Pushed into an overload, the game's copy is silent: its sound and "OVERLOADED" come only with an
+                // overload it reaches itself. One that has just begun on the host is heard and shown here too
+                // (not one already under way when this ship was first seen or made afresh).
+                if (pp.overloadKnown && !pp.hostOverloaded) {
+                    try { flux.playOverloadSound(); flux.showOverloadFloatyIfNeeded(); overloadsHeard++; } catch (Throwable th) { /* silent, as before */ }
+                }
+            }
             else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
+            pp.hostOverloaded = overloaded;
+            pp.overloadKnown = true;
             if (!own) {
                 boolean venting = (t.flags & Snapshot.F_VENTING) != 0;
                 if (venting && !flux.isVenting() && !flux.isOverloaded()) flux.ventFlux();
@@ -5157,6 +5323,45 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (slotsMissing.add(hullId + "/" + slot)) Global.getLogger(WingmanClientPlugin.class).info("Wingman: " + hullId + " has no slot " + slot
                 + " here (the host's ship has " + weapon + " in it, put there by a script); built without it, the host's ship fires it");
         return false;
+    }
+
+    // ---- what changed in the controls sent at once (keys, buttons...), for the log: a control that flickers every
+    // frame shows here, and so does a ship that the joiner's own keys don't account for ----
+
+    private static final String[] FLAG_NAMES = { "accelerate", "back", "decelerate", "turn left", "turn right", "strafe left", "strafe right",
+        "fire", "shield/phase", "system", "vent", "pull back", "autopilot", "retreat", "retreat now", "hold fire" };
+    private final int[] changeCounts = new int[FLAG_NAMES.length + 7];
+    private int sentFlags, sentGroup = -2, sentTarget = -2, sentAutofire = -1, sentSys = -1, sentOrders = -1, sentTaps = -1;
+    private int[] sentKeys;
+
+    private void noteChanges() {
+        int d = input.flags ^ sentFlags;
+        for (int b = 0; b < FLAG_NAMES.length; b++) if ((d & (1 << b)) != 0) changeCounts[b]++;
+        int k = FLAG_NAMES.length;
+        if (input.group != sentGroup) changeCounts[k]++;
+        if (input.target != sentTarget) changeCounts[k + 1]++;
+        if (input.autofire != sentAutofire) changeCounts[k + 2]++;
+        if (input.sysUses != sentSys) changeCounts[k + 3]++;
+        if (input.sysOrders != sentOrders) changeCounts[k + 4]++;
+        if (input.fireTaps != sentTaps) changeCounts[k + 5]++;
+        if (!java.util.Arrays.equals(input.keys, sentKeys)) changeCounts[k + 6]++;
+        sentFlags = input.flags; sentGroup = input.group; sentTarget = input.target; sentAutofire = input.autofire;
+        sentSys = input.sysUses; sentOrders = input.sysOrders; sentTaps = input.fireTaps; sentKeys = input.keys;
+    }
+
+    /** "; controls changed: accelerate 120, shield/phase 4000, ..." (the most first), and the counts reset. */
+    private String controlChanges() {
+        String[] other = { "weapon group", "target", "autofire", "system uses", "drone orders", "fire taps", "mods' keys" };
+        java.util.List<int[]> l = new java.util.ArrayList<int[]>();
+        for (int i = 0; i < changeCounts.length; i++) if (changeCounts[i] > 0) l.add(new int[] { i, changeCounts[i] });
+        java.util.Collections.sort(l, new java.util.Comparator<int[]>() { public int compare(int[] a, int[] b) { return b[1] - a[1]; } });
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < l.size() && i < 8; i++) {
+            int id = l.get(i)[0];
+            b.append(b.length() == 0 ? "" : ", ").append(id < FLAG_NAMES.length ? FLAG_NAMES[id] : other[id - FLAG_NAMES.length]).append(' ').append(l.get(i)[1]);
+        }
+        java.util.Arrays.fill(changeCounts, 0);
+        return b.length() == 0 ? "" : "; controls changed: " + b;
     }
 
     private void captureInput(Puppet own) {

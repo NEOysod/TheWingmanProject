@@ -297,7 +297,11 @@ final class FriendRefit {
             if (id == null) continue;
             try {
                 WeaponSlotAPI ws = v.getSlot(slot);
-                if (ws != null && (ws.isBuiltIn() || ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) continue;
+                if (ws != null && (ws.isBuiltIn() || ws.isDecorative() || ws.isSystemSlot() || ws.isHidden() || ws.isStationModule())) {
+                    // not the joiner's to change, but theirs to group (built in by the hull, a hull mod or the variant)
+                    if (groupable(ws) && d.fixedWeapons.size() < RefitData.MAX_FIXED) d.fixedWeapons.put(slot, id);
+                    continue;
+                }
             } catch (Throwable t) { /* listed */ }
             d.fitSlots.add(slot);
             d.fitWeapons.add(id);
@@ -425,6 +429,8 @@ final class FriendRefit {
             }
             d.groups = groups;
         } catch (Throwable t) { /* not sent: the joiner can't change them */ }
+        d.loadouts = ModRefit.Loadouts.find(v);
+        d.liveGroups = true;
         return d;
     }
 
@@ -705,10 +711,16 @@ final class FriendRefit {
     private static void receive(HostSession.Player p, byte[] data, WingmanConfig cfg) {
         RefitRequest r;
         try { r = RefitRequest.decode(data); } catch (java.io.IOException e) { return; } // garbled: nothing to answer
+        if (r.groupsNow) { groupsNow(p, r, cfg); return; }
         String why = refusal(p, r.memberId, cfg);
         if (why != null) {
             Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: " + why);
             send(p, new RefitResult(RefitResult.REFUSED, "Can't refit: " + why + "."));
+            return;
+        }
+        if (p.refitsLookOnly) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " refused: their refits are look only");
+            send(p, new RefitResult(RefitResult.REFUSED, "The host has your refits on look only: plan them here, and ask the host to let you send them."));
             return;
         }
         Pending pd = new Pending();
@@ -730,25 +742,82 @@ final class FriendRefit {
         }
         boolean replaced = pending.remove(p.id) != null;
         pending.put(p.id, pd);
+        if (p.trustedRefits) {
+            Global.getLogger(FriendRefit.class).info("Wingman: refit from " + p.name + " done without asking (trusted): " + pd.ship);
+            if (autoAccept(pd)) return;
+            send(p, new RefitResult(RefitResult.RECEIVED, "The host trusts your refits: it will be done at the next market."));
+            return;
+        }
         send(p, new RefitResult(RefitResult.RECEIVED, "The host has your refit" + (replaced ? " (it replaces the one before)" : "") + " and will accept or deny it."));
-        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". Ctrl+Shift+R to look at it.");
+        CampaignLobby.say("Co-op: " + p.name + " sent a refit for " + pd.ship + ". " + Keys.name("friendRefits") + " to look at it.");
+    }
+
+    /**
+     * Weapon groups set at once (the joiner's SET GROUPS NOW): they cost nothing and touch nothing else, so no market,
+     * no yes and no refit setting is needed, only that the ship is theirs to refit.
+     */
+    private static void groupsNow(HostSession.Player p, RefitRequest r, WingmanConfig cfg) {
+        String why = refusalToPlan(p, r.memberId, cfg);
+        FleetMemberAPI m = why == null ? member(r.memberId) : null;
+        if (m == null) {
+            send(p, new RefitResult(RefitResult.REFUSED, "Can't set weapon groups: " + (why == null ? "that ship is no longer in the fleet" : why) + "."));
+            return;
+        }
+        try {
+            ShipVariantAPI nv = m.getVariant().clone();
+            nv.setSource(VariantSource.REFIT);
+            applyGroups(nv, r.groups);
+            m.setVariant(nv, false, true);
+        } catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: weapon groups from " + p.name + " not set", t);
+            send(p, new RefitResult(RefitResult.REFUSED, "The weapon groups couldn't be set on the host's ship."));
+            return;
+        }
+        String ship = CampaignLobby.label(m);
+        CampaignLobby.forgetLoadout(m.getId());
+        lastSent.remove(p.id); // their refit page gets the ship afresh
+        lastChecked = 0;
+        Pending pd = pending.get(p.id); // a refit of theirs waiting: checked again against the new groups
+        if (pd != null) check(pd, m);
+        send(p, new RefitResult(RefitResult.GROUPS_SET, "Weapon groups set on " + ship + "."));
+        Global.getLogger(FriendRefit.class).info("Wingman: weapon groups set for " + p.name + " on " + ship);
+    }
+
+    /** The host changed how a player's refits are taken (CO-OP panel): a waiting one, now trusted, is done if it can be. */
+    static void permissionChanged(HostSession.Player p) {
+        Pending pd = pending.get(p.id);
+        if (pd != null && p.trustedRefits && pd.problems.isEmpty() && !pd.acceptOnClose) autoAccept(pd);
     }
 
     /** Each second: requests that can't be done any more are withdrawn; the others are checked again. */
     private static void keepPending(HostSession s, WingmanConfig cfg) {
-        for (Iterator<Pending> it = pending.values().iterator(); it.hasNext();) {
-            Pending pd = it.next();
-            if (playerById(s, pd.player.id) != pd.player) { it.remove(); continue; }
+        for (Pending pd : new ArrayList<Pending>(pending.values())) { // (a copy: accepting or withdrawing changes the map)
+            if (pending.get(pd.player.id) != pd) continue;
+            if (playerById(s, pd.player.id) != pd.player) { pending.remove(pd.player.id); continue; }
             // Away from a market a request waits (it is checked again at the next one); it is withdrawn only when the
             // ship can't be refitted at all any more.
             String why = refusalToPlan(pd.player, pd.request.memberId, cfg);
             if (why != null) {
-                it.remove();
+                pending.remove(pd.player.id);
                 send(pd.player, new RefitResult(RefitResult.WITHDRAWN, "Your refit was withdrawn: " + why + "."));
                 continue;
             }
             check(pd, member(pd.request.memberId));
+            if (pd.player.trustedRefits && !pd.acceptOnClose && pd.problems.isEmpty()) autoAccept(pd);
         }
+    }
+
+    /**
+     * A trusted player's refit done without the host's yes, as the host's own accept would: at once, or under a
+     * refit screen once it closes. False when it has to wait (not docked, or a check fails: then it stays pending).
+     */
+    static boolean autoAccept(Pending pd) {
+        if (!pd.problems.isEmpty() || dockedMarket() == null) return false;
+        com.fs.starfarer.api.campaign.CampaignUIAPI ui = Global.getSector().getCampaignUI();
+        if (ui != null && ui.getCurrentCoreTab() != null) { acceptOnClose(pd); return true; }
+        String why = accept(pd);
+        if (why == null) CampaignLobby.say("Co-op: " + pd.player.name + "'s refit of " + pd.ship + " was done (you trust their refits).");
+        return why == null;
     }
 
     /** Every check, on the real campaign: the plan's (items, money, story points, limits) and the game's own. */
@@ -779,6 +848,10 @@ final class FriendRefit {
                 problems.add("Slot " + c.place + " can't take a weapon.");
                 continue;
             }
+            if (d.loadoutOwning(c.place) != null) {
+                problems.add("Slot " + c.place + " holds the " + d.loadoutOwning(c.place).name + " loadout's weapon: pick the loadout instead.");
+                continue;
+            }
             if (c.item.isEmpty()) continue;
             WeaponSpecAPI spec;
             try { spec = Global.getSettings().getWeaponSpec(c.item); } catch (Throwable t) { problems.add("Unknown weapon " + c.item + "."); continue; }
@@ -786,6 +859,11 @@ final class FriendRefit {
                     + slot.getWeaponType().name().toLowerCase() + ").");
         }
         for (String id : r.addMods) {
+            if (ModRefit.Loadouts.option(d, id)) { // a loadout option: picked by stepping its selector round
+                RefitData.Loadout l = d.loadoutOf(id);
+                if (!id.equals(l.currentMod()) && !r.removeMods.contains(l.currentMod())) problems.add("Loadout " + l.name + ": pick it in place of the one fitted.");
+                continue;
+            }
             try {
                 HullModSpecAPI spec = Global.getSettings().getHullModSpec(id);
                 if (spec.isHidden() || spec.isHiddenEverywhere()) problems.add(spec.getDisplayName() + " can't be fitted.");
@@ -795,7 +873,7 @@ final class FriendRefit {
         // The real ordnance cost: the new loadout on a copy of the ship, counted by the game with the host's skills.
         try {
             ShipVariantAPI test = v.clone();
-            applyTo(test, pd);
+            test = applyTo(test, pd);
             MutableCharacterStatsAPI stats = Global.getSector().getPlayerStats();
             pd.op = test.computeOPCost(stats);
             pd.opMax = hull.getOrdnancePoints(stats);
@@ -809,7 +887,7 @@ final class FriendRefit {
     }
 
     /** The request's loadout put on a variant (a copy for the checks, the new one on accepting). */
-    private static void applyTo(ShipVariantAPI v, Pending pd) {
+    private static ShipVariantAPI applyTo(ShipVariantAPI v, Pending pd) {
         RefitRequest r = pd.request;
         for (RefitRequest.Change c : r.changes) {
             if (pd.plan.sameAsBefore(c)) continue;
@@ -819,13 +897,22 @@ final class FriendRefit {
                 if (!c.item.isEmpty()) v.addWeapon(c.place, c.item);
             }
         }
-        for (String id : r.removeMods) v.removeMod(id);
-        for (String id : r.addMods) v.addMod(id);
+        RefitData d = pd.plan.d;
+        for (String id : r.removeMods) if (!ModRefit.Loadouts.option(d, id)) v.removeMod(id);
+        for (String id : r.addMods) if (!ModRefit.Loadouts.option(d, id)) v.addMod(id); // (loadouts are stepped to, after)
         for (String id : r.buildIn) v.addPermaMod(id, true);
+        ModRefit.afterHullMods(v); // other mods' loadout switches (a Diable Virtuous selector taken off, say)
         v.setNumFluxVents(r.vents);
         v.setNumFluxCapacitors(r.caps);
         if (r.groups != null) {
             try { applyGroups(v, r.groups); } catch (Throwable t) { Global.getLogger(FriendRefit.class).warn("Wingman: weapon groups from the refit not set; the game places the weapons", t); }
+        }
+        if (d.loadouts.isEmpty()) return v;
+        try {
+            return ModRefit.Loadouts.reach(v, d, r); // each loadout stepped round to the option picked
+        } catch (Throwable t) {
+            Global.getLogger(FriendRefit.class).warn("Wingman: loadouts from the refit not stepped", t);
+            return v;
         }
     }
 
@@ -897,7 +984,7 @@ final class FriendRefit {
         // The ship: a refit variant of its own (never the shared stock one), with the new loadout.
         ShipVariantAPI nv = m.getVariant().clone();
         nv.setSource(VariantSource.REFIT);
-        applyTo(nv, pd);
+        nv = applyTo(nv, pd);
         if (nv.hasUnassignedWeapons()) nv.assignUnassignedWeapons();
         m.setVariant(nv, false, true);
         m.updateStats();
@@ -990,8 +1077,13 @@ final class FriendRefit {
                     + Math.round(plan.d.sellPrice(plan.d.market(to), old)) + " cr" : " to " + n.source(to));
             out.add(place + ":  " + in + outTo);
         }
-        for (String id : pd.request.removeMods) out.add("Hull mod off:  " + n.mod(id));
-        for (String id : pd.request.addMods) out.add("Hull mod on:  " + n.mod(id));
+        RefitData d = pd.plan == null ? null : pd.plan.d;
+        for (String id : pd.request.removeMods) if (!ModRefit.Loadouts.option(d, id)) out.add("Hull mod off:  " + n.mod(id));
+        for (String id : pd.request.addMods) if (!ModRefit.Loadouts.option(d, id)) out.add("Hull mod on:  " + n.mod(id));
+        if (d != null) for (RefitData.Loadout l : d.loadouts) {
+            String to = ModRefit.Loadouts.picked(l, pd.request);
+            if (to != null) out.add("Loadout " + l.name + ":  " + l.labels.get(l.current) + "  ->  " + l.labels.get(l.indexOf(to)));
+        }
         for (String id : pd.request.buildIn) out.add("Built in (S-mod, 1 story point):  " + n.mod(id));
         if (pd.request.vents != plan.d.vents) out.add("Flux vents:  " + plan.d.vents + " -> " + pd.request.vents);
         if (pd.request.caps != plan.d.caps) out.add("Flux capacitors:  " + plan.d.caps + " -> " + pd.request.caps);
@@ -1004,6 +1096,7 @@ final class FriendRefit {
                     String w = null;
                     for (RefitRequest.Change c : pd.request.changes) if (!c.wing && c.place.equals(slot)) w = c.item;
                     if (w == null) w = plan.d.weaponIn(slot);
+                    if (w == null) w = plan.d.fixedWeapons.get(slot);
                     if (w == null) { try { w = hull.getBuiltInWeapons().get(slot); } catch (Throwable t) { /* unnamed */ } }
                     if (w == null || w.isEmpty()) continue;
                     sb.append(sb.length() == 0 ? "" : ", ").append(n.item(RefitData.key(RefitData.WEAPON, w)));
@@ -1012,6 +1105,43 @@ final class FriendRefit {
                         + (sb.length() == 0 ? "empty" : sb.toString()));
             }
         }
+        return out;
+    }
+
+    /**
+     * The changes as rows for the review page: {what, picture before, before, picture after, after, how}. A picture is
+     * a refit-screen key ("w:", "f:") or "m:" and a hull mod id, or null.
+     */
+    static List<String[]> rows(Pending pd) {
+        List<String[]> out = new ArrayList<String[]>();
+        RefitPlan plan = pd.plan;
+        Names n = new Names(plan.d);
+        ShipHullSpecAPI hull = null;
+        try { hull = Global.getSettings().getHullSpec(plan.d.hullId); } catch (Throwable t) { /* plain ids */ }
+        for (RefitRequest.Change c : pd.request.changes) {
+            if (plan.sameAsBefore(c)) continue;
+            String old = plan.before(c), now = plan.after(c);
+            String kind = c.wing ? "" : slotKind(hull, c.place).replace("(", "").replace(")", "").trim();
+            String place = c.wing ? "Fighter bay " + (Integer.parseInt(c.place) + 1) : (kind.isEmpty() ? "Slot" : Character.toUpperCase(kind.charAt(0)) + kind.substring(1)) + "  " + c.place;
+            String from = plan.from(c), to = plan.to(c);
+            String how = now == null ? "" : RefitRequest.ANY.equals(from) ? "still to find"
+                    : plan.d.market(from) != null ? "bought at " + n.source(from) + ", " + LobbyScreen.grouped(Math.round(plan.d.buyPrice(plan.d.market(from), now))) + " cr"
+                    : RefitRequest.CARGO.equals(from) && RefitData.count(plan.d.setAside, now) > 0 ? "set aside in cargo" : "from " + n.source(from);
+            if (old != null) how += (how.isEmpty() ? "" : "  -  ") + "old one " + (plan.d.market(to) != null ? "sold at " + n.source(to) + ", "
+                    + LobbyScreen.grouped(Math.round(plan.d.sellPrice(plan.d.market(to), old))) + " cr" : "to " + n.source(to));
+            out.add(new String[] { place, old, old == null ? "empty" : n.item(old), now, now == null ? "empty" : n.item(now), how });
+        }
+        RefitData d = plan.d;
+        for (String id : pd.request.removeMods) if (!ModRefit.Loadouts.option(d, id)) out.add(new String[] { "Hull mod", "m:" + id, n.mod(id), null, "taken off", "" });
+        for (String id : pd.request.addMods) if (!ModRefit.Loadouts.option(d, id)) out.add(new String[] { "Hull mod", null, "none", "m:" + id, n.mod(id), "" });
+        for (RefitData.Loadout l : d.loadouts) {
+            String to = ModRefit.Loadouts.picked(l, pd.request);
+            if (to != null) out.add(new String[] { "Loadout " + l.name, "m:" + l.currentMod(), l.labels.get(l.current), "m:" + to, l.labels.get(l.indexOf(to)), "stepped by the ship's own mod" });
+        }
+        for (String id : pd.request.buildIn) out.add(new String[] { "S-mod", "m:" + id, n.mod(id), "m:" + id, "built in", "1 story point" });
+        if (pd.request.vents != d.vents) out.add(new String[] { "Flux vents", null, String.valueOf(d.vents), null, String.valueOf(pd.request.vents), "" });
+        if (pd.request.caps != d.caps) out.add(new String[] { "Flux capacitors", null, String.valueOf(d.caps), null, String.valueOf(pd.request.caps), "" });
+        if (plan.groupsChanged()) out.add(new String[] { "Weapon groups", null, "as they were", null, "rearranged", RefitData.trimmed(pd.request.groups).size() + " groups" });
         return out;
     }
 

@@ -159,6 +159,37 @@ public class NetTest {
         java.util.Set<Integer> slotsSeen = new java.util.HashSet<Integer>(); for (HostSession.Player hp : host.getPlayers()) slotsSeen.add(hp.slot);
         check("joiners are numbered P2 onwards, each a different number: " + slotsSeen, slotsSeen.size() == 4 && slotsSeen.contains(2) && slotsSeen.contains(5) && !slotsSeen.contains(1));
 
+        // round trips: the host echoes each joiner, a joiner may echo the host, and everyone hears everyone's
+        clients.get(0).measureLatency();
+        Conn.Packet pings = waitFor(clients.get(1), Msg.PINGS, host);
+        boolean allMeasured = true;
+        for (HostSession.Player hp : host.getPlayers()) allMeasured &= hp.conn.rttMs() >= 0 && hp.conn.rttMs() < 1000;
+        java.util.Map<Integer, Integer> told = pings == null ? null : wingman.net.Pings.decode(pings.data);
+        check("the host measures every joiner's round trip, and tells everyone (" + told + ")", allMeasured && told != null && told.size() == 4 && !told.containsValue(-1));
+        long waitEcho = System.currentTimeMillis() + 3000;
+        while (clients.get(0).rttMs() < 0 && System.currentTimeMillis() < waitEcho) { host.pump(); Thread.sleep(10); }
+        check("a joiner measures its own round trip to the host (" + clients.get(0).rttMs() + " ms)", clients.get(0).rttMs() >= 0);
+
+        // chat: a joiner's line goes to everyone, with who said it; a flood is cut short; control characters go
+        wingman.net.ChatLog.clear();
+        clients.get(2).send(Msg.CHAT, Msg.utf("hello\u0007 there\nfriends"));
+        Conn.Packet heard = waitFor(clients.get(0), Msg.CHAT, host);
+        In hin = heard == null ? null : Msg.reader(heard.data);
+        int hslot = hin == null ? -1 : (hin.readByte() & 0xFF);
+        String hname = hin == null ? "" : hin.readUTF(), htext = hin == null ? "" : hin.readUTF();
+        HostSession.Player third = null;
+        for (HostSession.Player hp : host.getPlayers()) if (hp.name.equals("P3")) third = hp;
+        check("a chat line reaches the other joiners with its sender (" + hslot + " " + hname + ": " + htext + ")",
+                third != null && hslot == third.slot && hname.equals("P3") && htext.equals("hello there friends"));
+        check("the host keeps it too", wingman.net.ChatLog.size() == 1 && wingman.net.ChatLog.last(1).get(0).text.equals("hello there friends"));
+        for (int i = 0; i < 10; i++) clients.get(2).send(Msg.CHAT, Msg.utf("spam " + i));
+        long waitFlood = System.currentTimeMillis() + 600;
+        while (System.currentTimeMillis() < waitFlood) { host.pump(); Thread.sleep(10); }
+        check("a flood of chat lines is cut to six in ten seconds (" + wingman.net.ChatLog.size() + " kept)", wingman.net.ChatLog.size() == 6);
+        StringBuilder longLine = new StringBuilder();
+        for (int i = 0; i < 500; i++) longLine.append('x');
+        check("a chat line is cut to " + wingman.net.ChatLog.MAX_LINE + " characters", wingman.net.ChatLog.clean(longLine.toString()).length() == wingman.net.ChatLog.MAX_LINE);
+
         // version mismatch
         Conn bad = Conn.open("127.0.0.1", port);
         Msg.W w = new Msg.W(); w.out.writeInt(999); w.out.writeUTF("old"); MODS.write(w.out); bad.send(Msg.HELLO, w.done());
@@ -335,6 +366,8 @@ public class NetTest {
             bump(cs); host.broadcastUpdate(cs);
             k0 = waitFor(clients.get(0), Msg.SNAPSHOT_D, host); k1 = waitFor(clients.get(1), Msg.SNAPSHOT_D, host);
             check("after that, players are sent only the changes", k0 != null && k0.data[0] == 0 && k1 != null && k1.data[0] == 0);
+            check("players who hold the same update get the very same bytes, packed once (" + host.sharedSends + " shared)",
+                    java.util.Arrays.equals(k0.data, k1.data) && host.sharedSends >= 1);
             clients.get(1).send(Msg.NEED_KEY, Msg.EMPTY);
             long kEnd = System.currentTimeMillis() + 2000; boolean asked = false;
             while (System.currentTimeMillis() < kEnd && !asked) { host.pump(); for (HostSession.Player p : host.getPlayers()) if (p.needKey) asked = true; Thread.sleep(10); }
@@ -531,18 +564,52 @@ public class NetTest {
             InputState into = new InputState();
             List<Integer> seen = new ArrayList<Integer>();
             boolean onePerFrame = true;
+            int maxDelay = 0;
             for (long now = 5000; now < 6500; now += 16) {
                 for (int i = 0; i < arrivals.size(); i++) if (arriveAt.get(i) > now - 16 && arriveAt.get(i) <= now) buf.arrive(arrivals.get(i), now);
                 int before = buf.played;
                 buf.playOut(now, into);
                 if (buf.played - before > 1) onePerFrame = false;
+                maxDelay = Math.max(maxDelay, buf.delayMs);
                 if (buf.played > before) seen.add((int) into.mouseX);
             }
             boolean inOrder = true;
             for (int i = 1; i < seen.size(); i++) if (seen.get(i) <= seen.get(i - 1)) inOrder = false;
             check("steady controls: sets played in order, one a frame, lost ones made good from copies, a few skipped when late (" + seen.size() + " of 60, "
-                    + buf.recovered + " from copies, " + buf.delayMs + " ms added, " + buf.skipped + " skipped)",
-                    inOrder && onePerFrame && seen.size() + buf.skipped >= 58 && buf.skipped <= 4 && buf.recovered >= 10 && buf.delayMs <= InputBuffer.MAX_DELAY_MS);
+                    + buf.recovered + " from copies, " + buf.delayMs + " ms added, at most " + maxDelay + ", " + buf.skipped + " skipped)",
+                    inOrder && onePerFrame && seen.size() + buf.skipped >= 58 && buf.skipped <= 4 && buf.recovered >= 10 && maxDelay <= InputBuffer.MAX_DELAY_MS);
+        }
+
+        // steady controls: a steady link with one datagram in twenty very late keeps a small delay, and a link that
+        // calms down lowers it gently (no burst of sets skipped to catch up)
+        {
+            InputBuffer buf = new InputBuffer();
+            Random jr = new Random(9);
+            List<byte[]> sets = new ArrayList<byte[]>(); List<Integer> times = new ArrayList<Integer>();
+            InputState into = new InputState();
+            int calmDelay = -1, roughDelay = -1, skippedAfterCalm = 0;
+            java.util.TreeMap<Long, List<byte[]>> due = new java.util.TreeMap<Long, List<byte[]>>();
+            for (int i = 1; i <= 600; i++) { // a set every 33 ms for 20 s
+                InputState is = new InputState(); is.seq = i; is.mouseX = i;
+                sets.add(0, is.encode()); times.add(0, 1000 + i * 33);
+                while (sets.size() > InputBuffer.COPIES + 1) { sets.remove(sets.size() - 1); times.remove(times.size() - 1); }
+                long jitter = i < 300 ? jr.nextInt(60) : jr.nextInt(8);  // rough for 10 s, then calm
+                if (jr.nextInt(20) == 0) jitter += 150;                   // one in twenty very late
+                long at = 5000L + i * 33 + 40 + jitter;
+                List<byte[]> dl = due.get(at); if (dl == null) due.put(at, dl = new ArrayList<byte[]>());
+                dl.add(InputBuffer.bundle(sets, times));
+            }
+            for (long now = 5000; now < 26000; now += 16) {
+                for (List<byte[]> dl : due.subMap(now - 16, false, now, true).values()) for (byte[] b : dl) buf.arrive(b, now);
+                int sk = buf.skipped;
+                buf.playOut(now, into);
+                if (now > 5000 + 300 * 33 + 40) skippedAfterCalm += buf.skipped - sk;
+                if (now == 5000 + 16 * 600) roughDelay = buf.delayMs;
+                if (now == 5000 + 16 * 1250) calmDelay = buf.delayMs;
+            }
+            check("steady controls: rare very late datagrams don't raise the delay; a calmer link lowers it gently (rough " + roughDelay
+                    + " ms, calm " + calmDelay + " ms, " + skippedAfterCalm + " skipped while it came down)",
+                    roughDelay > 0 && roughDelay <= 70 && calmDelay < roughDelay && calmDelay <= 30 && skippedAfterCalm <= 3);
         }
 
         // ready check: a joiner's report reaches the host, and the lobby list round-trips

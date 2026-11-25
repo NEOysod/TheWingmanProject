@@ -195,6 +195,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
+    private long reportKeptAt;
     private boolean wasPaused, wasInCommandMap;
     private int mapPausesUndone;
 
@@ -245,7 +246,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShieldGrace.judged = 0;
         Ui.say(engine, "Co-op: hosting on port " + cfg.port + " for up to " + cfg.maxPlayers + " players.");
         if (cfg.password.isEmpty()) Ui.say(engine, "Co-op: no join password is set, so anyone who can reach this PC on port " + cfg.port
-                + " can join. Set a join password in the settings (Ctrl+Shift+O) to change that.");
+                + " can join. Set a join password in the settings (" + Keys.name("settings") + ") to change that.");
         // Addresses are never written to the log, so a log can be shared without them. Players find them in the
         // CO-OP panel on the title screen; the host can also have them shown in the feed (never logged).
         if (cfg.announceAddresses) {
@@ -391,6 +392,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 wingman.net.BattleReport report = stats.build(session, slots);
                 byte[] m = report.encode();
                 for (HostSession.Player p : session.getPlayers()) p.conn.send(Msg.REPORT, m);
+                session.reportSent = true;
                 Global.getLogger(WingmanHostPlugin.class).info(BattleStats.describe(report));
             } catch (Throwable t) {
                 Global.getLogger(WingmanHostPlugin.class).warn("Wingman: the after-action report could not be made", t);
@@ -403,6 +405,12 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             return;
         }
         if (endSent) return;
+        // The report as it stands, every two seconds: if the battle ends some way this plugin doesn't see (left from
+        // the menu, everything retreated), the session sends this one instead, so joiners' reports still update.
+        if (readyPhase == 2 && !engine.isSimulation() && System.currentTimeMillis() - reportKeptAt > 2000) {
+            reportKeptAt = System.currentTimeMillis();
+            try { session.latestReport = stats.build(session, slots).encode(); } catch (Throwable t) { /* the one before stays */ }
+        }
 
         // With nobody connected there is nobody to tell anything: the host's own game should not pay for co-op.
         // Ships are still counted now and then (the ready-check panel shows how many there are); everything
@@ -552,8 +560,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 // If anyone's link was too backed up to take this update, the next one carries everything again,
                 // and updates are sent less often for a while: fewer that arrive beat more that don't.
                 Snapshot update = buildSnapshot(full);
-                boolean taken;
+                boolean taken, perPlayer = false;
                 if (cfg.compactUpdates && !codecBroken) {
+                    perPlayer = true;
                     try {
                         // To each player as changes since the last update they hold; in full for one who holds none.
                         taken = session.broadcastUpdate(update);
@@ -562,11 +571,15 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         Global.getLogger(WingmanHostPlugin.class).error("Wingman: packing updates as changes failed; "
                                 + "they are sent in the old, larger format for the rest of this battle", t);
                         taken = session.broadcastDroppable(Msg.SNAPSHOT, update.encode());
+                        perPlayer = false;
                     }
                 } else {
                     taken = session.broadcastDroppable(Msg.SNAPSHOT, update.encode());
                 }
-                if (!taken) {
+                if (!taken && perPlayer) {
+                    // A link backed up: that player alone is limited (see Budget.choked), the rate stays.
+                    Dbg.info(WingmanHostPlugin.class, "Wingman guard: a link backed up; " + session.describeLimits());
+                } else if (!taken) {
                     fullNext = true;
                     lastSkipNanos = now;
                     int slower = Math.max(Math.min(8, cfg.snapshotRate), rate * 2 / 3);
@@ -676,7 +689,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI mine = engine.getPlayerShip();
         ShipAPI target = mine == null ? null : mine.getShipTarget();
         HostSession.Player p = target == null ? null : pilotOf(target);
-        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press Ctrl+Shift+K to remove that player."); return; }
+        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press " + Keys.name("kickTargeted") + " to remove that player."); return; }
         kick(p.slot);
     }
 
@@ -685,7 +698,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipAPI mine = engine.getPlayerShip();
         ShipAPI target = mine == null ? null : mine.getShipTarget();
         HostSession.Player p = target == null ? null : pilotOf(target);
-        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press Ctrl+Shift+T to take it back."); return; }
+        if (p == null) { Ui.say(engine, "Co-op: target a ship that a player is flying (R), then press " + Keys.name("takeBack") + " to take it back."); return; }
         releaseShip(p);
         p.shipNetId = -1;
         p.conn.send(Msg.ASSIGN, Msg.twoInts(p.claimSeq, -1));
@@ -777,7 +790,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             if (!settings.open && cfg.playerTags) PlayerTags.toggleKey(events, engine);
             if (!settings.open) {
                 for (InputEventAPI e : events) { // Ctrl+Shift+O: the settings page
-                    if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown() || e.getEventValue() != 24) continue;
+                    if (!Keys.is("settings", e)) continue;
                     settings.open(cfg);
                     e.consume();
                 }
@@ -804,18 +817,43 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         if (!session.getPlayers().isEmpty()) {
             for (InputEventAPI e : events) { // host controls: Ctrl+Shift+number removes a player (Ctrl+Shift+K: the one flying the targeted ship), Ctrl+Shift+T takes a ship back
-                if (e.isConsumed() || !e.isKeyDownEvent() || !e.isCtrlDown() || !e.isShiftDown()) continue;
+                if (e.isConsumed() || !e.isKeyDownEvent()) continue;
                 int key = e.getEventValue();
                 try {
-                    if (key >= 2 && key <= 10) { kick(key - 1); e.consume(); }
-                    else if (key == 20) { takeBack(); e.consume(); }
-                    else if (key == 37) { kickTargeted(); e.consume(); } // K
+                    if (Keys.is("takeBack", e)) { takeBack(); e.consume(); }
+                    else if (Keys.is("kickTargeted", e)) { kickTargeted(); e.consume(); }
+                    else if (e.isCtrlDown() && e.isShiftDown() && !e.isAltDown() && key >= 2 && key <= 10) { kick(key - 1); e.consume(); }
                 } catch (Throwable t) {
                     Global.getLogger(WingmanHostPlugin.class).warn("Wingman: host control failed", t);
                 }
             }
         }
         boolean popup = alertTitle != null;
+        if (popup) { // its OK button (or close box) takes a click; no click on it fires the guns underneath
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent() && panel.hitAt(mx, my) != null && panel.hitAt(mx, my).kind == Panel.Hit.KEY) {
+                    alertTitle = null;
+                    alertLines.clear();
+                }
+                e.consume();
+            }
+            popup = alertTitle != null;
+        }
+        if (!popup && readyPhase == 1) { // the ready check's hints take clicks: Enter starts, Ctrl+Enter starts anyway
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY && Panel.isEnter(h.value)) { if (h.ctrl) forcePressed = true; else enterPressed = true; }
+                }
+                e.consume();
+            }
+        }
         if (!popup && readyPhase != 1) return;
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent() || !Panel.isEnter(e.getEventValue())) continue;
@@ -838,6 +876,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             tags.draw(viewport, engine.getPlayerShip(), 1, cfg.playerOutlines, cfg.playerName);
             for (HostSession.Player p : session.getPlayers()) if (p.ship != null) tags.draw(viewport, (ShipAPI) p.ship, p.slot, cfg.playerOutlines, p.name);
         }
+        boolean pushed = Style.push(); // our panels in the size set for them (the tags above are on the ships)
+        try { panels(); } finally { Style.pop(pushed); }
+    }
+
+    private void panels() {
+        if ("everyone".equals(cfg.pingReadout) && !session.getPlayers().isEmpty()) {
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            for (HostSession.Player p : session.getPlayers()) m.put(p.slot, p.conn.rttMs());
+            try { PingReadout.draw("everyone", -1, -1, m); } catch (Throwable t) { /* a readout is not worth a failure */ }
+        }
         List<String> lines = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
         if (settings.open) {
@@ -849,11 +897,14 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             return;
         }
-        if (alertTitle != null) {
-            for (String line : alertLines) { lines.add(line); colors.add(Panel.WARN); }
-            lines.add("The battle is paused. Unpause as usual when you want to carry on.");
-            colors.add(Panel.TEXT);
-            panel.render(alertTitle, lines, colors, "Enter: dismiss");
+        if (alertTitle != null) { // clickable too: OK does what Enter does
+            Panel.Doc d = new Panel.Doc(alertTitle).keys("Enter: dismiss");
+            for (String line : lines) d.line(line, Panel.TEXT);
+            for (String line : alertLines) d.line(line, Panel.WARN);
+            d.line("The battle is paused. Unpause as usual when you want to carry on.", Panel.TEXT);
+            d.buttons(Panel.Doc.button("OK", 28, Panel.GOOD));
+            panel.mouse = true;
+            try { panel.render(d); } finally { panel.mouse = false; }
             return;
         }
         if (readyPhase != 1) return;
@@ -889,15 +940,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             colors.add(Panel.DIM);
             footer = "Enter: start without waiting";
         } else if (lobby.allReady()) {
-            footer = "Everyone is ready.  Enter: start the battle     Ctrl+Shift+2...: remove that player (K: the targeted ship's)";
+            footer = "Everyone is ready.     Enter: start the battle     Ctrl+Shift+2...: remove that player     " + Keys.name("kickTargeted") + ": the targeted ship's";
         } else {
             if (waitNoted) {
                 lines.add("Waited over a minute. Ctrl+Enter starts now; anyone still loading catches up as the battle runs.");
                 colors.add(Panel.WARN);
             }
-            footer = "Waiting for players...  Ctrl+Enter: start anyway     Ctrl+Shift+2...: remove that player";
+            footer = "Waiting for players...     Ctrl+Enter: start anyway     Ctrl+Shift+2...: remove that player";
         }
-        panel.render("READY CHECK", lines, colors, footer);
+        panel.mouse = true; // (the battle hasn't started: the hints take clicks)
+        try { panel.render("READY CHECK", lines, colors, footer); } finally { panel.mouse = false; }
     }
 
     private static boolean eligible(ShipAPI s) {
@@ -955,8 +1007,49 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         byte[] msg = sp.encode();
         spawnMsgs.put(id, msg);
         sides.put(id, sp.owner);
+        sizes.put(id, hullSizeOf(s));
         session.broadcast(Msg.SPAWN, msg);
         return id;
+    }
+
+    /** Each ship's hull size as last reported (ShipAPI.HullSize ordinal). */
+    private final Map<Integer, Integer> sizes = new HashMap<Integer, Integer>();
+
+    private static int hullSizeOf(ShipAPI s) {
+        try { return s.getHullSize() == null ? -1 : s.getHullSize().ordinal(); } catch (Throwable t) { return -1; }
+    }
+
+    /** The ship's hull size if a mod has changed it from its hull's, else -1. */
+    private static int changedHullSize(ShipAPI s) {
+        try {
+            if (s.getHullSize() != null && s.getHullSpec() != null && s.getHullSize() != s.getHullSpec().getHullSize()) return s.getHullSize().ordinal();
+        } catch (Throwable t) { /* as its hull */ }
+        return -1;
+    }
+
+    /**
+     * A mod changed a ship's hull size in battle (Arma Armatura's mechs as they take off and land, some drone
+     * systems): joiners are told, and the description a late joiner gets says the size it is now. The game counts
+     * ships and fighters by hull size, so without this the two copies disagree for as long as the ship lives.
+     * After an idea in scardwell15's pull request #1.
+     */
+    private void checkHullSize(int id, ShipAPI s) {
+        int now = hullSizeOf(s);
+        Integer was = sizes.get(id);
+        if (now < 0 || (was != null && was == now)) return;
+        sizes.put(id, now);
+        try {
+            byte[] old = spawnMsgs.get(id);
+            if (old != null) {
+                ShipSpawn sp = ShipSpawn.decode(old);
+                sp.hullSize = changedHullSize(s);
+                spawnMsgs.put(id, sp.encode());
+            }
+        } catch (Throwable t) { /* a late joiner sees the hull's size until the HULL_SIZE below reaches it */ }
+        Msg.W w = new Msg.W();
+        try { w.out.writeInt(id); w.out.writeByte(now); } catch (java.io.IOException ex) { throw new IllegalStateException(ex); }
+        session.broadcast(Msg.HULL_SIZE, w.done());
+        Dbg.info(WingmanHostPlugin.class, "Wingman: ship " + id + " (" + s.getHullSpec().getHullId() + ") is now a " + s.getHullSize() + " hull; joiners told");
     }
 
     /** The side each ship was last reported on. */
@@ -1020,7 +1113,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             ShipAPI s = e.getValue();
             boolean gone = !present.contains(s);
             boolean dead = !gone && (s.isHulk() || !s.isAlive());
-            if (!gone && !dead) { checkSide(e.getKey(), s); continue; }
+            if (!gone && !dead) { checkSide(e.getKey(), s); checkHullSize(e.getKey(), s); continue; }
             // A destroyed ship leaves a wreck, and the wreck is still part of the battle (see below), unless
             // there are already more wrecks than are worth keeping track of.
             boolean part = false;
@@ -1241,6 +1334,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         sp.netId = id;
         sp.owner = s.getOwner();
         try { sp.ally = s.isAlly(); } catch (Throwable t) { /* not an ally */ }
+        sp.hullSize = changedHullSize(s);
         sp.hullId = s.getHullSpec().getHullId();
         sp.name = s.getName() == null ? "" : s.getName();
         sp.x = s.getLocation().x;
@@ -2484,7 +2578,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 if (!lossWarned && engine.isInCampaign()) {
                     lossWarned = true;
                     Ui.say(engine, "Co-op: this is a campaign battle. A ship lost while a friend flies it is lost for real. "
-                            + "Ctrl+Shift+T on a targeted ship takes it back.");
+                            + Keys.name("takeBack") + " on a targeted ship takes it back.");
                 }
                 session.broadcastNotice(p.name + " is flying " + shipName + ".", p);
             }

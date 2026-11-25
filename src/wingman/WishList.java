@@ -154,7 +154,7 @@ final class WishList {
             }
 
             if (var3 > 0) {
-               CampaignLobby.say("Co-op: " + var0.name + " added " + var3 + " item" + (var3 == 1 ? "" : "s") + " to their wish list. Ctrl+Shift+L to see it.");
+               CampaignLobby.say("Co-op: " + var0.name + " added " + var3 + " item" + (var3 == 1 ? "" : "s") + " to their wish list. " + Keys.name("wishLists") + " to see it.");
             }
 
             lastSentAt = 0L;

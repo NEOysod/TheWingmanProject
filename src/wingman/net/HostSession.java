@@ -42,6 +42,9 @@ public final class HostSession {
         /** Other mods' messages from this player in the current second (see ModChannel). */
         long modWindow;
         int modsInWindow;
+        /** Chat lines from this player in the current 10 seconds. */
+        long chatWindow;
+        int chatsInWindow;
         /** Ready-check report from this player; watching: they chose to go without a ship. */
         public boolean ready, watching;
         /** A pick from the pre-battle lobby (Msg.PICK) waiting for the game thread: fleet member id, "" for none. */
@@ -59,6 +62,17 @@ public final class HostSession {
         public int slot;
         /** This player's next position update must be one in full: they are new, or missed the last one. */
         public boolean needKey = true;
+        /**
+         * The host trusts this player's refits: they are done as they arrive, without the host's yes (every check
+         * still runs, and a refit that fails one is refused as usual). For this connection only: a reconnect, or the
+         * host's game restarting, asks again. After scardwell15's pull request #1.
+         */
+        public volatile boolean trustedRefits;
+        /** The host set this player's refits to look only: they can plan them, but a refit sent is refused. This connection only. */
+        public volatile boolean refitsLookOnly;
+        /** The skill this player picked for their linked officer's level-up (game thread takes it), and what was last offered. */
+        public volatile String officerPick;
+        public String officerOffered = "";
         /** The player's own keys for mods' LunaLib settings ("mod/field" -> key code), as their game told us. */
         public volatile java.util.Map<String, Integer> lunaKeys;
 
@@ -93,8 +107,19 @@ public final class HostSession {
         public int udpFallbacks, keysSent, updatesByUdp, updatesByTcp;
 
         /** Called from the UDP thread: the player has read this update. */
+        /** Updates this player has said it read, by number (slot = tick mod 64; -1 = none): it holds each of them. */
+        final int[] acked = newAcked();
+        /** The update this one is to be built on (worked out each time, see broadcastUpdate). */
+        int wantBase;
+
+        private static int[] newAcked() { int[] a = new int[SnapshotCodec.HISTORY]; java.util.Arrays.fill(a, -1); return a; }
+
+        /** True if this player has said it read update 'tick' (and so still holds it, as both ends remember 64). */
+        boolean holds(int tick) { return tick >= 0 && acked[tick & (SnapshotCodec.HISTORY - 1)] == tick; }
+
         void ack(int epoch, int tick) {
             if (epoch != encoderEpoch) return; // about an earlier battle
+            if (tick >= 0) acked[tick & (SnapshotCodec.HISTORY - 1)] = tick; // (written before the volatile below)
             if (tick > ackTick) ackTick = tick;
             ackAt = System.currentTimeMillis();
         }
@@ -142,11 +167,23 @@ public final class HostSession {
     /** How many battles have been announced as over; for the log. */
     public volatile int battlesEnded;
 
+    /**
+     * The after-action report as it stood a moment ago (kept up to date by the host's battle plugin), and whether
+     * this battle's report has gone out. A battle can end without the plugin seeing it end (the host leaves it from
+     * the menu, or retreats everything): endBattle() then sends the last one kept, so joiners' reports still update.
+     */
+    public volatile byte[] latestReport;
+    public volatile boolean reportSent;
+
     /** The host's battle is over: tell everyone to leave it. They stay connected for the next one. */
     public void endBattle() {
         if (!battleOpen) return;
         battleOpen = false;
         battlesEnded++;
+        byte[] report = latestReport;
+        if (!reportSent && report != null) for (Player p : players) p.conn.send(Msg.REPORT, report); // before BATTLE_END
+        reportSent = true;
+        latestReport = null;
         for (Player p : players) {
             p.conn.send(Msg.BATTLE_END, Msg.EMPTY);
             p.shipNetId = -1;
@@ -333,6 +370,8 @@ public final class HostSession {
     /** A new battle started on the host: everyone must drop their ships and get a fresh list. */
     public void beginBattle() {
         battleOpen = true;
+        reportSent = false;
+        latestReport = null;
         for (Player p : players) {
             p.conn.send(Msg.RESET, Msg.EMPTY);
             p.needsSync = true;
@@ -378,8 +417,8 @@ public final class HostSession {
             sb.append(sb.length() == 0 ? "" : "; ").append(p.name).append(": ").append(p.udp ? "UDP" : p.udpReady ? "TCP (UDP works but is resting)" : "TCP")
               .append(", ").append(p.updatesByUdp).append(" by UDP, ").append(p.updatesByTcp).append(" by TCP, ").append(p.keysSent)
               .append(" in full, fell back ").append(p.udpFallbacks).append(" times");
-            if (Budget.bytesPerSecond > 0) {
-                sb.append("; limit ").append(Budget.bytesPerSecond / 1024).append(" KB/s: ").append(p.budget.cut).append(" updates cut down, ")
+            if (p.budget.limited()) {
+                sb.append("; limit ").append(p.budget.limit() / 1024).append(" KB/s").append(Budget.bytesPerSecond > 0 ? "" : " (own, link backed up)").append(": ").append(p.budget.cut).append(" updates cut down, ")
                   .append(p.budget.leftOut).append(" states left out");
                 p.budget.cut = 0; p.budget.leftOut = 0;
             }
@@ -502,6 +541,7 @@ public final class HostSession {
                 w.out.writeInt(snapshotRate);
                 w.out.writeUTF(hostName);
                 h.send(Msg.WELCOME, w.done());
+                h.measureLatency();
                 if (steadyControls) h.send(Msg.INPUT_MODE, new byte[] { 1 });
                 h.offerCompression();
                 try {
@@ -572,6 +612,9 @@ public final class HostSession {
                     else if (p.type == Msg.REFIT_REQUEST) {
                         if (p.data.length <= 64 * 1024) pl.refitRequest = p.data; // the last one counts; the game thread reads it
                     }
+                    else if (p.type == Msg.OFFICER_PICK) {
+                        try { String id = Msg.readUtf(p.data); if (id.length() <= 100) pl.officerPick = id; } catch (Throwable t) { /* garbled */ }
+                    }
                     else if (p.type == Msg.WISH) {
                         synchronized (pl.wishes) { // each change kept, in order, for the game thread (WishList)
                             if (p.data.length <= 16 * 1024 && pl.wishes.size() < 20) pl.wishes.add(p.data);
@@ -582,6 +625,13 @@ public final class HostSession {
                         if (now - pl.modWindow > 1000) { pl.modWindow = now; pl.modsInWindow = 0; }
                         if (++pl.modsInWindow > ModChannel.PER_PLAYER_PER_SECOND) ModChannel.dropped.incrementAndGet();
                         else if (!ModChannel.received(pl.name, pl.id, p.data) && ++pl.badMessages > 20) bye = true;
+                    }
+                    else if (p.type == Msg.CHAT) {
+                        long now = System.currentTimeMillis();
+                        if (now - pl.chatWindow > 10000) { pl.chatWindow = now; pl.chatsInWindow = 0; }
+                        String text = ChatLog.clean(Msg.readUtf(p.data));
+                        // Guard rail: a few lines at a time, each short; past that they are dropped, quietly.
+                        if (!text.isEmpty() && p.data.length <= 1024 && ++pl.chatsInWindow <= 6) chat(pl.slot, pl.name, text);
                     }
                     else if (p.type == Msg.BYE) bye = true;
                 } catch (IOException e) {
@@ -615,7 +665,24 @@ public final class HostSession {
                 if (!pl.replaced) ModChannel.post(pl.name, pl.id, ModChannel.LEFT);
             }
         }
+        long nowPing = System.currentTimeMillis();
+        if (nowPing - pingsSentAt >= 2000 && !players.isEmpty()) { // everyone's round trip, for everyone's player lists
+            pingsSentAt = nowPing;
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            for (Player q : players) m.put(q.slot, q.conn.rttMs());
+            broadcastAll(Msg.PINGS, Pings.encode(m));
+        }
         return events;
+    }
+
+    private long pingsSentAt;
+
+    /** A chat line (from a joiner, or the host as P1): kept here and handed to every joiner, the one who said it too. */
+    public void chat(int slot, String name, String text) {
+        text = ChatLog.clean(text);
+        if (text.isEmpty()) return;
+        ChatLog.add(slot, name, text);
+        broadcastAll(Msg.CHAT, ChatLog.encode(slot, name, text));
     }
 
     /** The PC a connection comes from, without the port. */
@@ -654,23 +721,27 @@ public final class HostSession {
      *
      * By TCP everything arrives in order, so each update is built on the one before, and a player whose link
      * was too backed up to take one gets the next in full. By UDP an update may be lost, so each is built on
-     * the newest one the player has said it has read; updates in full still go by TCP, which is sure to deliver
+     * an update the player has said it has read; updates in full still go by TCP, which is sure to deliver
      * them. A player is on UDP while its acknowledgements keep coming, and back on TCP when they stop.
+     *
+     * Packed once, sent to many: players whose packer has remembered the same updates and who are to get an
+     * update built on the same one share one packer and get the very same bytes (packing is the host's main cost
+     * per player). They stay together as long as they can: players starting at the same moment, or taking an
+     * update in full at the same moment, share (the periodic ones by TCP are kept apart on purpose: all at once
+     * they would be a spike on the host's upload); UDP players on one packer are built on an update all
+     * of them have read if that is at most 6 updates (0.2 s) older than a player's newest (else that player goes its own
+     * way, on a copy). With a bandwidth limit (Budget), each player is packed for alone, as before.
      *
      * Returns false if any player's TCP link was too backed up to take what was meant for it.
      */
     public boolean broadcastUpdate(Snapshot s) {
         boolean all = true;
         long now = System.currentTimeMillis();
+        boolean share = Budget.bytesPerSecond <= 0;
+        List<Player> going = new ArrayList<Player>();
         for (Player p : players) {
             if (p.needsSync) { p.needKey = true; continue; }
-            if (p.encoder == null) {
-                p.encoder = new SnapshotCodec.Encoder();
-                p.encoderEpoch = p.encoder.epoch();
-                p.ackTick = -1;
-                p.baseTick = -1;
-                p.needKey = true;
-            }
+            if (p.encoder == null) p.needKey = true; // (a packer is given at the update in full, below)
             // Which road? UDP once the player has seen our answer come back that way, for as long as its
             // acknowledgements keep arriving. (A gap in our own sending is not the player's silence.)
             if (now - p.lastUpdateAt > 500) p.ackAt = now;
@@ -687,31 +758,163 @@ public final class HostSession {
                 p.ackAt = now;
                 p.conn.send(Msg.UDP_MODE, new byte[] { 1 });
             }
+            going.add(p);
+        }
+        List<List<Player>> groups = plan(s.tick, going, share);
 
-            int base = -1;
-            if (!p.needKey) {
-                if (p.udp) base = p.encoder.has(p.ackTick) ? p.ackTick : -1;
-                else if (++p.sinceKey < KEY_EVERY) base = p.baseTick;
-            }
-            byte[] data = p.budget.fit(s, p.encoder.encode(s, base), p.encoder, base);
-            if (p.encoder.lastKey || !p.udp) {
-                // In full, or on the TCP road: by TCP. It will arrive, so the next one can be built on it at once.
-                if (p.conn.sendDroppable(Msg.SNAPSHOT_D, data)) {
-                    p.baseTick = s.tick;
-                    p.needKey = false;
-                    if (p.encoder.lastKey) { p.keysSent++; p.sinceKey = 0; if (s.tick > p.ackTick) p.ackTick = s.tick; }
-                    else p.updatesByTcp++;
+        for (List<Player> g : groups) {
+            Player first = g.get(0);
+            SnapshotCodec.Encoder enc = first.encoder;
+            int base = first.wantBase;
+            byte[] data = enc.encode(s, base);
+            for (Player p : g) p.budget.offered(data.length);
+            if (alone(first, share)) data = first.budget.fit(s, data, enc, base); // (one player per group here)
+            boolean key = enc.lastKey;
+            if (g.size() > 1) sharedSends += g.size() - 1;
+            for (Player p : g) {
+                if (key || !p.udp) {
+                    // In full, or on the TCP road: by TCP. It will arrive, so the next one can be built on it at once.
+                    if (p.conn.sendDroppable(Msg.SNAPSHOT_D, data)) {
+                        p.baseTick = s.tick;
+                        p.needKey = false;
+                        p.budget.clean();
+                        if (key) { p.keysSent++; p.sinceKey = 0; if (s.tick > p.ackTick) p.ackTick = s.tick; p.acked[s.tick & (SnapshotCodec.HISTORY - 1)] = s.tick; }
+                        else p.updatesByTcp++;
+                    } else {
+                        // Backed up: this player alone gets a limit (their updates trimmed to what matters most
+                        // to them), and everyone keeps the full rate.
+                        p.needKey = true;
+                        p.budget.choked();
+                        chokes++;
+                        all = false;
+                    }
                 } else {
-                    p.needKey = true;
-                    all = false;
+                    udpHost.update(p, s.tick, data);
+                    p.updatesByUdp++;
                 }
-            } else {
-                udpHost.update(p, s.tick, data);
-                p.updatesByUdp++;
             }
         }
         return all;
     }
+
+    /**
+     * Which update each player is to get built on, and who shares a packer (see broadcastUpdate): the players in
+     * each returned group have one packer and one base. Package-private for the tests.
+     */
+    static List<List<Player>> plan(int tick, List<Player> going, boolean shareAll) {
+        for (Player p : going) {
+            int base = -1;
+            if (!p.needKey && p.encoder != null) {
+                if (p.udp) { int a = p.ackTick; base = p.encoder.has(a) ? a : -1; } // (read once: the UDP thread moves it)
+                else {
+                    // The periodic update in full, on each player's own count: never several players' at the same
+                    // moment (updates in full are big, and all at once they would be a spike on the host's upload).
+                    base = ++p.sinceKey < KEY_EVERY ? p.baseTick : -1;
+                }
+            }
+            p.wantBase = base;
+        }
+        // UDP players on one packer: built on an update all of them hold, where that costs little.
+        {
+            java.util.Map<SnapshotCodec.Encoder, List<Player>> byEnc = new java.util.IdentityHashMap<SnapshotCodec.Encoder, List<Player>>();
+            for (Player p : going) {
+                if (alone(p, shareAll) || !p.udp || p.wantBase < 0) continue;
+                List<Player> l = byEnc.get(p.encoder);
+                if (l == null) byEnc.put(p.encoder, l = new ArrayList<Player>());
+                l.add(p);
+            }
+            for (java.util.Map.Entry<SnapshotCodec.Encoder, List<Player>> e : byEnc.entrySet()) {
+                List<Player> l = e.getValue();
+                if (l.size() < 2) continue;
+                int newest = -1;
+                for (Player p : l) newest = Math.max(newest, p.wantBase);
+                int best = -1, bestCount = 0;
+                for (int t = newest; t >= newest - SHARED_BASE_LAG && t >= 0; t--) {
+                    if (!e.getKey().has(t)) continue;
+                    int count = 0;
+                    for (Player p : l) if (t >= p.wantBase - SHARED_BASE_LAG && (t == p.wantBase || p.holds(t))) count++;
+                    if (count > bestCount) { bestCount = count; best = t; }
+                }
+                if (bestCount < 2) continue;
+                for (Player p : l) if (best >= p.wantBase - SHARED_BASE_LAG && (best == p.wantBase || p.holds(best))) p.wantBase = best;
+            }
+        }
+
+        // Updates in full: the players taking one now share a new packer (a new epoch: their copies start afresh),
+        // unless they are exactly the players of one packer already. Without sharing, each keeps their own.
+        List<Player> keyers = new ArrayList<Player>();
+        for (Player p : going) if (p.wantBase < 0 && !alone(p, shareAll)) keyers.add(p);
+        if (!keyers.isEmpty()) {
+            SnapshotCodec.Encoder one = keyers.get(0).encoder;
+            boolean same = one != null;
+            for (Player p : keyers) if (p.encoder != one) same = false;
+            if (same) for (Player p : going) if (p.encoder == one && p.wantBase >= 0) same = false;
+            SnapshotCodec.Encoder enc = same ? one : new SnapshotCodec.Encoder();
+            for (Player p : keyers) give(p, enc);
+        }
+        for (Player p : going) if (p.wantBase < 0 && alone(p, shareAll) && p.encoder == null) give(p, new SnapshotCodec.Encoder());
+        // A player whose updates may be cut down (a bandwidth limit) is packed for alone, on a packer of their own.
+        java.util.Map<SnapshotCodec.Encoder, Integer> users = new java.util.IdentityHashMap<SnapshotCodec.Encoder, Integer>();
+        for (Player p : going) { Integer n = users.get(p.encoder); users.put(p.encoder, n == null ? 1 : n + 1); }
+        for (Player p : going) {
+            if (!alone(p, shareAll) || users.get(p.encoder) < 2) continue;
+            users.put(p.encoder, users.get(p.encoder) - 1);
+            p.encoder = p.encoder.copy();
+            users.put(p.encoder, 1);
+        }
+
+        // Group: one packer and one base per group. A packer wanted for two bases stays with the larger group;
+        // the others go on copies of it.
+        java.util.Map<SnapshotCodec.Encoder, java.util.Map<Integer, List<Player>>> plan =
+                new java.util.IdentityHashMap<SnapshotCodec.Encoder, java.util.Map<Integer, List<Player>>>();
+        for (Player p : going) {
+            java.util.Map<Integer, List<Player>> m = plan.get(p.encoder);
+            if (m == null) plan.put(p.encoder, m = new java.util.LinkedHashMap<Integer, List<Player>>());
+            List<Player> l = m.get(p.wantBase);
+            if (l == null) m.put(p.wantBase, l = new ArrayList<Player>());
+            l.add(p);
+        }
+        List<List<Player>> groups = new ArrayList<List<Player>>();
+        for (java.util.Map.Entry<SnapshotCodec.Encoder, java.util.Map<Integer, List<Player>>> e : plan.entrySet()) {
+            List<List<Player>> gs = new ArrayList<List<Player>>(e.getValue().values());
+            List<Player> keep = gs.get(0);
+            for (List<Player> g : gs) if (g.size() > keep.size()) keep = g;
+            for (List<Player> g : gs) {
+                if (g != keep) { SnapshotCodec.Encoder c = e.getKey().copy(); for (Player p : g) p.encoder = c; }
+                groups.add(g);
+            }
+        }
+
+        return groups;
+    }
+
+    /** True if this player is packed for alone: sharing is off, or their updates may be cut down (see Budget). */
+    static boolean alone(Player p, boolean shareAll) { return !shareAll || p.budget.limited(); }
+
+    /** Give a player a packer (taking an update in full on it now): what it has read so far no longer counts. */
+    private static void give(Player p, SnapshotCodec.Encoder enc) {
+        if (p.encoder != enc) {
+            p.encoder = enc;
+            p.encoderEpoch = enc.epoch();
+            java.util.Arrays.fill(p.acked, -1);
+            p.ackTick = -1;
+            p.baseTick = -1;
+        }
+    }
+
+    /** How much older than a UDP player's newest read update the shared one may be. */
+    private static final int SHARED_BASE_LAG = 6;
+    /** Updates sent as the same bytes as another player's, packed once (for the log). */
+    public long sharedSends;
+    /** Each player's own limit, for the log. */
+    public String describeLimits() {
+        StringBuilder sb = new StringBuilder();
+        for (Player p : players) if (p.budget.autoLimit > 0) sb.append(sb.length() == 0 ? "" : ", ").append(p.name).append(" ").append(p.budget.autoLimit / 1024).append(" KB/s");
+        return sb.length() == 0 ? "no limits" : "updates trimmed for " + sb;
+    }
+
+    /** Times a player's link was too backed up to take an update (each sets or lowers their own limit). */
+    public int chokes;
 
     /** By TCP, how many updates may pass before a player is sent one in full regardless, as a safety net. */
     private static final int KEY_EVERY = 120;
@@ -719,7 +922,8 @@ public final class HostSession {
     /** Values the packers left unsent as near enough, and values sent, over all players so far. */
     public long[] packerCounts() {
         long held = 0, sent = 0, carried = 0;
-        for (Player p : players) if (p.encoder != null) { held += p.encoder.fieldsHeld; sent += p.encoder.fieldsSent; carried += p.encoder.carried; }
+        java.util.Map<SnapshotCodec.Encoder, Boolean> seen = new java.util.IdentityHashMap<SnapshotCodec.Encoder, Boolean>();
+        for (Player p : players) if (p.encoder != null && seen.put(p.encoder, Boolean.TRUE) == null) { held += p.encoder.fieldsHeld; sent += p.encoder.fieldsSent; carried += p.encoder.carried; }
         return new long[] { held, sent, carried };
     }
 

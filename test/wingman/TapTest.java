@@ -35,6 +35,9 @@ public class TapTest {
         check(t.live(), "live once the ship advances");
         check(t.takeFire() && !t.takeFire(), "a fire command is seen once");
         check(!t.takeVent(), "no vent without the command");
+        queue.clear(); queue.add(ShipCommand.USE_SELECTED_GROUP); // what the fire key gives (0.98.5a)
+        ((AdvanceableListener) listeners.get(0)).advance(0.016f);
+        check(t.takeFire() && !t.takeFire(), "the fire key (use selected group) is a fire");
         queue.clear(); queue.add(ShipCommand.VENT_FLUX);
         ((AdvanceableListener) listeners.get(0)).advance(0.016f);
         check(t.takeVent() && !t.takeFire(), "a vent command is seen");

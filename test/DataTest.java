@@ -168,6 +168,14 @@ public class DataTest {
         bm.id = "black_market"; bm.name = "Black Market"; bm.stock.add(new wingman.net.RefitData.Item(wingman.net.RefitData.WEAPON, "lightac", 4)); bm.cantBuy.add("w:lightac");
         rd.markets.add(om); rd.markets.add(mil); rd.markets.add(bm);
         rd.knownHullmods.add("heavyarmor"); rd.values.put("w:lightac", 100f); rd.values.put("w:hveldriver", 400f);
+        rd.fixedWeapons.put("WS0009", "mss_builtin_gun");
+        {
+            wingman.net.RefitData fx = wingman.net.RefitData.decode(rd.encode());
+            fx.groups = new java.util.ArrayList<wingman.net.RefitData.Group>(); // (a host that sends groups sends these after them)
+            fx.fixedWeapons.put("WS0009", "mss_builtin_gun");
+            fx = wingman.net.RefitData.decode(fx.encode());
+            check("mss_builtin_gun".equals(fx.fixedWeapons.get("WS0009")) && fx.fixedWeapons.size() == 1, "refit data: weapons built in by a hull mod or the variant reach the joiner, for groups");
+        }
         wingman.net.RefitData rd2 = wingman.net.RefitData.decode(rd.encode());
         check(rd2.market.equals("Jangala") && rd2.memberId.equals("m1") && rd2.hullId.equals("eagle") && rd2.opMax == 155 && rd2.opUsed == 148
                 && rd2.maxVents == 30 && rd2.maxSMods == 3 && rd2.fitWeapons.get(1).equals("hveldriver") && rd2.wings.get(1).isEmpty()
@@ -225,6 +233,42 @@ public class DataTest {
             check(!new wingman.net.RefitPlan(gd2, onlyGroups).problems.isEmpty(), "more than 7 groups is a problem");
             gd2.groups = null; // an older host: groups in the request change nothing it knows
             check(new wingman.net.RefitPlan(gd2, onlyGroups).isEmpty() || true, "older host");
+        }
+        { // loadout selectors: sent after the groups, read back; a pick is the fitted one off and another on
+            wingman.net.RefitData ld = wingman.net.RefitData.decode(rd.encode());
+            ld.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            ld.hullmods.add("sel_rifle");
+            wingman.net.RefitData.Loadout l = new wingman.net.RefitData.Loadout();
+            l.name = "R ARM"; l.slots.add("A_GUN");
+            String[][] opts = { { "sel_rifle", "HEAVY RIFLE", "armaa_rifle" }, { "sel_laser", "LASER RIFLE", "armaa_laser" }, { "sel_flamer", "PLASMA FLAMER", "" } };
+            for (String[] op : opts) { l.mods.add(op[0]); l.labels.add(op[1]); l.hulls.add("armaa_aleste"); l.weapons.add(new java.util.ArrayList<String>(java.util.Arrays.asList(op[2]))); }
+            ld.loadouts.add(l);
+            wingman.net.RefitData ld2 = wingman.net.RefitData.decode(ld.encode());
+            check(ld2.loadouts.size() == 1 && ld2.loadouts.get(0).name.equals("R ARM") && ld2.loadouts.get(0).mods.size() == 3 && ld2.loadouts.get(0).current == 0
+                    && "armaa_laser".equals(ld2.loadouts.get(0).weapon(1, "A_GUN")) && "".equals(ld2.loadouts.get(0).weapon(2, "A_GUN"))
+                    && ld2.loadoutOf("sel_flamer") == ld2.loadouts.get(0) && ld2.loadoutOwning("A_GUN") != null && ld2.groups != null, "refit data loadouts round trip");
+            check(wingman.net.RefitData.decode(rd.encode()).loadouts.isEmpty(), "refit data without loadouts: none read");
+            wingman.net.RefitRequest pick = new wingman.net.RefitRequest(); pick.memberId = "m1"; pick.vents = ld2.vents; pick.caps = ld2.caps;
+            pick.removeMods.add("sel_rifle"); pick.addMods.add("sel_flamer");
+            wingman.net.RefitPlan lp = new wingman.net.RefitPlan(ld2, pick);
+            check(!lp.isEmpty() && !lp.allProblems().toString().contains("FLAMER") && !lp.allProblems().toString().contains("sel_") && !lp.allProblems().toString().contains("Loadout"),
+                    "a loadout pick is a change the plan takes (" + lp.allProblems() + ")");
+            pick.removeMods.clear();
+            check(new wingman.net.RefitPlan(ld2, pick).allProblems().toString().contains("Loadout"), "a loadout option asked for without the fitted one off is a problem");
+        }
+        { // weapon groups at once: the host says it can, the request says so, and both read back
+            wingman.net.RefitData gd = wingman.net.RefitData.decode(rd.encode());
+            gd.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            check(!wingman.net.RefitData.decode(gd.encode()).liveGroups, "refit data: weapon groups at once off unless the host says so");
+            gd.liveGroups = true;
+            check(wingman.net.RefitData.decode(gd.encode()).liveGroups, "refit data: weapon groups at once read back");
+            wingman.net.RefitRequest gq = new wingman.net.RefitRequest(); gq.memberId = "m1";
+            gq.groups = new java.util.ArrayList<wingman.net.RefitData.Group>();
+            check(!wingman.net.RefitRequest.decode(gq.encode()).groupsNow, "refit request: an ordinary one isn't groups-at-once");
+            gq.groupsNow = true;
+            wingman.net.RefitRequest gq2 = wingman.net.RefitRequest.decode(gq.encode());
+            check(gq2.groupsNow && gq2.groups != null, "refit request: groups at once read back");
+            check(wingman.net.RefitResult.decode(new wingman.net.RefitResult(wingman.net.RefitResult.GROUPS_SET, "ok").encode()).status == wingman.net.RefitResult.GROUPS_SET, "refit result: groups set reads back");
         }
         wingman.net.RefitPlan pl = new wingman.net.RefitPlan(rd, rq2);
         // OP: 148 - 12 (mauler) + 4 (light AC) + 6 (wasps) = 146. Credits: buy 130, sell the mauler (no value given: 0).

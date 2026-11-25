@@ -81,6 +81,14 @@ public final class Conn {
                         lastHeardAt = now;
                         heardFrames = true;
                         if (head[4] == Msg.PING) continue; // only proves the other side is alive
+                        if (head[4] == Msg.ECHO) { // answered here, at once, so the round trip is the link's alone
+                            if (data.length == 8 && !closed) outbox.add(new Packet(Msg.ECHO_BACK, data));
+                            continue;
+                        }
+                        if (head[4] == Msg.ECHO_BACK) {
+                            if (data.length == 8) heardEcho(now, data);
+                            continue;
+                        }
                         if (head[4] == Msg.ZIP_OK) { // the other side can read a compressed stream: send it one
                             if (compression && Zip.available() && !zipOffered) { zipOffered = true; outbox.add(new Packet(Msg.ZIP_ON, Msg.EMPTY)); }
                             continue;
@@ -135,9 +143,11 @@ public final class Conn {
                             // Nothing to say for a second: say so, so the other side can tell a quiet link from
                             // a dead one. Done here, on the network thread, because the game thread stops
                             // running our code while the game is loading.
-                            if (System.currentTimeMillis() - lastWroteAt < 1000) continue;
-                            p = new Packet(Msg.PING, Msg.EMPTY);
+                            if (System.currentTimeMillis() - lastWroteAt < 1000 && !echoDue()) continue;
+                            p = echoDue() ? echo() : new Packet(Msg.PING, Msg.EMPTY);
                         }
+                        Packet then = null;
+                        if (p.type != Msg.ECHO && echoDue()) { then = p; p = echo(); } // the echo goes first; nothing is reordered
                         lastWroteAt = System.currentTimeMillis();
                         writeStartedAt = lastWroteAt;
                         // Everything that is waiting goes out in one write. A burst of small messages (a salvo
@@ -162,7 +172,8 @@ public final class Conn {
                                 used = 0;
                                 deflater = new Zip.Packer();
                             }
-                            p = outbox.poll();
+                            if (then != null) { p = then; then = null; }
+                            else p = outbox.poll();
                         }
                         if (used > 0) emit(wbuf, used);
                         writeStartedAt = 0;
@@ -271,6 +282,53 @@ public final class Conn {
      * fresh picture.
      */
     public int takeDropped() { return dropped.getAndSet(0); }
+
+    // ---- the round trip: an echo every 2 s once measuring is on, answered by the other side's network thread ----
+    private volatile boolean measuring;
+    private volatile long echoSentAt, echoBackAt;
+    private volatile int rtt = -1, worst = -1;
+    private final int[] recent = new int[5]; // the last few round trips (10 s), for spikes
+    private int recentAt;
+
+    /** Start measuring the round trip to the other side (after the hello: a stranger is never echoed to). */
+    public void measureLatency() { measuring = true; }
+
+    private boolean echoDue() { return measuring && System.currentTimeMillis() - echoSentAt >= 2000; }
+
+    private Packet echo() {
+        long now = System.currentTimeMillis();
+        echoSentAt = now;
+        byte[] b = new byte[8];
+        for (int i = 0; i < 8; i++) b[i] = (byte) (now >>> (56 - 8 * i));
+        return new Packet(Msg.ECHO, b);
+    }
+
+    private void heardEcho(long now, byte[] b) {
+        long sent = 0;
+        for (int i = 0; i < 8; i++) sent = (sent << 8) | (b[i] & 0xFF);
+        long ms = now - sent;
+        if (ms < 0 || ms > 60000) return; // not ours
+        int m = (int) ms;
+        synchronized (recent) {
+            recent[recentAt++ % recent.length] = m;
+            int w = 0;
+            for (int i = 0; i < Math.min(recentAt, recent.length); i++) w = Math.max(w, recent[i]);
+            worst = w;
+        }
+        echoBackAt = now;
+        rtt = rtt < 0 ? m : Math.round(rtt * 0.7f + m * 0.3f);
+    }
+
+    /** The round trip to the other side (ms, smoothed), or -1 before the first echo came back. */
+    public int rttMs() {
+        int r = rtt;
+        // An echo long overdue counts as that long: a link that has stalled shows it before the next one is back.
+        long since = measuring && r >= 0 ? System.currentTimeMillis() - echoBackAt : 0;
+        return since > 4500 ? (int) Math.min(60000, Math.max(r, since - 2000)) : r;
+    }
+
+    /** The worst round trip of the last ten seconds (ms), or -1. */
+    public int worstRecentMs() { return worst; }
 
     /** How long since anything at all (keep-alives included) arrived from the other side. */
     public long idleMillis() { return System.currentTimeMillis() - lastHeardAt; }

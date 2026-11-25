@@ -32,6 +32,24 @@ public final class ClientLink {
 
     public String getError() { return error; }
 
+    /** Why the host refused or removed us, if it said so on this connection (a full game, a password, a kick); else null. */
+    public volatile String refused;
+
+    /** Our own round trip to the host (ms), or -1. */
+    public int rttMs() { Conn c = conn; return c == null || c.isClosed() ? -1 : c.rttMs(); }
+
+    /** The worst round trip of the last ten seconds (ms), or -1. */
+    public int worstRecentMs() { Conn c = conn; return c == null || c.isClosed() ? -1 : c.worstRecentMs(); }
+
+    /** Say something in the co-op chat. False if not connected. */
+    public boolean chat(String text) {
+        Conn c = conn;
+        text = ChatLog.clean(text);
+        if (c == null || c.isClosed() || text.isEmpty()) return false;
+        c.send(Msg.CHAT, Msg.utf(text));
+        return true;
+    }
+
     /** The host's player name, once welcomed. */
     public volatile String hostName = "Host";
     public Conn getConn() { return conn; }
@@ -52,6 +70,8 @@ public final class ClientLink {
         sentSets.clear();
         sentTimes.clear();
         state = State.CONNECTING;
+        refused = null;
+        Pings.forget();
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
@@ -72,6 +92,9 @@ public final class ClientLink {
                                 catch (IOException e) { /* the game's own reading reports it */ }
                                 return false;
                             }
+                            if (type == Msg.PINGS) { Pings.onMessage(data); return true; }   // read wherever the joiner is
+                            if (type == Msg.CHAT) { ChatLog.onMessage(data); return true; }
+                            if (type == Msg.REJECT) { refused = Msg.readUtf(data); return false; } // (the game reads it too)
                             if (type == Msg.INPUT_MODE) {
                                 steady = data.length > 0 && data[0] == 1;
                                 return true;
@@ -92,6 +115,7 @@ public final class ClientLink {
                     w.out.writeUTF(password == null ? "" : password);
                     c.send(Msg.HELLO, w.done());
                     c.offerCompression();
+                    c.measureLatency();
                     conn = c;
                     state = State.CONNECTED;
                 } catch (IOException e) {

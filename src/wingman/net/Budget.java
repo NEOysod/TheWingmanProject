@@ -28,6 +28,55 @@ import java.util.Map;
 public final class Budget {
     /** Bytes a second; 0: no limit. Set from the host's settings. */
     public static volatile int bytesPerSecond;
+    /**
+     * This player's own limit, set by the host when their link backs up (bytes a second; 0: none): instead of
+     * sending everyone fewer updates a second (0.9.3), this player keeps getting 30 a second, with what matters
+     * least to them (far away, flying as expected) left for later. Raised again by a quarter every five clean
+     * seconds, and dropped once it is well above what the battle needs.
+     */
+    public int autoLimit;
+    static final int AUTO_MIN = 6 * 1024;
+    private float needEma = Float.NaN;
+    private long offeredNanos, cleanSince;
+
+    /** The limit in force for this player (bytes a second; 0: none). */
+    public int limit() { int l = bytesPerSecond; return l > 0 ? l : autoLimit; }
+
+    /** True if this player's updates may be cut down (and so are packed for them alone). */
+    public boolean limited() { return limit() > 0; }
+
+    /** An update of this many bytes was ready for this player (before any cutting): what the battle needs. */
+    public void offered(int bytes) {
+        long now = System.nanoTime();
+        float dt = offeredNanos == 0 ? 0f : (now - offeredNanos) / 1e9f;
+        offeredNanos = now;
+        offered(bytes, dt);
+    }
+
+    /** As above, with the time since the last one given (for tests). */
+    public void offered(int bytes, float dt) {
+        if (dt < 0.005f || dt > 1f) return;
+        float rate = bytes / dt;
+        needEma = Float.isNaN(needEma) ? rate : needEma * 0.9f + rate * 0.1f;
+    }
+
+    /** This player's link was too backed up to take an update: limit it to a bit under what it was managing. */
+    public void choked() {
+        float need = Float.isNaN(needEma) ? 30 * 1024 : needEma;
+        float from = autoLimit > 0 ? Math.min(autoLimit, need) : need;
+        autoLimit = Math.max(AUTO_MIN, (int) (from * 0.7f));
+        cleanSince = System.nanoTime();
+    }
+
+    /** An update went through: after five clean seconds, allow more again (or drop the limit once it is not needed). */
+    public void clean() {
+        if (autoLimit <= 0) return;
+        long now = System.nanoTime();
+        if (now - cleanSince < 5000000000L) return;
+        cleanSince = now;
+        autoLimit = (int) (autoLimit * 1.25f);
+        if (!Float.isNaN(needEma) && autoLimit > needEma * 1.5f) autoLimit = 0;
+    }
     static final int FORCE_AFTER = 20;
 
     private float tokens = Float.NaN;
@@ -70,7 +119,7 @@ public final class Budget {
 
     /** As above, with the time since the last update given (for tests, which run faster than the clock). */
     public byte[] fit(Snapshot s, byte[] full, SnapshotCodec.Encoder enc, int builtOn, float dt) {
-        int limit = bytesPerSecond;
+        int limit = limit();
         if (limit <= 0) { tokens = Float.NaN; return full; }
         float cap = limit * 0.25f;
         if (Float.isNaN(tokens)) tokens = cap;

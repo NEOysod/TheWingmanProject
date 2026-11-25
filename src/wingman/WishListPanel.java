@@ -50,6 +50,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    private static final int CLOSE = 4;
    private static final int FOLD = 5;
    private static final int FOLD_ALL = 6;
+   private static final int KEYS = 7;
    private final Set<String> folded = new HashSet<>();
    private static final float ROW_ITEM = 46.0F;
    private static final float ROW_NAME = 36.0F;
@@ -59,11 +60,29 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    private static final Color ROW_OVER = new Color(120, 210, 255, 24);
    private static final Color NAME_BACK = new Color(120, 210, 255, 16);
    private static boolean shownCache = true;
+   private static WishListPanel instance;
+   private long seenAt;
+
+   /** Opens the page (the CO-OP panel's WISH LISTS). */
+   static void openPage() {
+      WishListPanel p = instance;
+      if (p == null || Pages.anyOpen() || friends().isEmpty()) return;
+      p.open = true;
+      p.seenAt = System.currentTimeMillis();
+      p.message = "";
+      p.scroll = 0.0F;
+   }
+
+   static boolean isOpen() {
+      return instance != null && instance.open;
+   }
    private static long shownAt;
 
    static void install() {
       try {
-         Global.getSector().getListenerManager().addListener(new WishListPanel(), true);
+         WishListPanel var0 = new WishListPanel();
+         Global.getSector().getListenerManager().addListener(var0, true);
+         instance = var0;
       } catch (Throwable var1) {
          Global.getLogger(WishListPanel.class).warn("Wingman: friends' wish lists can't be shown on the campaign map", var1);
       }
@@ -103,7 +122,13 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                return;
             }
 
-            float var2 = Global.getSettings().getScreenScaleMult();
+            if (this.open && Pages.stale(this.seenAt)) {
+               this.open = false;
+               this.hits.clear();
+               Global.getLogger(WishListPanel.class).info("Wingman: the wish list window wasn't being drawn and was closed");
+            }
+
+            float var2 = Style.eventScale();
 
             for (InputEventAPI var4 : var1) {
                if (!var4.isConsumed()) {
@@ -121,9 +146,11 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      boolean var6 = var4.isCtrlDown();
                      boolean var7 = var4.isShiftDown();
                      int var8 = var4.getEventValue();
+                     boolean mine = Keys.is("wishLists", var8, var6, var7, var4.isAltDown());
                      if (!this.open) {
-                        if (var5 && var6 && var7 && var8 == 38) {
+                        if (var5 && mine && !Pages.anyOpen()) { // its key (Ctrl+Shift+W)
                            this.open = true;
+                           this.seenAt = System.currentTimeMillis();
                            this.message = "";
                            this.scroll = 0.0F;
                            var4.consume();
@@ -131,7 +158,9 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      } else {
                         var4.consume();
                         if (var5) {
-                           if (var8 != 1 && (var8 != 38 || !var6)) {
+                           if (var8 == 59) KeyHelp.toggle("Wish lists");
+                           else if (var8 == 1 && KeyHelp.isOpen("Wish lists")) KeyHelp.close();
+                           else if (var8 != 1 && !mine) {
                               if (var8 == 48) {
                                  this.act(1, null, null);
                               } else if (var8 == 200) {
@@ -233,6 +262,11 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    }
 
    public void renderInUICoordsAboveUIAndTooltips(ViewportAPI var1) {
+      boolean pushed = Style.push();
+      try { renderScaled(var1); if (isOpen()) KeyHelp.draw("Wish lists"); } finally { Style.pop(pushed); }
+   }
+
+   private void renderScaled(ViewportAPI var1) {
       if (!this.broken && Global.getCurrentState() == GameState.CAMPAIGN) {
          try {
             List var2 = friends();
@@ -246,8 +280,8 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                return;
             }
 
-            float var4 = (float)Global.getSettings().getMouseX();
-            float var5 = (float)Global.getSettings().getMouseY();
+            float var4 = Style.mx();
+            float var5 = Style.my();
             if (this.open && var3 && !this.wasDown) {
                int var6 = this.hits.size() - 1;
 
@@ -260,7 +294,9 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      }
 
                      sound();
-                     this.act(var7.action, var7.player, var7.key);
+                     if (KeyHelp.isOpen("Wish lists")) KeyHelp.close(); // a click while the key list is up only closes it
+                     else if (var7.action == KEYS) KeyHelp.toggle("Wish lists");
+                     else this.act(var7.action, var7.player, var7.key);
                   }
 
                   var2 = friends();
@@ -277,9 +313,15 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
             if (!this.open) {
                this.hits.clear();
                this.window = null;
+               if (CampaignPlayerList.showing()) { // the CO-OP panel has WISH LISTS (and a tab when something is for sale here)
+                  this.button = null;
+                  this.wasDown = var3;
+                  return;
+               }
                this.drawButton(WishList.wishedCount(), WishList.availableHere());
-               if (var3 && !this.wasDown && this.button != null && LobbyScreen.inside(this.button[0], this.button[1], this.button[2], this.button[3])) {
+               if (var3 && !this.wasDown && this.button != null && LobbyScreen.inside(this.button[0], this.button[1], this.button[2], this.button[3]) && !Pages.anyOpen()) {
                   this.open = true;
+                  this.seenAt = System.currentTimeMillis();
                   this.message = "";
                   this.scroll = 0.0F;
                }
@@ -289,6 +331,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
             }
 
             this.wasDown = var3;
+            this.seenAt = System.currentTimeMillis();
             this.drawWindow(var2);
          } catch (Throwable var8) {
             this.open = false;
@@ -329,8 +372,8 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
 
    private void drawWindow(List<String> var1) {
       this.hits.clear();
-      float var2 = Global.getSettings().getScreenWidth();
-      float var3 = Global.getSettings().getScreenHeight();
+      float var2 = Style.sw();
+      float var3 = Style.sh();
       float var4 = Math.min(780.0F, var2 - 80.0F);
       float var5 = Math.min(600.0F, var3 - 140.0F);
       float var6 = (var2 - var4) / 2.0F;
@@ -341,13 +384,16 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
       String var10 = var9 == null ? null : (var9.getName() != null && !var9.getName().isEmpty() ? var9.getName() : "this market");
       int[] var11 = WishList.canBuy(null, null);
       String var12 = var10 == null ? "not docked" : (var11[0] > 0 ? var11[0] + " for sale at " + var10 : "nothing for sale at " + var10);
-      float var13 = Style.window(var6, var7, var4, var5, "WISH LISTS", var12, 30.0F) - 10.0F;
+      float var13 = Style.window(var6, var7, var4, var5, "WISH LISTS", var12, 60.0F) - 10.0F;
       float var14 = 22.0F;
       float var15 = var6 + var4 - var14 - 10.0F;
       float var16 = var7 + var5 - 34.0F + (34.0F - var14) / 2.0F;
       boolean var17 = LobbyScreen.inside(var15, var16, var14, var14);
       Style.button(var15, var16, var14, var14, "X", Panel.DIM, true, var17);
       this.hits.add(new WishListPanel.Hit(var15, var16, var14, var14, 4, null, null));
+      boolean keysOver = LobbyScreen.inside(var15 - var14 - 6.0F, var16, var14, var14);
+      Style.button(var15 - var14 - 6.0F, var16, var14, var14, "?", Panel.DIM, true, keysOver || KeyHelp.isOpen("Wish lists"));
+      this.hits.add(new WishListPanel.Hit(var15 - var14 - 6.0F, var16, var14, var14, KEYS, null, null));
       float var18 = 52.0F;
       float var19 = 16.0F;
       float var20 = var7 + var18;
@@ -379,7 +425,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
          : (
             var10 == null
                ? "Dock at a market to buy: each one is looked at for what friends wish for."
-               : "Wheel or Up/Down to scroll.   B: buy what's available   Esc: close"
+               : "Wheel or Up/Down to scroll.   B: buy what's available   F1: keys   Esc: close"
          );
       Style.text(
          var41,
@@ -560,7 +606,8 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    }
 
    private void drawButton(int var1, int var2) {
-      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     CTRL+SHIFT+L" : "WISH LISTS  (" + var1 + ")     CTRL+SHIFT+L";
+      String var12 = Keys.name("wishLists").toUpperCase();
+      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     " + var12 : "WISH LISTS  (" + var1 + ")     " + var12;
       if (this.buttonLabel == null || !var3.equals(this.buttonText)) {
          this.buttonLabel = Global.getSettings().createLabel(var3, "graphics/fonts/orbitron12condensed.fnt");
          this.buttonText = var3;
@@ -569,8 +616,8 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
       this.buttonLabel.setColor(var2 > 0 ? new Color(150, 255, 170) : new Color(120, 210, 255));
       float var4 = this.buttonLabel.computeTextWidth(var3) + 30.0F;
       float var5 = this.buttonLabel.getPosition().getHeight() + 16.0F;
-      float var6 = Global.getSettings().getScreenWidth();
-      float var7 = Global.getSettings().getScreenHeight();
+      float var6 = Style.sw();
+      float var7 = Style.sh();
       float var8 = var6 - var4 - 10.0F;
       float var9 = Math.min(var7, FriendRefitPanel.bottom) - var5 - 10.0F;
       boolean var10 = LobbyScreen.inside(var8, var9, var4, var5);

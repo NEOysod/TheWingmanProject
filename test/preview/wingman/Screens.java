@@ -100,8 +100,9 @@ final class Screens {
         m.gear.addAll(Arrays.asList("w|Heavy Autocannon|2", "w|Heavy Mauler|1", "w|Harpoon MRM|2", "w|Light Mortar|2", "f|Talon Interceptor Wing|1"));
         m.hullmods = "Integrated Targeting Unit (S), Hardened Shields, Expanded Missile Racks, Auxiliary Thrusters";
         m.dmods = "Degraded Engines, Faulty Grid";
-        m.sprite = "graphics/ships/eagle.png";
+        m.sprite = "graphics/ships/eagle/eagle_base.png"; m.portrait = "graphics/portraits/portrait_corporate04.png";
         for (String n : new String[] { "Kyrizion", "Cy", "Mosk" }) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = n; p.slot = r.players.size() + 2; r.players.add(p); }
+        for (int i = 0; i < big - 4; i++) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = BIG_NAMES[i % BIG_NAMES.length] + (i >= BIG_NAMES.length ? String.valueOf(i / BIG_NAMES.length + 1) : ""); p.slot = r.players.size() + 2; r.players.add(p); }
         return r;
     }
 
@@ -113,6 +114,7 @@ final class Screens {
             wingman.net.BattleReport.Pilot q = new wingman.net.BattleReport.Pilot();
             q.slot = Integer.parseInt(p[0]); q.name = p[1]; q.ship = p[2]; q.kills = q.slot * 2 % 5; q.fighterKills = q.slot * 3; q.damageDealt = 4200 * q.slot; q.shieldDamageDealt = q.slot == 2 ? 9800 : 0; q.damageTaken = 1500 * q.slot;
             q.status = q.slot == 3 ? wingman.net.BattleReport.DESTROYED : q.slot == 4 ? wingman.net.BattleReport.WATCHED : wingman.net.BattleReport.ALIVE;
+            if (q.slot == 4) { q.kills = 0; q.fighterKills = 0; q.damageDealt = 0; q.damageTaken = 0; } // (watching: nothing to count)
             b.pilots.add(q);
         }
         b.sides[0].deployed = 9; b.sides[0].destroyed = 1; b.sides[0].retreated = 1; b.sides[0].lost.add("ISS Patience (Dominator)");
@@ -139,7 +141,8 @@ final class Screens {
         v.noteColor = Panel.GOOD;
         v.reserveRight = CoopScreen.buttonsWidth(true) + 14f;
         l.render(v);
-        new CoopScreen().buttons(UiPreview.W - CoopScreen.margin(), UiPreview.H - CoopScreen.margin() + 2f, true);
+        boolean pushed = Style.push(); // (as the game draws them: in renderScaled, at the chosen size)
+        try { new CoopScreen().buttons(Style.sw() - CoopScreen.margin(), Style.sh() - CoopScreen.margin() + 2f, true); } finally { Style.pop(pushed); }
     }
 
     static wingman.net.RefitData refitData() {
@@ -177,7 +180,11 @@ final class Screens {
     static void refit(boolean changed) { refit(changed, true); }
 
     static String searchFor = "";
-    static boolean whole;
+    static boolean whole, loadouts, groupsShot;
+    /** Players in the game for the big-game shots (0: the usual four). */
+    static int big;
+    static final String[] BIG_NAMES = { "Vex", "Halcyon", "Brightwater", "Okonkwo", "Rook", "Tamsin", "Juniper", "Faraday", "Quill", "Marlowe", "Sable", "Ivo",
+        "Petra", "Lumen", "Ostrava", "Wren", "Calder", "Nyx", "Bastion", "Ember", "Sorrel", "Thane", "Corvid", "Delphine", "Kestrel", "Lyra", "Moth", "Orrin" };
 
     static void refit(boolean changed, boolean docked) {
         wingman.net.Roster r = roster();
@@ -196,6 +203,42 @@ final class Screens {
             q.changes.add(c);
             q.vents = 30; q.caps = 26;
             q.addMods.add("Heavy Armor");
+        }
+        if (loadouts) {
+            for (String[][] g : new String[][][] {
+                    { { "R ARM", "WS0007" }, { "HEAVY RIFLE", "Heavy Rifle" }, { "LASER RIFLE", "Laser Rifle" }, { "PLASMA FLAMER", "Plasma Flamer" }, { "MINIGUN", "Minigun" } },
+                    { { "L ARM", "WS0008" }, { "BLADE", "Laser Blade" }, { "STAKE DRIVER", "Stake Driver" }, { "DISPERSAL GRENADE", "Dispersal Grenade" } } }) {
+                wingman.net.RefitData.Loadout lo = new wingman.net.RefitData.Loadout();
+                lo.name = g[0][0]; lo.slots.add(g[0][1]);
+                for (int i = 1; i < g.length; i++) {
+                    lo.mods.add(lo.name + ": " + g[i][0]); lo.labels.add(g[i][0]); lo.hulls.add("eagle");
+                    lo.weapons.add(new ArrayList<String>(Arrays.asList(g[i][1])));
+                }
+                v.refitData.loadouts.add(lo);
+                v.refitData.hullmods.add(lo.mods.get(0));
+            }
+            l.refit.setData(v.refitData);
+            wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
+            q.removeMods.add("R ARM: HEAVY RIFLE"); q.addMods.add("R ARM: PLASMA FLAMER");
+            try {
+                java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
+                List<?> rs = (List<?>) rows.invoke(l.refit);
+                for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 9) { set(l.refit, "rowAt", i); break; }
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+        if (groupsShot) {
+            v.refitData.groups = new ArrayList<wingman.net.RefitData.Group>();
+            v.refitData.liveGroups = true;
+            l.refit.setData(v.refitData);
+            wingman.net.RefitRequest q = (wingman.net.RefitRequest) get(l.refit, "req");
+            q.groups = new ArrayList<wingman.net.RefitData.Group>();
+            wingman.net.RefitData.Group g1 = new wingman.net.RefitData.Group(); g1.slots.addAll(v.refitData.fitSlots.subList(0, Math.min(2, v.refitData.fitSlots.size())));
+            q.groups.add(g1);
+            try {
+                java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
+                List<?> rs = (List<?>) rows.invoke(l.refit);
+                for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 8) { set(l.refit, "rowAt", i); break; }
+            } catch (Exception e) { throw new RuntimeException(e); }
         }
         if (!searchFor.isEmpty()) { set(l.refit, "search", searchFor); set(l.refit, "typingSearch", true); }
         if (whole) set(l.refit, "availableOnly", false);
@@ -219,32 +262,90 @@ final class Screens {
         pd.request = q;
         pd.plan = new wingman.net.RefitPlan(d, q, new FriendRefit.Names(d));
         pd.op = 141; pd.opMax = 145;
-        FriendRefitPanel p = new FriendRefitPanel();
-        java.lang.reflect.Method doc = FriendRefitPanel.class.getDeclaredMethod("doc", FriendRefit.Pending.class, int.class);
-        doc.setAccessible(true);
-        Panel panel = (Panel) get(p, "panel");
-        panel.render((Panel.Doc) doc.invoke(p, pd, 2));
-        java.lang.reflect.Method b = FriendRefitPanel.class.getDeclaredMethod("drawButtons", FriendRefit.Pending.class, int.class);
-        b.setAccessible(true);
-        b.invoke(p, pd, 2);
-        java.lang.reflect.Method tb = FriendRefitPanel.class.getDeclaredMethod("drawButton", int.class);
-        tb.setAccessible(true);
-        tb.invoke(p, 2);
+        FriendRefit.Pending pd2 = new FriendRefit.Pending();
+        java.lang.reflect.Constructor<wingman.net.HostSession.Player> pc2 = wingman.net.HostSession.Player.class.getDeclaredConstructor(int.class, wingman.net.Conn.class);
+        pc2.setAccessible(true);
+        wingman.net.HostSession.Player cy = pc2.newInstance(3, null);
+        cy.name = "Cy"; cy.slot = 3;
+        pd2.player = cy; pd2.ship = "ISS Patience, Dominator"; pd2.request = new wingman.net.RefitRequest(); pd2.plan = pd.plan;
+        pd.at = System.currentTimeMillis() - 120000L;
+        new FriendRefitPanel().draw(Arrays.asList(pd, pd2), 0);
+    }
+
+    /** A few lines said, and everyone's round trip. */
+    static void chat() {
+        wingman.net.ChatLog.clear();
+        wingman.net.ChatLog.add(2, "Kyrizion", "anyone got a spare heavy autocannon?");
+        wingman.net.ChatLog.add(1, "NEOysod", "check the wish list, I'll grab one at the next market");
+        wingman.net.ChatLog.add(3, "Cy", "gonna take the Dominator if nobody minds");
+        wingman.net.ChatLog.add(4, "Mosk", "lag is bad tonight, sorry if I drift off");
+        wingman.net.ChatLog.add(2, "Kyrizion", "ty!");
+        java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+        m.put(2, 54); m.put(3, 213); m.put(4, 96);
+        wingman.net.Pings.onMessage(wingman.net.Pings.encode(m));
     }
 
     static void playerList() throws Exception {
         CampaignPlayerList pl = new CampaignPlayerList();
-        Class<?> rc = Class.forName("wingman.CampaignPlayerList$Row");
-        java.lang.reflect.Constructor<?> c = rc.getDeclaredConstructor(int.class, String.class, String.class, boolean.class);
-        c.setAccessible(true);
-        List<Object> rows = new ArrayList<Object>();
-        rows.add(c.newInstance(1, "NEOysod (you)", "host", false));
-        rows.add(c.newInstance(2, "Kyrizion", "ISS Long Wait", false));
-        rows.add(c.newInstance(3, "Cy", "", false));
-        rows.add(c.newInstance(4, "Mosk", "ISS Kettle", true));
-        java.lang.reflect.Method d = CampaignPlayerList.class.getDeclaredMethod("draw", List.class);
-        d.setAccessible(true);
-        d.invoke(pl, rows);
+        set(pl, "openSlot", 2);
+        List<CampaignPlayerList.Row> rows = new ArrayList<CampaignPlayerList.Row>();
+        Object[][] d = { { 1, "NEOysod (you)", "host", false, "", 1, "" }, { 2, "Kyrizion", "ISS Long Wait, Eagle", false, "Mira Okonkwo", 1, "ISS Long Wait, Eagle" },
+                { 3, "Cy", "", false, "", 2, "" }, { 4, "Mosk", "ISS Patience, Dominator", true, "Ana Weiss", 0, "" } };
+        for (Object[] x : d) {
+            CampaignPlayerList.Row r = new CampaignPlayerList.Row();
+            r.slot = (Integer) x[0]; r.name = (String) x[1]; r.ship = (String) x[2]; r.quiet = (Boolean) x[3]; r.host = r.slot == 1;
+            r.officer = (String) x[4]; r.permission = (Integer) x[5]; r.refitShip = (String) x[6];
+            r.ping = r.slot == 2 ? 54 : r.slot == 3 ? 213 : -1;
+            if (!r.officer.isEmpty()) r.officerNote = "Level 5, aggressive  -  captains the ship " + r.name + " picks";
+            if (!r.officer.isEmpty()) r.portrait = r.officer.startsWith("Mira") ? "graphics/portraits/portrait_corporate04.png" : "graphics/portraits/portrait_league05.png";
+            rows.add(r);
+        }
+        for (int i = 0; i < big - 4; i++) {
+            CampaignPlayerList.Row r = new CampaignPlayerList.Row();
+            r.slot = 5 + i; r.name = BIG_NAMES[i % BIG_NAMES.length]; r.ship = i % 3 == 0 ? "" : "ISS Wanderer " + (i + 1) + ", Hammerhead"; r.permission = 1;
+            rows.add(r);
+        }
+        if (whole) set(pl, "openSlot", 3);
+        if (big > 0) set(pl, "scroll", 6);
+        boolean pushed = Style.push(); // (as the game draws it: in render, at the chosen size)
+        try { pl.draw(rows, 1); } finally { Style.pop(pushed); }
+    }
+
+    static void officers() {
+        OfficerLinkPanel p = new OfficerLinkPanel();
+        OfficerLinkPanel.View v = new OfficerLinkPanel.View();
+        String[][] f = { { "2", "Kyrizion" }, { "3", "Cy" }, { "4", "Mosk" } };
+        for (String[] x : f) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = Integer.parseInt(x[0]); fr.name = x[1]; v.friends.add(fr); }
+        for (int i = 0; i < big - 4; i++) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = 5 + i; fr.name = BIG_NAMES[i % BIG_NAMES.length]; v.friends.add(fr); }
+        if (big > 0) v.friend = 14;
+        Object[][] os = { { "Mira Okonkwo", 5, "aggressive", "Linked to Kyrizion  -  ISS Long Wait, Eagle", "mine", "helmsmanship+ combat_endurance impact_mitigation+ field_modulation target_analysis" },
+                { "Tomas Reyes", 4, "steady", "Captain of ISS Hand of Fate, Conquest", "Leaves ISS Hand of Fate, Conquest when Kyrizion picks a ship.", "point_defense ordnance_expert+ gunnery_implants damage_control" },
+                { "Ana Weiss", 6, "cautious", "Linked to Cy", "Moves over from Cy.", "systems_expertise+ missile_specialization energy_weapon_mastery helmsmanship+ field_modulation polarized_armor+" },
+                { "Ido Hartmann", 2, "reckless", "Unassigned", "", "combat_endurance target_analysis" },
+                { "Sun Qian", 3, "steady", "Captain of ISS Lantern, Heron", "Leaves ISS Lantern, Heron when Kyrizion picks a ship.", "damage_control impact_mitigation+ point_defense" },
+                { "Erik Laine", 1, "timid", "Unassigned", "", "gunnery_implants" } };
+        for (Object[] o : os) {
+            OfficerLinkPanel.Officer x = new OfficerLinkPanel.Officer();
+            x.name = (String) o[0]; x.level = (Integer) o[1]; x.personality = (String) o[2]; x.status = (String) o[3];
+            x.mine = "mine".equals(o[4]); x.moveNote = x.mine ? "" : (String) o[4];
+            String[] faces = { "corporate04", "hegemony09", "league05", "mercenary03", "corporate07", "hegemony05" };
+            x.portrait = "graphics/portraits/portrait_" + faces[v.officers.size() % faces.length] + ".png";
+            x.statusColor = x.mine ? Panel.GOOD : x.status.startsWith("Linked") ? Panel.WARN : Panel.DIM;
+            for (String sk : ((String) o[5]).split(" ")) { x.skills.add(sk.replace("+", "")); x.elite.add(sk.endsWith("+")); }
+            v.officers.add(x);
+        }
+        v.picked = whole ? 2 : 0;
+        p.draw(v);
+    }
+
+    static void levelUp() {
+        try {
+            java.lang.reflect.Field f = OfficerChoice.class.getDeclaredField("skills"); f.setAccessible(true);
+            f.set(null, new ArrayList<String>(Arrays.asList("ballistic_mastery", "systems_expertise", "point_defense", "damage_control")));
+        } catch (Exception e) { throw new RuntimeException(e); }
+        OfficerChoice.officer = "Mira Okonkwo"; OfficerChoice.toLevel = 6; OfficerChoice.chosen = 1;
+        lobby(LobbyScreen.FLEET, true);
+        OfficerChoice.forget();
     }
 
     static List<Shot> all() {
@@ -257,8 +358,8 @@ final class Screens {
         out.add(new Shot("coop-connected", 1920, 1080, -1, -1, new Runnable() { public void run() { coop(true); } }));
         out.add(new Shot("coop-join-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(false); } }));
         out.add(new Shot("coop-connected-1366", 1366, 768, -1, -1, new Runnable() { public void run() { coop(true); } }));
-        out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 6); } }));
-        out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(3, 1); } }));
+        out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(3, 6); } }));
+        out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(5, 1); } }));
         out.add(new Shot("help", 1920, 1080, -1, -1, new Runnable() { public void run() {
             mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
         } }));
@@ -280,9 +381,69 @@ final class Screens {
         } }));
         out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
         out.add(new Shot("refit-tip", 1920, 1080, 1600, 770, new Runnable() { public void run() { refit(false); try { Thread.sleep(300); } catch (Exception e) { } refit(false); } }));
+        out.add(new Shot("refit-groups", 1920, 1080, -1, -1, new Runnable() { public void run() { groupsShot = true; refit(false); groupsShot = false; } }));
+        out.add(new Shot("refit-loadout", 1920, 1080, -1, -1, new Runnable() { public void run() { loadouts = true; refit(false); loadouts = false; } }));
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));
         out.add(new Shot("player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } } }));
+        out.add(new Shot("player-list-cy", 1920, 1080, 1700, 1000, new Runnable() { public void run() { whole = true; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } whole = false; } }));
+        out.add(new Shot("battle-popup", 1920, 1080, 960, 520, new Runnable() { public void run() {
+            Panel p = new Panel();
+            Panel.Doc d = new Panel.Doc("CONNECTION LOST").keys("Enter: leave the battle     Backspace: stay");
+            d.line("Nothing has come from the host for twelve seconds.", Panel.WARN);
+            d.line("Your game will try to reconnect by itself.", Panel.WARN);
+            d.buttons(Panel.Doc.button("LEAVE THE BATTLE", 28, Panel.WARN), Panel.Doc.button("STAY", 14, Panel.TEXT));
+            p.mouse = true;
+            p.render(d);
+        } }));
+        out.add(new Shot("officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); } }));
+        out.add(new Shot("big-officers", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; officers(); big = 0; } }));
+        out.add(new Shot("big-player-list", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); } big = 0; } }));
+        out.add(new Shot("big-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
+        out.add(new Shot("big-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { big = 32; lobby(LobbyScreen.FLEET, true); big = 0; } }));
+        out.add(new Shot("officers-1366", 1366, 768, -1, -1, new Runnable() { public void run() { whole = true; officers(); whole = false; } }));
+        out.add(new Shot("settings-interface", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(1, 0); } }));
+        out.add(new Shot("settings-keys", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(2, 1); } }));
+        out.add(new Shot("chat-host-open", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = true; ChatBox.host.typing = true; ChatBox.host.draft.append("docking at Jangala, refits in a sec");
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            ChatBox.host.open = false; ChatBox.host.typing = false; ChatBox.host.draft.setLength(0);
+        } }));
+        out.add(new Shot("chat-host-folded", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = false; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+        } }));
+        out.add(new Shot("coop-list-min-chat-open", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = true; CampaignPlayerList.listMin = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            CampaignPlayerList.listMin = false; ChatBox.host.open = false;
+        } }));
+        out.add(new Shot("coop-both-min", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = false; CampaignPlayerList.listMin = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            CampaignPlayerList.listMin = false;
+        } }));
+        out.add(new Shot("chat-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));
+        out.add(new Shot("chat-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));
+        out.add(new Shot("ping-mine", 1920, 1080, -1, -1, new Runnable() { public void run() { PingReadout.draw("mine", 212, 540, null); } }));
+        out.add(new Shot("ping-everyone", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            java.util.Map<Integer, Integer> m = new java.util.LinkedHashMap<Integer, Integer>();
+            m.put(1, 0); m.put(2, 54); m.put(3, 213); m.put(4, 96); m.put(5, 260);
+            PingReadout.draw("everyone", 54, 60, m);
+        } }));
+        out.add(new Shot("keyhelp-officers", 1920, 1080, -1, -1, new Runnable() { public void run() { officers(); KeyHelp.toggle("Officer links"); KeyHelp.draw("Officer links"); KeyHelp.close(); } }));
+        out.add(new Shot("keyhelp-coop", 1280, 720, -1, -1, new Runnable() { public void run() {
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            KeyHelp.toggle("CO-OP panel"); KeyHelp.draw("CO-OP panel"); KeyHelp.close();
+        } }));
+        out.add(new Shot("colorblind-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { PlayerTags.colorblind = true; big = 10; lobby(LobbyScreen.FLEET, true); big = 0; PlayerTags.colorblind = false; } }));
+        out.add(new Shot("scale-125-player-list", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            Style.ui = 1.25f; chat(); ChatBox.host.open = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            ChatBox.host.open = false; Style.ui = 1f;
+        } }));
+        out.add(new Shot("scale-075-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { Style.ui = 0.75f; lobby(LobbyScreen.FLEET, false); Style.ui = 1f; } }));
+        out.add(new Shot("lobby-levelup", 1920, 1080, -1, -1, new Runnable() { public void run() { levelUp(); } }));
+        out.add(new Shot("lobby-levelup-1366", 1366, 768, -1, -1, new Runnable() { public void run() { levelUp(); } }));
         return out;
     }
 }

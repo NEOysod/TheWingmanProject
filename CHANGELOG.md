@@ -1,5 +1,172 @@
 # Changelog
 
+## 0.9.4-beta
+
+For Starsector 0.98.5a-RC9. Everyone in a game needs the same game build and this version (protocol 63: 0.9.3
+can't play with it).
+
+- **Starsector 0.98.5a-RC9.** The hotfix renamed game internals again: the title menu (now `title.B`), the join
+  mission (`title.Object.N` / `title.Object.for`, the mission id getter back to RC5's name), held-back objectives
+  (`specs.S`, the spec store's lookup now `super`), carrier bays (same class, fields back to RC6's names), the
+  teleporter class (`systems.J`) and the fighter wing class. RC9's names go first in each table; RC8 and older still
+  work through the same tables (the message feed is built for RC9, as the build reads its name from the game).
+- Fixed: built-in weapons were missing from the refit page's weapon groups when a hull mod or the ship's variant
+  put them there (a modded hull's built-in gun), so a group holding one looked empty. The host now sends them; they
+  show as "(built in)", can be grouped, and count in the stats.
+- Fixed: a second set of flux, hull and CR bars on the host's ship, seen by a joiner who had taken a ship. It
+  belonged to the joiner's hidden stand-in ship, which rode along on the host's ship to keep the camera on the
+  fight; it now does that only while the joiner has no ship, and is parked out of sight otherwise.
+- Protocol 63.
+- **Chat on the campaign map.** For anyone who'd rather not talk on Discord: a CHAT box under the host's CO-OP
+  panel and under PLAYERS in a joiner's lobby. The host's starts as a small CHAT tab (with how many lines are new),
+  so it stays out of the way. Click it or press **Ctrl+Shift+C**, type, Enter sends; the mouse wheel scrolls back.
+  Lines are kept short and a flood is cut off on the host.
+- **Ping readout.** Each joiner's round trip to the host is measured every 2 s and shown on the host's CO-OP panel
+  and in everyone's lobby (grey, orange, red). In a battle, your own ping sits at the top of the screen and says
+  SPIKE when it jumps; setting *Ping in battle* can show everyone's instead, or nothing.
+- **Rejoin after a drop.** A joiner whose link drops in the lobby is reconnected as soon as the host can be
+  reached (3 s, 5 s, then every 10 s, for 10 minutes). Not after a refusal or a kick. Setting
+  *Rejoin by myself after a drop*, on by default.
+- **Size of Wingman's pages** (Settings, Interface): 0.75 to 2, on top of the game's own UI scale. Every page was
+  checked at 1280 x 720: the refit page folds its stats on a short screen, its weapon-group buttons use shorter
+  words, and the lobby's report keeps each figure on one line.
+- **Colour-blind player colours** (Settings, Interface), after Okabe and Ito's palette.
+- **Keys can be changed** (Settings, Keys): settings, chat, officer links, friend refits, wish lists, player tags,
+  and the host's take-back and remove. A key used twice is pointed out. Messages name the key as set.
+- **F1 lists the keys** on the officer links, friend refits and wish list pages, and **?** on the CO-OP panel.
+- Fixed: on the refit page's weapon groups, "1-5 of 7 weapons" was drawn over the first weapon.
+- **The CO-OP panel and the chat shrink separately**, each with its own **-** button, to a small tab. With both
+  shrunk, the campaign map keeps one small row of tabs in the corner: CO-OP (players), CHAT (new lines), and
+  REFITS or WISH LISTS only when something waits there; a click on a tab opens it. **Ctrl+Shift+P** (can be changed)
+  shrinks both at once and, again, puts them back as they were. Remembered on your PC.
+- **UI pass.** A **?** button on the officer links, friend refits and wish list pages lists their keys (as F1
+  does). WISH LISTS has a button at the bottom of the CO-OP panel next to OFFICER LINKS. The ready check before a
+  battle (host and joiners, both steps) takes clicks on its keys. Buttons and hints name keys as set in Settings,
+  Keys, and the hints no longer run status text into the key names. The page size is capped at what the screen
+  has room for (1.5 at 1920 x 1080, 1 at 1280 x 720) rather than drawing off the edge. Checked at 1280 x 720,
+  1366 x 768, 1920 x 1080, 2560 x 1440 and 3840 x 2160. At 1280 x 720 the refit page's search hint no longer runs
+  onto the filter buttons, and the lobby's PLAYERS box, squeezed by level-up cards, no longer draws past its edge.
+- **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
+  is open, or where you left it. Ctrl+Shift+L still works.
+- **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)
+  open one at a time (two at once each took the keys and fought over Esc), and a page that is open but no longer
+  drawn closes itself within a second and a half, so nothing invisible is left taking the keys or the mouse (and
+  the campaign runs on if it was running). The wish lists' key is now **Ctrl+Shift+W**: Ctrl+Shift+L opened the
+  officer links page first, so the wish lists could only be opened with their button. In battles, popups (a
+  disconnect, a wrong map, waiting for the host...) have buttons that take clicks as well as their keys, and a
+  click on a popup no longer fires the guns underneath. If the title screen's co-op button ever fails and switches
+  itself off, the game's own menu is shown again rather than left hidden.
+- **Fix: joiners' after-battle report sometimes didn't update.** It was sent only when the host's battle plugin saw
+  the battle decided; a battle the host left another way (from the menu, or with everything retreated) ended with no
+  report, and joiners kept the one before. The host now keeps the report up to date every two seconds, and whatever
+  ends the battle sends it if it hasn't gone out.
+- **Fix: joiners didn't hear (or see) overloads.** A ship's copy on a joiner's screen is put into its overload by the
+  host's word, and the game plays the overload sound and shows "OVERLOADED" only for one it reaches itself. Now an
+  overload that has just begun on the host is heard and shown on joiners' screens too, for every ship, theirs
+  included. Likewise a ship system that the copy couldn't switch on itself (its flux or cooldown here stood in the
+  way) and was pushed into running plays its start sound.
+- **Fix: the build stamp in the log** ("Wingman: build ...") had said 0.9.3-beta since 0.9.3; build.sh now writes the
+  version and build time into every jar.
+- **Log: what a joiner's controls change.** The joiner's two-minute traffic line now ends with which controls were
+  sent as changed and how often ("controls changed: accelerate 240, shield/phase 3900, ..."), so a control that
+  flickers frame to frame, or a ship acting on its own, shows in a playtest's log.
+- **Weapon groups set live:** on a joiner's refit page, SET GROUPS NOW puts the groups as planned on the ship at
+  once, without a market or the host's yes (they cost nothing): one press sends them, not every click. The rest of
+  the plan stays as it was; weapons it adds are grouped when that refit is done. Needs a host on this version (the
+  button only shows then); an older host still takes groups with a refit.
+- **Fix: the officer page couldn't be clicked**, and the arrow keys couldn't reach the middle column of officer
+  cards (Left/Right changed the friend). Clicks are now read from the mouse while the page is drawn, as the friend
+  refit page does (the CO-OP panel too); the arrows move through the cards, and Tab / Shift+Tab change the friend.
+- **Starsector 0.98.5a-RC8.** The hotfix renamed game internals again: the title menu, the join mission, held-back
+  objectives, carrier bays, the teleporter class and the battle message feed (whose way in is now named differently
+  too: the build reads that name from the game as well, and points MessageSpy at it). RC8's names go first in each
+  table; RC7, RC6 and RC5 still work through the same tables (the message feed is built for RC8). The title menu's
+  candidates are each tried in full now, as a name can be another class in another build.
+- **Big games (checked with 32 players):** the CO-OP panel scrolls (the wheel, or the "more above/below" lines)
+  once its friends fill most of the screen's height, keeping the host's row on top and an open row in view; the
+  friends' tabs on the officer page and the refits' tabs on the friend refit page scroll left and right (arrows at the
+  ends, the wheel over them) and keep the one picked in view; a joiner's PLAYERS box goes to one line each, in two
+  columns, and scrolls with the wheel past that (you are listed right after the host); the battle report's pilots
+  table packs its rows tighter; "In this game" names the first few and says how many more.
+- **The CO-OP panel on the campaign map** (host) does more than list who is here: click a friend to open their row,
+  with their linked officer (ASSIGN or CHANGE opens the officer page on them), how their refits are taken, and any
+  refit of theirs waiting (REVIEW). Each row shows the ship they picked, their officer and their refit setting. REFITS
+  in its header opens the friend refit page while any wait (the separate button stays away while the panel shows).
+- **Refits: look only, ask me, or trust**, per friend, from the CO-OP panel or the refit page. Look only (new): they
+  can plan refits but a refit sent is refused with a note. Ask me: each one waits for you, as before. Trust: done as
+  they arrive (checks still run) until they reconnect, as T did. T still toggles trust.
+- **Officer page redone** (Ctrl+Shift+L, or from the CO-OP panel): friends as tabs; your officers as cards with
+  portrait, level, personality, a mark per skill (gold: elite) and who has them; the picked one's skills listed at
+  the side, a note when linking moves them off another friend or ship, and LINK and UNLINK. Everything works with the
+  mouse; the keys are as before.
+- **Friend refit page redone:** the refits waiting as tabs, each change a row from what was there to what goes in
+  (with pictures, and where it comes from or goes), slots named by size and kind, cost and checks at the side with
+  the friend's refit setting, and DENY / ACCEPT at the foot ("ACCEPT AT A MARKET" until docked). A, D, T, Left/Right
+  and Esc as before.
+- **Officer level-up as cards** (joiner): when your linked officer can level up, YOUR SHIP shows the skills the
+  host's game offers as cards (icon, name, aptitude, a line about it); click one and CONFIRM. A number key picks one,
+  the same number again sends it.
+- **Fix: officer skill pop-ups stuck on the host's screen.** When a friend picked another ship while the host had the
+  fleet or refit screen open, their linked officer moved and the screen rebuilt its officer rows under the mouse; the
+  pop-up of the one hovered stayed until a reload. The officer still moves at once; the open screen now shows it
+  when it is next opened, instead of rebuilding under the mouse.
+- **Loadout selectors in friend refits**, for any mod that has them (Arma Armatura's strikecraft arms, Diable
+  Avionics' Virtuous, and others built the same way). A joiner's refit page gets a LOADOUT section: one row per
+  selector (R ARM, L ARM, HEAD...), with every option and the weapons it fits; pick one with Left/Right or a click.
+  Nothing is written for a particular mod: the host finds each cycle by trying it on a copy of the ship (the
+  selector off, the game works the ship out again, the mod's own hull mod puts on the next one), and on accepting
+  steps the real ship round to the option picked the same way. The weapon slots a selector owns are left off the
+  weapons list (the host refuses changes there), and their weapons aren't asked for from the host's cargo. A refit
+  made in the game's own screen is read the same way. Checked against Arma Armatura 3.3.9 (Tartiflette's selector
+  code in data.hullmods.armaa_weaponSwap and the other swaps).
+- **Refit in the game's own refit screen** (joiner): on a ship's refit page, G puts that ship, exactly as the host
+  has it, into a new mission, "Wingman: Refit". Open it from Missions, click the ship, Refit, and change what you
+  like in the game's real refit screen. Back in CO-OP the changes load onto the refit page, with what the host has
+  and what it costs; send them as any friend refit (the host checks it all again). No game internals: the game's
+  own saved name for the mission's ship is read back through the API. The mission's screen shows every weapon and
+  hull mod; the host's check catches what they don't have. S-mods can't be built in there.
+
+- **Starsector 0.98.5a-RC7.** The hotfix renamed game internals again (the title menu, the join mission, held-back
+  objectives, carrier bays, teleporters, the battle message feed). Each is now looked up from a table of names by
+  game build, newest first, so RC5, RC6 and RC7 all work with one jar (the message feed is built for RC7).
+- **Defaults** stay as recommended: 30 updates a second, compact and compressed updates over UDP, no bandwidth
+  limit, steady controls and the jitter buffer off (switch them on for a friend with packet loss or stutter).
+- **Starsector 0.98.5a-RC6.** The hotfix renamed the game internals behind the full-screen lobby, starting the join
+  battle from the title screen, script messages in battle, matching wreck break-ups, held-back objectives, quiet
+  carrier bays and teleporting systems; all found again (RC5 names kept as the fallback). The build now reads the
+  battle message feed's names from the game itself (`tools/GameNames`). Host and joiners still need the same RC.
+- **Joiners upload far less.** Controls went up to 60 times a second while the mouse moved (holding a key at 60
+  FPS), and each change was sent three times over UDP: about 12 KB/s per joiner in the logs, more than the host sent.
+  Now a key or button change goes at once, the mouse and heading at most 30 times a second, and a change is repeated
+  once.
+- **Steady controls: less delay, no catch-up bursts.** The delay follows the 90th percentile of recent lateness (at
+  most 80 ms) instead of the worst arrival (up to 120 ms, as the logs showed), and changes gently, so a calmer link
+  no longer makes a burst of controls skipped.
+- **Back in your ship after a refresh.** After a resync (often after packet loss) the joiner sat back down only if the
+  host's answer came after the ship was rebuilt; otherwise they were left in the stand-in, or stuck in the host's
+  flagship, with no controls. Now it keeps trying for 15 s, from either.
+- **One slow link no longer slows everyone.** When a joiner's link backs up, that joiner alone gets a bandwidth limit
+  (their updates trimmed to what matters most to them) and everyone keeps 30 updates a second; before, the rate
+  dropped for all.
+- **Updates packed once for many.** Joiners who hold the same updates get the same bytes, packed once (the host's
+  main cost per joiner). In tests: 38% fewer packs with 5 joiners, 1% more bytes.
+- **Joiners' manual fire works again.** The fire key gives the game's "use selected group" command, not "fire", so
+  the joiner's game never saw it as fire once it read the command queue: the host's copy of the ship held fire.
+
+- **Trusted refits** (host): in the friend refit panel (Ctrl+Shift+R), T trusts that player's refits: from then on they
+  are done as they arrive, without asking. Every check still runs; a refit that fails one waits or is refused as
+  usual. For that connection only: a reconnect asks again.
+- **Arma Armatura and other hull-size changes:** a mech that takes off or lands changes its hull size mid-battle; joiners
+  now get the same size (0.98.5a's setHullSize), so both copies count ships and fighters alike and stop resyncing.
+- **Diable Avionics' Virtuous:** taking a selector hull mod off in a friend's refit steps the ship to the next hull
+  config, weapon kit or head, as Diable's own hull mod does.
+- **Officers for friends** (host): Ctrl+Shift+L on the campaign map links one of your officers to a connected
+  friend. That officer then captains whichever ship the friend picks (the ship's old officer swaps to the one left),
+  and when it can level up the friend picks its skill in the lobby (numbers 1-8, from the game's own choices; the
+  host's game levels it up). A linked officer may level as far as a player character (host setting, on). Save-safe:
+  the link is a plain tag and the cap is the game's own per-officer setting, so saves load fine without Wingman.
+- These four after scardwell15's pull request #1.
+
 ## 0.9.3-beta
 
 Protocol 61. For Starsector 0.98.5a-RC5 only: the game internals Wingman uses were renamed in the update, so it

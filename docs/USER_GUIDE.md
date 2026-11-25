@@ -4,7 +4,7 @@ Co-op for Starsector battles. One player hosts a battle and up to three friends 
 from the host's fleet. Only the battle is shared: the campaign, the fleet and everything won or lost belong
 to the host.
 
-For Starsector **0.98.5a-RC5**. This is a **beta**: expect rough edges, and see
+For Starsector **0.98.5a-RC9**. This is a **beta**: expect rough edges, and see
 [Reporting a problem](#reporting-a-problem) when you hit one.
 
 **Contents**
@@ -29,7 +29,7 @@ For Starsector **0.98.5a-RC5**. This is a **beta**: expect rough edges, and see
 2. Enable **The Wingman Project** in the launcher.
 
 **Everyone needs the same things**
-- The same Starsector build (0.98.5a-RC5).
+- The same Starsector build (0.98.5a-RC9).
 - The same version of this mod as the host.
 - The same mods in the same versions as the host. Interface-only mods marked "utility" may differ. A joiner
   whose mods differ is refused and shown the list of differences.
@@ -65,10 +65,30 @@ and in a campaign friends can connect as soon as you load your save, while you a
    (setting "Reopen the refit screen after a friend's refit"). An accepted refit
    is done as if you had made it yourself: items move between the ship, your cargo and storage, markets are
    paid, story points spent. Whether a hull mod suits the ship is for you to judge.
+   **Weapon groups:** set them on the WEAPON GROUPS row, then press **SET GROUPS NOW**: they go on your ship at
+   once, docked or not, with no yes from the host needed. (Or leave them in your plan and they go with your refit.)
+   **Refit in the game's own screen:** on your ship's refit page press **G**, leave CO-OP (Esc), open Missions >
+   **Wingman: Refit**, click the ship and choose Refit. Refit as in single player, then go back to CO-OP: your
+   changes are on the refit page, ready to check and send. (Don't start that mission; if you do, it ends at once.)
+   **Loadout selectors** (a mod's swappable arms or heads, such as Arma Armatura's strikecraft): they have their
+   own LOADOUT rows on the refit page. Pick an option with Left/Right or a click; the host's game swaps the ship to it.
+   Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
+   **The CO-OP panel** (top right of the map): click a friend for their officer, how their refits are taken
+   (**Look only**, **Ask me**, **Trust**) and any refit of theirs waiting. **CHAT** sits under it. Each has a
+   **-** button that shrinks it to a small tab (click the tab to open it again); with both shrunk, all that is
+   left is one row of tabs: CO-OP (players), CHAT (new lines), and REFITS or WISH LISTS when something waits
+   there. **Ctrl+Shift+P** shrinks both at once and, pressed again, puts them back as they were. This is
+   remembered on your PC. The mouse wheel over the chat scrolls back through it.
+   **Officers for friends:** click ASSIGN on a friend or OFFICER LINKS at the bottom of the CO-OP panel, or press **Ctrl+Shift+L** on the campaign
+   map; pick the friend (tabs along the top, or Tab / Shift+Tab) and one of your officers (click a card, or the arrows), and click
+   **LINK** (or press **Enter**). That officer then captains whichever ship the friend picks
+   (the officer already on it swaps over). When it can level up, the friend picks its skill in their lobby: click a
+   skill card and CONFIRM (or press its number twice). Setting "Friends' officers level like a player" lets a linked officer reach a player's max
+   level. Enter again (or Delete) unlinks it and puts its level cap back. Saves load fine without Wingman.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
-   player as loading, choosing a ship, or flying one and ready or not. Press **Enter** to start once everyone
-   is ready, or **Ctrl+Enter** to start without waiting.
+   player as loading, choosing a ship, or flying one and ready or not. Press **Enter** (or click it on the panel)
+   to start once everyone is ready, or **Ctrl+Enter** to start without waiting.
 
 **What only the host can do**
 - Give fleet orders. Joiners see them but cannot give any.
@@ -100,6 +120,11 @@ and in a campaign friends can connect as soon as you load your save, while you a
      the next battle; **Delete** drops your pick. Ships marked *flagship*, *mothballed*, *can't fly* or with
      another player's name can't be picked.
    - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
+   - **PLAYERS** shows each player's round trip to the host (grey is fine, orange slow, red very slow). Under it,
+     **CHAT**: click its line (or **Ctrl+Shift+C**), type, **Enter** sends, **Esc** stops typing; the mouse
+     wheel scrolls back. Everyone in the game sees it, the host under their CO-OP panel.
+   - If the link to the host drops, you are reconnected by yourself as soon as the host can be reached again
+     (setting *Rejoin by myself after a drop*).
    - **Refit:** while the host is docked at a market, the lobby says so, and the card of the ship you picked has
      a **REFIT (R)** button. It opens your ship with what the host has to fit it with: cargo, storage and each
      market there.
@@ -129,7 +154,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
    - Without a lobby pick, if you flew one of these ships last time, you are already seated in it (see
      "Put me back in my last ship" in the settings).
 7. **Step 2 of 2: ready check.** It shows your ship and every player's. Press **Enter** for ready
-   (**Backspace** goes back to step 1 to change ship). The battle starts when the host presses Enter.
+   (**Backspace** goes back to step 1 to change ship); the keys on the panel can be clicked too. The battle starts
+   when the host presses Enter.
 
 **When the battle ends** you go straight back to the lobby (the game's own mission results, which only know your
 copy of the battle, are skipped), still connected, and it opens on **LAST BATTLE**: the host's report of the battle.
@@ -220,7 +246,12 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Lobby (joiner, title screen) | Tab | Switch between the fleet and the last battle's report |
 | Lobby (joiner, title screen) | R | Refit the ship you picked (while the host is docked at a market) |
 | Refit screen (joiner) | Mouse (keys also: Up/Down, Left/Right, Enter, Delete, B, S, Z, Ctrl+Enter) | Click a ring or tile, then a card; buttons for the rest; the wheel scrolls |
-| Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D) | Friends' refits: accept / deny |
+| Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D), T | Friends' refits: accept / deny; trust that friend |
+| Campaign map (host) | **Ctrl+Shift+L** | Officer links: give a friend one of your officers |
+| Campaign map (host), lobby (joiner) | **Ctrl+Shift+C** | Chat: start typing (Enter sends, Esc stops typing) |
+| Campaign map (host) | **Ctrl+Shift+P** | Shrink the CO-OP panel and chat to tabs; again: back as they were |
+| Officer links, friend refits, wish lists | F1 | The keys on that page |
+| Lobby (joiner, title screen) | 1 to 8 | Pick your officer's next skill (when it can level up) |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
 | Step 1, choose your ship (joiner) | Up / Down, Enter or F, W | Choose a ship; take it; go without one (watch) |
 | Step 2, ready check (joiner) | Enter / Backspace | Ready / not ready; back to step 1 to change ship |
@@ -230,6 +261,12 @@ start **Wingman: Join Game** instead. It does the same thing.
 
 ---
 
+Wingman's keys that work outside its pages (settings, chat, officer links, friend refits, wish lists, player
+tags, the host's take-back and remove) can be changed in **Settings, Keys**, in case another mod uses the same.
+The table shows the defaults. **F1** or the **?** button on the officer links, friend refits and wish list pages
+(and **?** on the CO-OP panel) lists the keys there. Outside battles, everything can also be done with the mouse;
+the ready check before a battle takes clicks too.
+
 ## 6. Settings
 
 Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle or on the campaign map.
@@ -238,8 +275,8 @@ Open with **F3** in the CO-OP panel, or **Ctrl+Shift+O** during a battle or on t
 - **Delete** puts a setting back to its default.
 - Text settings (password, port) are typed directly; Backspace deletes.
 - Changes are saved as you make them. A `*` marks a setting you have changed.
-- Each line says who it matters to: **[host]**, **[joiner]** or **[both]**. A "both" setting must be set
-  on both PCs.
+- Each line says who it matters to: **[host]**, **[joiner]**, **[both]** or **[this PC]**. A "both" setting must be
+  set on both PCs; a "this PC" setting changes only your own screen, at once.
 - In a battle, the page says whether a change takes effect now or from the next battle.
 
 You do not need to change anything to play. The defaults aim for the smoothest picture.
@@ -260,6 +297,18 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 | Friends can connect on the campaign map | on | Friends connect as soon as you load a save, see your fleet and pick their ships. Off: only once a battle starts. |
 | Mod list check | content | content: mods must match except utility mods. all: every mod. off: no check. |
 | Port | 24816 | Must be the same for everyone. |
+
+### Interface
+| Setting | Default | What it does |
+|---|---|---|
+| Size of Wingman's pages and panels | 1 | 0.75 to 2, on top of the game's own UI scaling. Bigger for a 4K screen. A size bigger than the screen has room for is used as the biggest that fits (1.5 at 1920 x 1080, 1 at 1280 x 720). 1280 x 720 is the smallest screen supported. |
+| Player colours | standard | colorblind: colours told apart with any kind of colour blindness. The P number is always shown with them. |
+| Ping in battle | mine | mine: your round trip to the host at the top of the screen (orange or red when slow, SPIKE when it jumps). everyone: every player's. off. |
+| Rejoin by myself after a drop | on | Joiner: if the link drops while you are in the lobby, you are reconnected as soon as the host can be reached (for 10 minutes). Not after the host removed you. |
+
+### Keys
+Each of Wingman's keys that work outside its pages. Press **Enter** (or click the row) and then the new key,
+with any Ctrl, Shift or Alt. **Delete** puts it back. A key used twice is pointed out.
 
 ### Smoothness
 | Setting | Default | What it does |
@@ -540,5 +589,5 @@ battle with a `Co-op:` message and the game keeps running.
 - Wrecks stay whole by default (host setting "Wrecks stay whole"), so every screen shows the same wrecks. With it
   off, wrecks break up as normal, at the same moment everywhere, but a break line can come out a little
   different on a joiner's screen.
-- Starting the battle from the CO-OP panel relies on game internals of 0.98.5a-RC5. If a game update breaks
+- Starting the battle from the CO-OP panel relies on game internals of 0.98.5a-RC9. If a game update breaks
   it, the Wingman: Join Game mission still works.

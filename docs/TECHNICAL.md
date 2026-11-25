@@ -111,7 +111,13 @@ connect timeout) if they load, else NIO channels (`ChannelIO`), which use no `ja
   first byte, for life. Joiner-side links take up to 4 MB.
 - **Dead link:** nothing heard for 12 s (`HostSession.LINK_TIMEOUT_MS`), checked by `HostSession.pump()` and
   `ClientLink.getState()`.
-- **Taps:** `Conn.Tap` sees messages on the reader thread first; `ClientLink` uses it for the UDP plumbing.
+- **Taps:** `Conn.Tap` sees messages on the reader thread first; `ClientLink` uses it for the UDP plumbing, and
+  to read `PINGS`, `CHAT` and `REJECT` wherever the joiner is (title screen or battle).
+- **Round trip:** once `measureLatency()` is called (the host on each welcomed joiner, the joiner on its link),
+  the writer sends `ECHO` (its clock, 8 bytes) every 2 s, ahead of whatever is queued but never reordering it;
+  the other side's reader thread answers `ECHO_BACK` at once. `rttMs()` is smoothed (0.7 old, 0.3 new); an
+  echo more than 4.5 s overdue counts as that long, so a stalled link reads slow before it times out.
+  `worstRecentMs()` is the worst of the last five (10 s), for spikes.
 
 ### 4.3 Compression (`Zip`)
 
@@ -174,7 +180,7 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 60 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 63 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -237,6 +243,9 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 63 | REFIT_ASK | joiner → host | the fleet member whose refit screen the joiner opened (≤ 64 characters; "" closed it; the last one counts; 6.8) |
 | 65 | REFIT_REQUEST | joiner → host | the refit wanted (`RefitRequest`, 6.8): member id, note (≤ 160), changes (≤ 200: slot or bay, item, from, to), hull mods added / removed / built in (≤ 100 each), vents, capacitors, the credits and story points shown; ≤ 64 KB; the last one counts |
 | 66 | REFIT_RESULT | host → joiner | what became of it (`RefitResult`): received, accepted, denied, refused, withdrawn; text ≤ 1,000 (lines) |
+| 73 / 74 | ECHO / ECHO_BACK | both | the sender's clock (ms); answered by the connection itself, never reaches the game (4.2) |
+| 75 | PINGS | host → joiners | every 2 s: count, then per joiner its P number and round trip to the host (ms, −1 unknown); `Pings` |
+| 76 | CHAT | both | joiner → host: a line (≤ 200 characters, ≤ 6 per 10 s, control characters dropped). Host → all: P number, name, line; `ChatLog` keeps the last 100 on each PC |
 | 64 | REFIT_DATA | host → joiner | what the refit screen shows (`RefitData`, 6.8): the ship (weapons by slot ≤ 160, bays ≤ 20, hull mods, S-mods, permanent mods ≤ 600 each; OP, vents, capacitors and S-mods with their limits), credits, story points, cargo, storage, submarkets (≤ 8: name, tariff, usable or why not, stock, what each won't sell or buy), known hull mods (≤ 600), base values (≤ 2,000); ≤ 300 items per list |
 
 ### 4.7 Steady controls (`InputBuffer`, host setting `steadyControls`, off by default)
@@ -249,10 +258,14 @@ lurch. With it:
   TCP) with its own clock and the two sets before it (`ClientLink.sentSets`), so a lost datagram is made good by
   the next without a resend.
 - The host queues sets by number (copies and old ones dropped, `recovered` counted), learns the usual lateness
-  (quickest arrival = base, over two 3 s windows) and its spread (the jitter, capped at 120 ms), and plays each set
-  at its joiner time + base + jitter: a small steady delay instead of an uneven one.
-- One set a frame while on time, so a tap lasts at least a frame. More than the allowance behind (the host
-  hitched): skips to the newest due (`skipped`). Nothing for a second: starts over.
+  (quickest arrival = base, over two 2 s windows) and the allowance: the 90th percentile of the last two seconds'
+  lateness + 4 ms, at most 80 ms (0.9.3: the largest lateness in the window, up to 120 ms, so one late datagram
+  raised everyone's delay for seconds). Each set plays at its joiner time + base + allowance.
+- The allowance moves gently toward its target: up at most 4 ms a frame, down at most 1 ms a frame. (0.9.3 jumped
+  when a window rolled over, which made a burst of sets due at once: the "skipped to catch up" in the logs.)
+- One set a frame while on time, so a tap lasts at least a frame; more than two frames behind, two a frame until
+  caught up; more than the allowance + 100 ms behind (the host hitched): skips to the newest due (`skipped`).
+  Nothing for a second: starts over.
 - Edge presses (system, retreat) are counts in the controls, so nothing here can lose or double them.
 - The traffic line in the log adds per player: sets played, the delay added, sets made good from copies, skips.
 
@@ -291,8 +304,11 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   of flight), at least every two refresh intervals.
 - **Wrecks** are sent when knocked off course (3 units, 2°) or every ~4 s.
 - **Rate** (`snapshotRate`, default 30/s; measured with `SyncBench`, 30 is as smooth as 60 and smoother over an
-  uneven link, at about two thirds of the bytes): when a link refuses an update, the next is full and the rate drops to
-  two thirds (not below 8); after 5 clean seconds it climbs back by a fifth of the setting.
+  uneven link, at about two thirds of the bytes): the rate stays put when one player's link backs up. That player
+  gets a limit of their own (`Budget.choked`: 70% of what their updates needed, at least 6 KB/s) and their next
+  update is in full; from then their updates are trimmed by priority (5.4), what matters least to them waiting.
+  The limit rises by a quarter every 5 clean seconds and is dropped once it is 1.5x what the battle needs. (0.9.3
+  dropped everyone's rate to two thirds instead.) The old rate drop remains only for the old format.
 
 ### 5.3 The compact form (`SnapshotCodec`)
 
@@ -327,7 +343,15 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   costs nothing measurable. At `CARRY` (30) quiet updates in a row an entity must be sent, or is forgotten by both ends. The
   decoder hands the game every entity it holds, sent or carried; ids the joiner no longer has are passed over.
   It refuses an update that would leave it holding over 30,000 ships or missiles.
-- **Per-player encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
+- **Packed once, sent to many** (`HostSession.plan`). Players who share an encoder (the same remembered updates)
+  and are to get an update built on the same one get the very same bytes, packed once. Keys taken at the same tick
+  share a new encoder (new epoch); the periodic TCP keys stay on each player's own count, never all at once (keys are
+  big, and together they would be a spike on the host's upload); UDP players on one encoder are built on an update all of them have acknowledged (each player's
+  acked ticks are kept, `Player.holds`) if it is at most 6 updates older than their own newest, else that player goes
+  on a copy (`Encoder.copy`: same epoch, the immutable states shared). A player with a bandwidth limit is packed for
+  alone. `test/wingman/net/LaneTest` (3 UDP players with 1-5 updates of delay and 5-15% loss, 2 TCP; 900 updates):
+  every update right, 2,800 packs instead of 4,500, 1% more bytes.
+- **Encoder with history.** `HostSession.Player.encoder` keeps the last 64 states (`HISTORY`), immutable,
   unchanged entities sharing arrays. Over TCP each update is built on the previous; over UDP on the newest tick
   the player acknowledged, if still held. Otherwise a **key** (measured against zeros), always by TCP and taken as
   held at once. Keys also go to new players, after a refused send, on `NEED_KEY`/`SYNC_REQ`, after falling back
@@ -772,8 +796,11 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   slack is used.
 - **Controls** (`captureInput`): movement keys, fire (not in the command screen or paused), shield/phase, system
   uses (a running count; `noteSystemUse`), vent, fighter pull-back, retreat, mouse, target, autofire mask, selected
-  group (`Groups`), heading. Sent on any change up to 60/s and at least 15/s; over UDP a change is sent on the
-  next two frames too. On autopilot only the autopilot flag goes.
+  group (`Groups`), heading. Looked at up to 60/s. A key or button change (anything but the mouse and the
+  heading: `InputState.edgeDiffer`) is sent at once; the mouse and heading alone at most 30/s (the update rate;
+  0.9.3 sent up to 60/s while the mouse moved, the main part of a joiner's upload); at least 15/s. Over UDP a key
+  change is sent once more in the next frame (not with steady controls, whose datagrams carry the two sets
+  before). On autopilot only the autopilot flag goes.
 - **System readiness:** `matchSystemReadiness` copies the host's charges after 1.5 s of disagreement and clears a
   local cooldown the host doesn't have after 1 s; `confirmSystemUse` resends a use once after 0.8 s and logs it if
   the host never responds.
@@ -1493,4 +1520,56 @@ catch is there (private fields, classes named in strings); what it can (direct c
 `agent/test/run.sh` runs the agent's own test, and `agent/test/AgentCheck.java` runs its patcher over whole jars.
 0.98a -> 0.98.5a moved: the objective spec class, the mission and mission-spec classes (now in a package named like
 a class, `title.Object`, so `TitleLauncher` finds them by name), the title menu's class, the launch bay class and
-its five private fields, the message line class, and the teleporter system class.
+its five private fields, the message line class, and the teleporter system class. RC7 -> RC8 also renamed the
+message feed's two ways in (o00000 to super): `tools/GameNames` finds them by their parameters and `build.sh`
+renames MessageSpy's overrides to match. RC8 -> RC9 moved the title menu, the mission and mission-spec classes,
+the objective spec class and the spec store's lookup, the bay's fields (back to RC6's names), the teleporter and
+the fighter wing class; the feed went back to o00000, which the build picks up by itself. To find a renamed class, compare shapes: a class's fields and methods with
+the game's own (non-API) types counted as one, against each class of the new build in the same package.
+
+## UI size, keys and colours (this PC only)
+
+- **Size** (`uiScale`): Wingman's pages and panels are laid out in the screen's size divided by the setting
+  (`Style.sw()`, `sh()`, `mx()`, `my()`, `eventScale()`) and drawn inside `Style.push()` / `pop()`, a GL scale.
+  Pushes nest (only the outermost scales), so a page drawn by a panel drawn by the title screen is scaled once.
+  `Style.u()` is the size in use: a setting above 1 is lowered until the scaled screen is at least 1280 x 720
+  (1.5 at 1920 x 1080, 1 at 1280 x 720), as nothing is laid out for less. Player tags stay on the ships, unscaled.
+  Every page fits at 1280 x 720 at size 1; the joiner's refit page folds its stats once on a short screen
+  (`RefitScreen.compact`), and the lobby chat folds when there is no room. `test/preview` draws every page
+  (`-Dpreview.size=WxH`, `-Dpreview.ui=S`) for a look at each screen size; `-Dpreview.graphics=<starsector-core>` draws
+  the game's own pictures (ships, portraits, skill and weapon icons) where it has them. `docs/showcase` holds such renders.
+- **Keys** (`Keys`): the keys that work outside a page (settings, chat, officer links, friend refits, wish lists,
+  tags, the host's take-back and remove) are kept as text ("Ctrl+Shift+L") under `key.<id>` with the other
+  in-game settings, and matched with exact Ctrl, Shift and Alt. The settings' KEYS page takes the next key
+  pressed. Keys inside an open page stay fixed: a page takes every key while it is up.
+- **Key help** (`KeyHelp`): F1 or "?" on the campaign pages (officer links, friend refits, wish lists), or "?" on
+  the CO-OP panel, draws that page's keys and Wingman's own over it; it closes with F1, Esc, a click, or its page.
+- **The host's campaign corner** (`CampaignPlayerList`): the CO-OP panel and the chat each minimize on their own
+  (`coop.list.min`, `chat.host.open` in `UiState`, a small file in saves/common: this PC's layout, not settings).
+  A minimized one is a tab (`Widgets.tab`) in a row along the top right: CO-OP with the player count, CHAT with
+  the unread count, and REFITS / WISH LISTS chips only while a refit waits or a wish list item is for sale at the
+  market. The `coopPanel` key minimizes both and remembers how they were (`beforeTuck`) to put them back.
+- **Mouse outside combat:** every campaign and lobby page takes clicks for what its keys do. In a battle, only
+  the ready check (paused, before the fight) does: the panel's key chips are hits that run the same code as the
+  key (`readyKey` on a joiner; Enter / Ctrl+Enter on the host). The fight itself stays on keys.
+- **Colours** (`playerColors`): `PlayerTags.color()` reads a second set after Okabe and Ito's palette when
+  `colorblind` is chosen; every P colour is drawn with its P number.
+
+## Chat and round trips
+
+- **Chat** (`ChatBox`, `ChatLog`): one box per PC: the host's under the CO-OP panel (a CHAT tab with the unread
+  count until opened), the joiner's under PLAYERS in the lobby. The wheel over the lines scrolls back through
+  `ChatLog.KEPT` lines; scrolled back, new lines don't move the view, and a "newer below" line returns to the end. Typing starts
+  with a click on its line or the chat key; while typing, every key is the chat's (consumed before the
+  campaign sees it). The host's own lines go out as P1. Nothing in a line is ever acted on.
+- **Round trips** (`Pings`, `PingReadout`): the CO-OP panel and the lobby show each joiner's (grey under 120
+  ms, orange under 220, red past it). In a battle, setting `pingReadout`: "mine" (a joiner's own, at the top,
+  with SPIKE when the worst of the last 10 s is well past the usual), "everyone", or "off".
+
+## Rejoining (`autoRejoin`, joiner, on by default)
+
+On the title screen, a link that drops (and wasn't refused: `ClientLink.refused` holds the host's reason) is
+tried again after 3 s, 5 s, then every 10 s, for 10 minutes, with what was typed into the join form. DISCONNECT
+stops it. The host keeps a returning player's P number (same name, same PC). In a battle the existing reconnect
+(about half a minute) runs first; when it gives up, the title screen carries on.
+

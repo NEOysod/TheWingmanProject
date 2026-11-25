@@ -372,7 +372,22 @@ public final class SnapshotCodec {
     /** Host side. One per player per battle. */
     public static final class Encoder {
         private final State[] ring = new State[HISTORY];
-        private final int epoch = (int) System.nanoTime() ^ (int) (Math.random() * Integer.MAX_VALUE);
+        private final int epoch;
+
+        public Encoder() { this((int) System.nanoTime() ^ (int) (Math.random() * Integer.MAX_VALUE)); }
+
+        private Encoder(int epoch) { this.epoch = epoch; }
+
+        /**
+         * A second packer that remembers exactly what this one does (the same updates, the same epoch), to go its
+         * own way from here: for players who shared this one until now and need different updates next. The
+         * remembered states are never changed once made, so they are shared, not copied.
+         */
+        public Encoder copy() {
+            Encoder e = new Encoder(epoch);
+            System.arraycopy(ring, 0, e.ring, 0, HISTORY);
+            return e;
+        }
         private final int[] cur = new int[SHIP_ALL], guess = new int[SHIP_ALL], rec = new int[SHIP_ALL];
         /** True if the update just packed was one in full. */
         public boolean lastKey;

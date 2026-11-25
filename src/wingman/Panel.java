@@ -143,6 +143,11 @@ final class Panel {
 
     /** The usual box, centred a little above the middle of the screen. */
     void render(String title, List<String> lines, List<Color> colors, String footer) {
+        boolean pushed = Style.push();
+        try { renderScaledLines(title, lines, colors, footer); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaledLines(String title, List<String> lines, List<Color> colors, String footer) {
         render(plain(title, lines, colors, footer));
     }
 
@@ -160,7 +165,12 @@ final class Panel {
     // ---- drawing ----
 
     void render(Doc d) {
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        boolean pushed = Style.push();
+        try { renderScaled(d); } finally { Style.pop(pushed); }
+    }
+
+    private void renderScaled(Doc d) {
+        float sw = Style.sw(), sh = Style.sh();
         draw(d, WIDTH, sw / 2f + WIDTH / 2f, Float.NaN, sh);
     }
 
@@ -169,12 +179,12 @@ final class Panel {
      * the middle is taken by the game's logo and menu, which are drawn over anything of ours.
      */
     void renderBelow(float right, float top, float boxWidth, Doc d) {
-        draw(d, boxWidth, right, top, Global.getSettings().getScreenHeight());
+        draw(d, boxWidth, right, top, Style.sh());
     }
 
     /** In the middle of the screen, but no higher than 'maxTop' (below a screen's header): the co-op screen's windows. */
     void renderCentred(float boxWidth, float maxTop, Doc d) {
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         boxWidth = Math.min(boxWidth, sw - 16f);
         draw(d, boxWidth, sw / 2f + boxWidth / 2f, Float.NaN, sh, maxTop);
     }
@@ -182,6 +192,11 @@ final class Panel {
     private void draw(Doc d, float width, float right, float top, float sh) { draw(d, width, right, top, sh, sh); }
 
     private void draw(Doc d, float width, float right, float top, float sh, float maxTop) {
+        boolean pushed = Style.push();
+        try { drawScaled(d, width, right, top, sh, maxTop); } finally { Style.pop(pushed); }
+    }
+
+    private void drawScaled(Doc d, float width, float right, float top, float sh, float maxTop) {
         if (broken) return;
         try {
             float inner = width - PAD * 2f;
@@ -361,11 +376,16 @@ final class Panel {
      * biggest font is drawn at 3x, and the line under it at its normal size.
      */
     void banner(String word, String sub, Color color) {
+        boolean pushed = Style.push();
+        try { bannerScaled(word, sub, color); } finally { Style.pop(pushed); }
+    }
+
+    private void bannerScaled(String word, String sub, Color color) {
         if (broken) return;
         try {
             LabelAPI big = Style.label(word, Style.BIG_FONT, color, 2000f);
             final float SCALE = 3f;
-            float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+            float sw = Style.sw(), sh = Style.sh();
             float bw = big.computeTextWidth(word) * SCALE, bh = big.getPosition().getHeight() * SCALE;
             boolean hasSub = sub != null && !sub.isEmpty();
             float sub_h = hasSub ? Style.lineHeight(Style.body()) + GAP : 0f;
@@ -393,6 +413,11 @@ final class Panel {
 
     /** The CO-OP button on the title screen: a name and a line under it. */
     void button(float x, float y, float w, float h, String text, String sub, boolean hover) {
+        boolean pushed = Style.push();
+        try { buttonScaled(x, y, w, h, text, sub, hover); } finally { Style.pop(pushed); }
+    }
+
+    private void buttonScaled(float x, float y, float w, float h, String text, String sub, boolean hover) {
         if (broken) return;
         try {
             Style.frame(x, y, w, h, hover ? new Color(14, 26, 38, 235) : new Color(6, 10, 16, 220), hover ? Style.ACCENT : Style.EDGE, 8f);

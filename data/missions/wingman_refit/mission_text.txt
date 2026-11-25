@@ -1,0 +1,8 @@
+Location: the host's fleet
+Date: now
+
+Refit your ship in a friend's fleet with the game's own refit screen.
+
+In CO-OP, pick your ship, open its refit page (R) and press G. Then come here, click the ship and choose Refit. Change what you like: it is saved as you go. Then go back to CO-OP. Your changes are loaded into the ship's refit page, where you see what the host has and what it costs, and send them to the host.
+
+You don't need to start this mission. If you do, it ends at once.

@@ -55,7 +55,9 @@ final class CommandTap implements AdvanceableListener {
             seenAt = System.nanoTime();
             if (cmds == null) return;
             for (ShipCommand c : cmds) {
-                if (c == ShipCommand.FIRE) fire = true;
+                // The fire key gives USE_SELECTED_GROUP (with the cursor) each frame it is held; FIRE is the
+                // plain order (scripts, and older games).
+                if (c == ShipCommand.FIRE || c == ShipCommand.USE_SELECTED_GROUP) fire = true;
                 else if (c == ShipCommand.VENT_FLUX) vent = true;
             }
         } catch (Throwable t) {

@@ -87,6 +87,20 @@ public final class InputState {
     }
 
     /**
+     * True if two encoded sets differ in anything but the mouse, the heading, the round trip and the number: a
+     * key or button pressed or let go, another group, target or autofire, a counted press. Those are sent at once;
+     * the mouse and the heading alone at most 30 times a second.
+     */
+    public static boolean edgeDiffer(byte[] a, byte[] b) {
+        if (a == null || b == null || a.length != b.length) return true;
+        // layout: rtt 0, flags 1-2, mouse 3-10, group 11, target 12-15, autofire 16-17, facing 18-21, then the rest, seq last 2
+        for (int i = 1; i < 3; i++) if (a[i] != b[i]) return true;
+        for (int i = 11; i < 18; i++) if (a[i] != b[i]) return true;
+        for (int i = 22; i < a.length - 2; i++) if (a[i] != b[i]) return true;
+        return false;
+    }
+
+    /**
      * For controls that came by UDP, which may arrive out of order or twice: taken only if their number is
      * later than the one held (or what is held has gone stale). Returns true if taken.
      */

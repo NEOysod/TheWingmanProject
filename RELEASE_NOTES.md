@@ -1,4 +1,4 @@
-# The Wingman Project 0.9.3-beta — Release Notes
+# The Wingman Project 0.9.4-beta — Release Notes
 
 **Co-operative multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and
 each fly a ship from the host's fleet, side by side, in real time.
@@ -7,6 +7,40 @@ each fly a ship from the host's fleet, side by side, in real time.
 > what you find (see [Reporting problems](#reporting-problems)).
 
 ---
+
+## New in 0.9.4-beta
+
+The last beta before 1.0: from here on, fixes only.
+
+- **For Starsector 0.98.5a-RC9.** Each hotfix since RC5 renamed game internals Wingman uses; all found again.
+  Everyone needs the same game build and this version (protocol 63: 0.9.3 can't play with it).
+- **The CO-OP panel on the campaign map** (host): click a friend for their linked officer, how their refits are
+  taken (**Look only**, **Ask me**, **Trust**) and any refit of theirs waiting. The panel and the chat under it each
+  shrink to a small tab, so all that's left is one row of tabs in the corner; **Ctrl+Shift+P** tucks both away.
+- **Chat** on the campaign map and in the joiners' lobby, for anyone who'd rather not talk on Discord
+  (**Ctrl+Shift+C**, or click it).
+- **Officers for friends:** link one of your officers to a friend (**Ctrl+Shift+L**, or OFFICER LINKS). It captains
+  whichever ship they pick, and when it can level up they pick its skill from cards in their lobby. Saves load
+  fine without Wingman.
+- **Refits:** the host's friend refit page is redone (each change a row with pictures, cost and checks at the side).
+  Joiners can refit in the game's own refit screen (**G** on the refit page, then the "Wingman: Refit" mission),
+  pick loadout selectors from any mod that has them (Arma Armatura's arms, Diable Avionics' Virtuous), and set
+  weapon groups at once (SET GROUPS NOW). Built-in weapons now show in the weapon groups.
+- **Ping readout** on the CO-OP panel, in the lobby and in battle; **rejoin by itself** after a drop in the lobby.
+- **Interface:** a size setting for Wingman's pages (0.75 to 2, capped to what the screen has room for),
+  colour-blind player colours, keys that can be changed (Settings, Keys), **F1** or **?** lists the keys on a page.
+  Everything outside battles works with the mouse, the ready check too. Checked from 1280 x 720 to 3840 x 2160,
+  and with 32 players (lists scroll).
+- **Network:** joiners upload far less; steady controls add less delay; one slow link no longer slows everyone;
+  updates are packed once for players who share them.
+- **Fixes:** joiners' manual fire; getting back into your ship after a resync; the after-battle report not always
+  updating; joiners not hearing or seeing overloads; menus that could get stuck taking the keys; officer skill
+  pop-ups stuck on the host's screen; a second set of status bars on the host's ship; Arma Armatura mechs' hull
+  size changing mid-battle.
+- Trusted refits, officers for friends and the Arma Armatura / Diable fixes started from scardwell15's pull
+  request. Thanks!
+
+The full list is in CHANGELOG.md on GitHub.
 
 ## New in 0.9.3-beta
 
@@ -104,7 +138,7 @@ each fly a ship from the host's fleet, side by side, in real time.
 
 ## Requirements
 
-- Starsector **0.98a-RC8**. The host and every joiner must run the same game build.
+- Starsector **0.98.5a-RC9**. The host and every joiner must run the same game build.
 - The **same mods, in the same versions**, as the host. Interface-only mods marked "utility" may differ. A
   joiner whose mods differ is refused and shown exactly what differs.
 - A way for friends to reach the host's PC: the same home network, a virtual LAN (Radmin VPN, Tailscale,
@@ -158,7 +192,9 @@ a `Co-op:` message, and the game keeps running.
 3. **Load your save.** Friends can connect while you are still on the campaign map: they see your fleet and pick
    the ship they want to fly, and their picks show in your campaign messages. (Setting "Friends can connect on
    the campaign map", on by default.)
-4. Start any battle. A picked ship that you deploy is that friend's at once. After you deploy, a **ready check**
+4. **The CO-OP panel** (top right of the campaign map) lists who is here: click a friend for their officer and
+   refits. **CHAT** is under it. Each shrinks to a small tab with its **-** button.
+5. Start any battle. A picked ship that you deploy is that friend's at once. After you deploy, a **ready check**
    holds the battle until everyone has chosen a ship and pressed ready. **Enter** starts it; **Ctrl+Enter**
    starts without waiting.
 
@@ -169,7 +205,8 @@ a `Co-op:` message, and the game keeps running.
 2. **The lobby.** Once connected, the **CO-OP LOBBY** fills the screen: the host's fleet with a card for each
    ship (picture, CR, officer, weapons, hull mods), who is here and what they picked. Up/Down and **F** pick the
    ship you want; **Delete** drops your pick; **Tab** shows the last battle's report.
-3. **Stay in the lobby.** When the host's battle begins you are taken into it after a short countdown.
+3. **Stay in the lobby.** When the host's battle begins you are taken into it after a short countdown. CHAT
+   is under PLAYERS. If the link drops, you are reconnected by yourself.
 4. **Step 1: choose your ship.** If the host deployed the ship you picked, you are already in it. Otherwise
    Up/Down and **Enter** or **F** take one, or **W** watches without a ship.
 5. **Step 2: ready.** **Enter** for ready; **Backspace** goes back to step 1 to change ship.
@@ -189,18 +226,25 @@ a `Co-op:` message, and the game keeps running.
 | Who | Key | What it does |
 |---|---|---|
 | Anyone, title screen | Click **CO-OP**, then F1 / F2 / F3 | How-to / mod compatibility report / settings |
-| Anyone, battle | **Ctrl+Shift+O** | Settings |
+| Anyone, battle or campaign map | **Ctrl+Shift+O** | Settings |
+| Anyone, campaign map or lobby | **Ctrl+Shift+C** | Chat |
 | Anyone, battle | **F3** | Hide / show player tags |
 | Joiner, lobby (title screen) | Up / Down, **F**, Delete | Choose a ship in the host's fleet, pick it, drop the pick |
 | Joiner, step 1 | Up / Down, **Enter** or **F**, **W** | Choose a ship, take it, watch without one |
 | Joiner, step 2 | **Enter** / Backspace | Ready / back to step 1 |
 | Host, battle | Enter / Ctrl+Enter | Start after the ready check / start without waiting |
 | Host, battle | Ctrl+Shift+**2–9** | Remove that player (by their P number) |
+| Host, battle | Ctrl+Shift+K | Remove the player flying the ship you have targeted |
 | Host, battle | Ctrl+Shift+T | Take back the ship you have targeted |
+| Host, campaign map | Ctrl+Shift+L / R / W | Officer links / friend refits / wish lists |
+| Host, campaign map | Ctrl+Shift+P | Shrink the CO-OP panel and chat to tabs, and back |
+
+Every key outside a page can be changed (Settings, Keys). On a page, **F1** or **?** lists its keys, and
+everything there works with the mouse too.
 
 ### Settings
 
-Everything can be changed in game: **F3** in the CO-OP panel, or **Ctrl+Shift+O** in a battle. Nothing
+Everything can be changed in game: **F3** in the CO-OP panel, or **Ctrl+Shift+O** in a battle or on the campaign map. Nothing
 needs editing by hand, and every setting has a short explanation on the settings page.
 
 ---
@@ -221,8 +265,8 @@ needs editing by hand, and every setting has a short explanation on the settings
 - Phase cloaks and similar systems slow the whole battle down ("bullet time") for the ship the local player
   flies. A battle has one clock, the host's: joiners don't get that slowdown when they phase, and when the host
   phases the battle slows for everyone.
-- Starting the battle from the CO-OP panel relies on game internals of 0.98a-RC8. If a game update breaks it,
-  the mission **Wingman: Join Game** still works.
+- Starting the battle from the CO-OP panel relies on game internals of 0.98.5a-RC9. Each game hotfix so far has
+  renamed some; until Wingman is updated for a new one, the mission **Wingman: Join Game** still works.
 
 ---
 

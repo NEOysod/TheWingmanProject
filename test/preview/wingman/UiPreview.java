@@ -57,6 +57,103 @@ public class UiPreview {
 
     static FontMetrics fm(Font f) { return g.getFontMetrics(f); }
 
+    /** The game's own pictures, when a copy of starsector-core is named (-Dpreview.graphics=dir): none otherwise. */
+    static final String GFX = System.getProperty("preview.graphics", "");
+    private static final java.util.Map<String, BufferedImage> pics = new java.util.HashMap<String, BufferedImage>();
+    private static final java.util.Map<String, String[]> skillRows = new java.util.HashMap<String, String[]>();
+
+    static BufferedImage pic(String path) {
+        if (GFX.isEmpty() || path == null || path.isEmpty()) return null;
+        if (pics.containsKey(path)) return pics.get(path);
+        BufferedImage b = null;
+        try {
+            File f = new File(GFX, path);
+            BufferedImage r = f.isFile() ? ImageIO.read(f) : null;
+            if (r != null) { // as ARGB, so a tint (RescaleOp) has four bands whatever the file had
+                b = new BufferedImage(r.getWidth(), r.getHeight(), BufferedImage.TYPE_INT_ARGB);
+                Graphics2D gb = b.createGraphics(); gb.drawImage(r, 0, 0, null); gb.dispose();
+            }
+        } catch (Exception e) { b = null; }
+        pics.put(path, b);
+        return b;
+    }
+
+    /** A skill's name and icon from the game's skill_data.csv ({name, icon}), or null. */
+    static String[] skillRow(String id) {
+        if (GFX.isEmpty()) return null;
+        if (skillRows.isEmpty()) {
+            try {
+                String all = new String(java.nio.file.Files.readAllBytes(new File(GFX, "data/characters/skills/skill_data.csv").toPath()), "UTF-8");
+                List<String> c = new ArrayList<String>(); StringBuilder b = new StringBuilder(); boolean q = false, head = true;
+                for (int i = 0; i <= all.length(); i++) { // quoted fields may hold commas and line breaks
+                    char ch = i < all.length() ? all.charAt(i) : '\n';
+                    if (ch == '"') { if (q && i + 1 < all.length() && all.charAt(i + 1) == '"') { b.append('"'); i++; } else q = !q; }
+                    else if (ch == ',' && !q) { c.add(b.toString()); b.setLength(0); }
+                    else if ((ch == '\n') && !q) {
+                        c.add(b.toString().trim()); b.setLength(0);
+                        if (!head && c.size() > 12 && !c.get(0).isEmpty()) skillRows.put(c.get(0), new String[] { c.get(1), c.get(12) });
+                        head = false; c = new ArrayList<String>();
+                    } else if (ch != '\r' || q) b.append(ch);
+                }
+            } catch (Exception e) { skillRows.put("", new String[0]); }
+        }
+        return skillRows.get(id);
+    }
+
+    /** Vanilla weapons' turret pictures, by the names the preview uses. */
+    static String weaponSprite(String name) {
+        String[][] m = { { "Heavy Autocannon", "heavy_autocannon" }, { "Heavy Mauler", "assault_chaingun" }, { "Light Mortar", "light_mortar" },
+            { "Mark IX Autocannon", "heavy_assault_cannon" }, { "Arbalest Autocannon", "arbalest" }, { "Gauss Cannon", "gauss_cannon" },
+            { "Heavy Needler", "flechette_heavy" }, { "Hypervelocity Driver", "hypervelocity_driver" }, { "Hellbore Cannon", "hellbore_cannon" },
+            { "Mjolnir Cannon", "mjolnir" }, { "Hephaestus Assault Gun", "hephaestus" }, { "Devastator Cannon", "devastator" } };
+        for (String[] x : m) if (x[0].equals(name)) return "graphics/weapons/" + x[1] + "_turret_base.png";
+        return null;
+    }
+
+    /** A SpriteAPI drawing a picture into the preview (size, colour and alpha; no rotation). */
+    static Object sprite(final String path) {
+        final BufferedImage b = pic(path);
+        if (b == null) return null;
+        final float[] st = { b.getWidth(), b.getHeight(), 1f, 0f }; // width, height, alpha, angle
+        final Color[] col = { Color.WHITE };
+        return proxy(com.fs.starfarer.api.graphics.SpriteAPI.class, new InvocationHandler() {
+            public Object invoke(Object p, Method m, Object[] a) {
+                String n = m.getName();
+                if (n.equals("getWidth")) return st[0];
+                if (n.equals("getHeight")) return st[1];
+                if (n.equals("getTextureWidth") || n.equals("getTextureHeight")) return 1f;
+                if (n.equals("setSize")) { st[0] = (Float) a[0]; st[1] = (Float) a[1]; return null; }
+                if (n.equals("setWidth")) { st[0] = (Float) a[0]; return null; }
+                if (n.equals("setHeight")) { st[1] = (Float) a[0]; return null; }
+                if (n.equals("setAlphaMult")) { st[2] = (Float) a[0]; return null; }
+                if (n.equals("getAlphaMult")) return st[2];
+                if (n.equals("setAngle")) { st[3] = (Float) a[0]; return null; }
+                if (n.equals("getAngle")) return st[3];
+                if (n.equals("setColor")) { col[0] = (Color) a[0]; return null; }
+                if (n.equals("getColor")) return col[0];
+                if (n.equals("renderAtCenter")) { draw(b, (Float) a[0] - st[0] / 2f, (Float) a[1] - st[1] / 2f, st[0], st[1], st[2], col[0]); return null; }
+                if (n.equals("render")) { draw(b, (Float) a[0], (Float) a[1], st[0], st[1], st[2], col[0]); return null; }
+                return zero(m.getReturnType());
+            }
+        });
+    }
+
+    private static void draw(BufferedImage b, float x, float y, float w, float h, float alpha, Color c) {
+        Point2D.Float tl = GL11.toImage(x, y + h), br = GL11.toImage(x + w, y);
+        float a = alpha * c.getAlpha() / 255f;
+        if (a <= 0f) return;
+        BufferedImage src = b;
+        if (c.getRed() != 255 || c.getGreen() != 255 || c.getBlue() != 255) {
+            float[] k = { c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, 1f };
+            src = new java.awt.image.RescaleOp(k, new float[4], null).filter(b, null);
+        }
+        java.awt.Composite old = g.getComposite();
+        g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, Math.min(1f, a)));
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.drawImage(src, Math.round(tl.x), Math.round(tl.y), Math.round(br.x - tl.x), Math.round(br.y - tl.y), null);
+        g.setComposite(old);
+    }
+
     /** A label: wraps to its width, draws at its location (bottom left, y up). */
     static LabelAPI label(final String text0, final String fontName) {
         final Font font = font(fontName);
@@ -144,6 +241,7 @@ public class UiPreview {
             public Object invoke(Object p, Method m, Object[] a) {
                 String n = m.getName();
                 if (n.equals("getWeaponName") || n.equals("getWeaponId")) return id;
+                if (n.equals("getTurretSpriteName") || n.equals("getHardpointSpriteName")) return weaponSprite(id);
                 if (n.equals("getSize")) return com.fs.starfarer.api.combat.WeaponAPI.WeaponSize.MEDIUM;
                 if (n.equals("getMountType") || n.equals("getType")) return com.fs.starfarer.api.combat.WeaponAPI.WeaponType.BALLISTIC;
                 if (n.equals("getPrimaryRoleStr")) return "Anti armor";
@@ -176,7 +274,24 @@ public class UiPreview {
                 if (n.equals("getMouseY")) return (int) mouseY;
                 if (n.equals("getString") && "defaultFont".equals(a[0])) return "graphics/fonts/insignia15LTaa.fnt";
                 if (n.equals("createLabel")) return label((String) a[0], (String) a[1]);
+                if (n.equals("getSprite") && a != null && a.length == 1) return sprite((String) a[0]);
+                if (n.equals("loadTexture")) return null;
                 if (n.equals("getWeaponSpec")) return fakeWeapon((String) a[0]);
+                if (n.equals("getSkillSpec")) {
+                    final String id = (String) a[0];
+                    return proxy(com.fs.starfarer.api.characters.SkillSpecAPI.class, new InvocationHandler() {
+                        public Object invoke(Object p2, Method m2, Object[] a2) {
+                            String n2 = m2.getName();
+                            String[] row = skillRow(id);
+                            if (n2.equals("getName") && row != null && row.length > 1) return row[0];
+                            if (n2.equals("getSpriteName")) return row != null && row.length > 1 ? row[1] : null;
+                            if (n2.equals("getName")) { String[] w = id.split("_"); StringBuilder b = new StringBuilder(); for (String x : w) b.append(b.length() == 0 ? "" : " ").append(Character.toUpperCase(x.charAt(0))).append(x.substring(1)); return b.toString(); }
+                            if (n2.equals("getGoverningAptitudeName")) return "Combat";
+                            if (n2.equals("getDescription")) return "Improves how the ship fights in this area. More effective at the elite level.";
+                            return zero(m2.getReturnType());
+                        }
+                    });
+                }
                 if (n.equals("getDescription")) {
                     com.fs.starfarer.api.loading.Description d = new com.fs.starfarer.api.loading.Description((String) a[0], (com.fs.starfarer.api.loading.Description.Type) a[1]);
                     d.setText1("A heavy, slow-firing cannon that trades rate of fire for raw punch. Its high-explosive shells crack armor plating that lighter guns barely scratch, though it struggles against shields.");
@@ -194,6 +309,7 @@ public class UiPreview {
                             String n2 = m2.getName();
                             if (n2.equals("getWeaponId")) return w;
                             if (n2.equals("getWeaponName")) return w;
+                            if (n2.equals("getTurretSpriteName") || n2.equals("getHardpointSpriteName")) return weaponSprite(w);
                             if (n2.equals("getAIHints")) return java.util.EnumSet.noneOf(com.fs.starfarer.api.combat.WeaponAPI.AIHints.class);
                             return zero(m2.getReturnType());
                         }
@@ -234,6 +350,14 @@ public class UiPreview {
             if (!only.isEmpty() && !s.name.contains(only)) continue;
             W = s.w; H = s.h;
             mouseX = s.mx; mouseY = s.my;
+            String size = System.getProperty("preview.size", Boolean.getBoolean("preview.p720") ? "1280x720" : "");
+            if (!size.isEmpty()) { // every screen at one screen size (the mouse kept at the same place relative to it)
+                int nw = Integer.parseInt(size.split("x")[0]), nh = Integer.parseInt(size.split("x")[1]);
+                mouseX = mouseX < 0 ? mouseX : mouseX * nw / W; mouseY = mouseY < 0 ? mouseY : mouseY * nh / H;
+                W = nw; H = nh;
+            }
+            String ui = System.getProperty("preview.ui", "");
+            if (!ui.isEmpty()) Style.ui = Float.parseFloat(ui);
             setUp();
             backdrop();
             try { s.draw.run(); } catch (Throwable t) { t.printStackTrace(); }

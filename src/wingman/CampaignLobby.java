@@ -63,6 +63,7 @@ final class CampaignLobby implements EveryFrameScript {
             }
             for (String line : WingmanAPI.pump()) say("Co-op: " + line);
             handlePicks(s, cfg, true);
+            OfficerLinks.afterScreen(); // the fleet view refreshed after an officer moved under an open screen
             FriendRefit.advance(s, cfg);
             WishList.advance(s);
             FriendRefit.applyWaiting();
@@ -71,6 +72,8 @@ final class CampaignLobby implements EveryFrameScript {
             if (s.getPlayers().isEmpty()) return;
             if (now - lastBuilt < 1000) return; // the fleet is looked at once a second, not every frame
             lastBuilt = now;
+            String levelled = OfficerLinks.levelUps(s); // friends' linked officers: level-ups offered, picks applied
+            if (levelled != null) say("Co-op: " + levelled);
             Roster r = build(s, cfg, 0);
             String key = signature(r);
             if (key.equals(lastSentKey) && now - lastSent < 5000) return;
@@ -164,6 +167,8 @@ final class CampaignLobby implements EveryFrameScript {
             }
             WingmanAPI.reserveShip(p.name, want);
             if (onMap) say("Co-op: " + p.name + " picked " + label(m) + ".");
+            String moved = OfficerLinks.follow(p.name, m); // their linked officer takes command of it
+            if (moved != null && onMap) say("Co-op: " + moved);
         }
         return any;
     }

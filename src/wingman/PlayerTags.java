@@ -54,18 +54,44 @@ final class PlayerTags {
         boolean took = false;
         if (events == null) return false;
         for (com.fs.starfarer.api.input.InputEventAPI e : events) {
-            if (e.isConsumed() || !e.isKeyDownEvent() || e.getEventValue() != 61 || e.isCtrlDown() || e.isShiftDown() || e.isAltDown()) continue;
+            if (!Keys.is("tags", e)) continue;
             e.consume();
             hidden = !hidden;
             took = true;
-            Ui.say(engine, hidden ? "Co-op: player tags hidden (F3 shows them)." : "Co-op: player tags shown (F3 hides them).");
+            Ui.say(engine, hidden ? "Co-op: player tags hidden (" + Keys.name("tags") + " shows them)." : "Co-op: player tags shown (" + Keys.name("tags") + " hides them).");
         }
         return took;
     }
     private boolean broken;
 
+    /**
+     * The colour-blind set (setting playerColors): after Okabe and Ito's palette, brightened for a dark screen, so any
+     * two of the first eight differ in lightness as well as hue; the next eight are paler ones of the same.
+     */
+    private static final Color[] COLORBLIND = {
+        new Color(240, 228, 66),   // P1: yellow
+        new Color(86, 180, 233),   // P2: sky blue
+        new Color(230, 159, 0),    // P3: orange
+        new Color(245, 245, 245),  // P4: white
+        new Color(204, 121, 167),  // P5: reddish purple
+        new Color(0, 200, 150),    // P6: bluish green
+        new Color(235, 100, 40),   // P7: vermilion
+        new Color(90, 140, 255),   // P8: blue
+        new Color(250, 240, 150),  // P9: pale yellow
+        new Color(160, 215, 245),  // P10: pale sky
+        new Color(245, 200, 110),  // P11: pale orange
+        new Color(170, 170, 170),  // P12: grey
+        new Color(230, 175, 205),  // P13: pale purple
+        new Color(120, 230, 200),  // P14: pale green
+        new Color(245, 160, 120),  // P15: pale vermilion
+        new Color(160, 185, 255),  // P16: pale blue
+    };
+    /** Use the colour-blind set (setting playerColors, this PC only). */
+    static volatile boolean colorblind;
+
     static Color color(int slot) {
-        return slot >= 1 ? COLORS[(slot - 1) % COLORS.length] : COLORS[COLORS.length - 1]; // past P16 the colours come round again
+        Color[] set = colorblind ? COLORBLIND : COLORS;
+        return slot >= 1 ? set[(slot - 1) % set.length] : set[set.length - 1]; // past P16 the colours come round again
     }
 
     /**

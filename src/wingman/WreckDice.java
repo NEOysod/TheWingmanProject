@@ -25,7 +25,8 @@ final class WreckDice {
     private WreckDice() {}
 
     private static final String CLASS = "com.fs.starfarer.util.Tesselator";
-    private static final String FIELD = "\u00d500000";
+    /** The field's name by game build, newest first: 0.98.5a-RC6 "class", RC5 "\u00d500000". */
+    private static final String[] FIELDS = { "class", "\u00d500000" };
     private static final long MULT = 0x5DEECE66DL, ADD = 0xBL, MASK = (1L << 48) - 1;
 
     /** java.util.Random's own algorithm, with its state in the open. */
@@ -72,8 +73,16 @@ final class WreckDice {
                 MethodHandle pli = MethodHandles.lookup().findStatic(MethodHandles.class, "privateLookupIn",
                         java.lang.invoke.MethodType.methodType(MethodHandles.Lookup.class, Class.class, MethodHandles.Lookup.class));
                 MethodHandles.Lookup l = (MethodHandles.Lookup) pli.invoke(c, MethodHandles.lookup());
-                getter = l.findStaticGetter(c, FIELD, Random.class);
-                setter = l.findStaticSetter(c, FIELD, Random.class);
+                NoSuchFieldException missing = null;
+                for (String f : FIELDS) {
+                    try {
+                        MethodHandle g = l.findStaticGetter(c, f, Random.class);
+                        setter = l.findStaticSetter(c, f, Random.class);
+                        getter = g;
+                        break;
+                    } catch (NoSuchFieldException e) { missing = e; }
+                }
+                if (getter == null) throw missing;
             }
             Object now = getter.invoke();
             if (now instanceof Dice) return (Dice) now;

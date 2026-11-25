@@ -1,0 +1,228 @@
+package wingman;
+
+import java.awt.Color;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.lwjgl.input.Mouse;
+
+import com.fs.starfarer.api.Global;
+import com.fs.starfarer.api.graphics.SpriteAPI;
+
+/**
+ * Small drawing pieces shared by the campaign-map pages (the CO-OP panel, officer links, friend refits) and the
+ * lobby's level-up cards: what was drawn where for clicks, toggle rows, portraits and skill icons. Plain GL through
+ * Style; nothing of the game's own UI.
+ */
+final class Widgets {
+    private Widgets() {}
+
+    static final Color CARD = new Color(14, 30, 48, 235);
+    static final Color CARD_ON = new Color(18, 48, 74, 240);
+    static final Color CARD_EDGE = new Color(34, 64, 90, 255);
+    static final Color ELITE = new Color(240, 197, 90);
+    static final Color BACKDROP = new Color(2, 6, 12, 140);
+
+    /** What was drawn where this frame, for the next frame's clicks: the topmost thing under the mouse wins. */
+    static final class Hits {
+        private final List<float[]> rects = new ArrayList<float[]>();
+        private final List<String> ids = new ArrayList<String>();
+        private boolean wasDown;
+
+        void clear() { rects.clear(); ids.clear(); }
+
+        /** A place that can be clicked ("" for one that only keeps clicks off the map under it). */
+        void add(float x, float y, float w, float h, String id) {
+            rects.add(new float[] { x, y, w, h });
+            ids.add(id == null ? "" : id);
+        }
+
+        /** What is under the point, "" for a part of the panel that does nothing, or null for nothing of ours. */
+        String at(float mx, float my) {
+            for (int i = rects.size() - 1; i >= 0; i--) {
+                float[] r = rects.get(i);
+                if (mx >= r[0] && mx <= r[0] + r[2] && my >= r[1] && my <= r[1] + r[3]) return ids.get(i);
+            }
+            return null;
+        }
+
+        boolean over(float mx, float my) { return at(mx, my) != null; }
+
+        boolean empty() { return rects.isEmpty(); }
+
+        /** A new left click this frame on something of ours (as drawn last frame): its id, else null. */
+        String clicked() {
+            boolean down;
+            try { down = Mouse.isButtonDown(0); } catch (Throwable t) { down = false; }
+            String out = null;
+            if (down && !wasDown) out = at(Style.mx(), Style.my());
+            wasDown = down;
+            return out == null || out.isEmpty() ? null : out;
+        }
+    }
+
+    static boolean over(float x, float y, float w, float h) { return Style.over(x, y, w, h); }
+
+    static void click() {
+        try { Global.getSoundPlayer().playUISound("ui_button_pressed", 1f, 1f); } catch (Throwable t) { /* silent is fine */ }
+    }
+
+    /** A small labelled box (a tab, a toggle, a button); lit when on, brighter under the mouse. */
+    static void box(float x, float y, float w, float h, String text, Color c, boolean on) {
+        boolean over = over(x, y, w, h);
+        Style.fill(x, y, w, h, on ? Style.alpha(c, 70) : over ? Style.alpha(c, 34) : Style.alpha(c, 12));
+        Style.outline(x, y, w, h, on ? c : over ? Style.alpha(c, 200) : Style.alpha(c, 90));
+        String t = text.toUpperCase();
+        float tw = Math.min(w - 6f, Style.width(t, Style.SMALL_FONT)), th = Style.lineHeight(Style.SMALL_FONT);
+        Style.text(t, Style.SMALL_FONT, on || over ? Color.WHITE : Style.alpha(c, 230), x + (w - tw) / 2f, y + (h + th) / 2f, w);
+    }
+
+    /** A square minimize button (a short bar in a box), brighter under the mouse. */
+    static void minimizeBox(float x, float y, float s) {
+        boolean over = over(x, y, s, s);
+        Style.fill(x, y, s, s, over ? Style.alpha(Style.ACCENT, 60) : Style.alpha(Style.ACCENT, 14));
+        Style.outline(x, y, s, s, over ? Style.ACCENT : Style.alpha(Style.ACCENT, 110));
+        float bw = Math.max(6f, s * 0.45f);
+        Style.fill(x + (s - bw) / 2f, y + s * 0.3f, bw, 2f, over ? Color.WHITE : Style.alpha(Style.ACCENT, 230));
+    }
+
+    /**
+     * A small tab, its right edge at 'right' and its top at 'top': a word and, if any, a count in its own colour (a
+     * minimized panel, or something waiting). Returns its left edge.
+     */
+    static float tab(float right, float top, float h, String word, String count, Color countColor, boolean pulse, Hits hits, String id) {
+        float lw = Style.width(word, Style.SMALL_FONT), cw = count.isEmpty() ? 0f : Style.width(count, Style.SMALL_FONT);
+        float w = 14f + lw + (count.isEmpty() ? 0f : 8f + cw) + 12f;
+        float x = right - w, y = top - h;
+        boolean over = over(x, y, w, h);
+        Style.frame(x, y, w, h, over ? new Color(16, 34, 54, 240) : new Color(6, 12, 20, 228), pulse ? countColor : over ? Style.ACCENT : Style.EDGE, 5f);
+        Style.fill(x + 1f, y + 1f, 3f, h - 2f, Style.ACCENT);
+        float ty = y + (h + Style.lineHeight(Style.SMALL_FONT)) / 2f;
+        Style.text(word, Style.SMALL_FONT, over ? Color.WHITE : Style.ACCENT, x + 12f, ty, lw + 4f);
+        if (!count.isEmpty()) Style.text(count, Style.SMALL_FONT, countColor, x + 12f + lw + 8f, ty, cw + 4f);
+        if (hits != null) hits.add(x, y, w, h, id);
+        return x;
+    }
+
+    /** A row of toggles across 'w', one lit; returns their x positions (left of each, then the right edge). */
+    static float[] toggles(String[] names, int on, float x, float y, float w, float h, Color c, Hits hits, String id) {
+        float[] at = new float[names.length + 1];
+        float each = w / names.length;
+        for (int i = 0; i < names.length; i++) {
+            float bx = x + i * each;
+            at[i] = bx;
+            box(bx, y, each - (i < names.length - 1 ? 2f : 0f), h, names[i], c, i == on);
+            if (hits != null) hits.add(bx, y, each - 2f, h, id + ":" + i);
+        }
+        at[names.length] = x + w;
+        return at;
+    }
+
+    /**
+     * Tabs in a row (one per player, say) that scroll left and right when they don't all fit: arrows at the ends
+     * (ids id+":left", id+":right"), the whole strip id+":strip" (for the wheel), each tab id+":"+index. 'first' is
+     * the first tab shown; the one active is always brought into view. Returns the first tab shown now.
+     */
+    static int tabStrip(List<String> names, List<Color> colors, int active, int first, float x, float y, float w, float h, Hits hits, String id) {
+        int n = names.size();
+        if (n == 0) return 0;
+        float[] tw = new float[n];
+        float total = 0f;
+        for (int i = 0; i < n; i++) { tw[i] = Style.width(names.get(i).toUpperCase(), Style.SMALL_FONT) + 24f; total += tw[i] + 6f; }
+        hits.add(x, y, w, h, id + ":strip");
+        float aw = h, avail = w;
+        boolean scrolls = total - 6f > w;
+        if (scrolls) avail = w - 2f * (aw + 6f);
+        first = Math.max(0, Math.min(first, n - 1));
+        if (!scrolls) first = 0;
+        else {
+            if (active < first) first = active;
+            while (first < active && span(tw, first, active) > avail) first++;
+            while (first > 0 && span(tw, first - 1, n - 1) <= avail) first--; // no empty room at the end
+        }
+        float tx = scrolls ? x + aw + 6f : x;
+        int last = first - 1;
+        for (int i = first; i < n; i++) {
+            if (tx + tw[i] > (scrolls ? x + w - aw - 6f : x + w) + 0.5f) break;
+            box(tx, y, tw[i], h, names.get(i), colors.get(i), i == active);
+            hits.add(tx, y, tw[i], h, id + ":" + i);
+            tx += tw[i] + 6f;
+            last = i;
+        }
+        if (scrolls) {
+            boolean left = first > 0, right = last < n - 1;
+            box(x, y, aw, h, left ? "<" : "", left ? Style.ACCENT : Style.FAINT, false);
+            if (left) hits.add(x, y, aw, h, id + ":left");
+            box(x + w - aw, y, aw, h, right ? ">" : "", right ? Style.ACCENT : Style.FAINT, false);
+            if (right) hits.add(x + w - aw, y, aw, h, id + ":right");
+        }
+        return first;
+    }
+
+    private static float span(float[] tw, int a, int b) {
+        float s = 0f;
+        for (int i = a; i <= b; i++) s += tw[i] + 6f;
+        return s - 6f;
+    }
+
+    /** A card's back: lit when picked, edged in 'edge' (null: the usual). */
+    static void card(float x, float y, float w, float h, boolean on, Color edge) {
+        boolean over = over(x, y, w, h);
+        Style.fill(x, y, w, h, on ? CARD_ON : over ? new Color(16, 38, 60, 235) : CARD);
+        Style.outline(x, y, w, h, on ? Style.ACCENT : edge != null ? edge : over ? Style.alpha(Style.ACCENT, 140) : CARD_EDGE);
+    }
+
+    /** A picture in a square box (a portrait, an icon); just the box when it can't be loaded. */
+    static void picture(String path, float x, float y, float s, Color edge) {
+        Style.fill(x, y, s, s, new Color(20, 38, 58, 255));
+        SpriteAPI sp = LobbyScreen.sprite(path);
+        if (sp != null) LobbyScreen.icon(sp, x, y, s);
+        Style.outline(x, y, s, s, edge == null ? CARD_EDGE : edge);
+    }
+
+    static String skillName(String id) {
+        try { return Global.getSettings().getSkillSpec(id).getName(); } catch (Throwable t) { return id; }
+    }
+
+    static String skillIcon(String id) {
+        try { return Global.getSettings().getSkillSpec(id).getSpriteName(); } catch (Throwable t) { return null; }
+    }
+
+    /** A skill's short description, its first sentence (none if the game has none). */
+    static String skillText(String id) {
+        try {
+            String s = Global.getSettings().getSkillSpec(id).getDescription();
+            if (s == null) return "";
+            s = s.trim();
+            int dot = s.indexOf(". ");
+            return dot > 0 && dot < 160 ? s.substring(0, dot + 1) : s.length() > 160 ? s.substring(0, 157) + "..." : s;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** The skill's aptitude ("Combat", "Leadership"...), or "". */
+    static String skillAptitude(String id) {
+        try {
+            String a = Global.getSettings().getSkillSpec(id).getGoverningAptitudeName();
+            return a == null ? "" : a;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** A line cut to fit 'w' with "...". */
+    static String fit(String s, String font, float w) {
+        if (s == null) return "";
+        if (Style.width(s, font) <= w) return s;
+        String t = s;
+        while (t.length() > 1 && Style.width(t + "...", font) > w) t = t.substring(0, t.length() - 1);
+        return t.trim() + "...";
+    }
+
+    /** The small section name (OFFICER, THEIR REFITS) with nothing after it; returns the y under it. */
+    static float head(String name, float x, float top) {
+        Style.text(name.toUpperCase(), Style.SMALL_FONT, Style.alpha(Style.ACCENT, 230), x, top, 400f);
+        return top - Style.lineHeight(Style.SMALL_FONT) - 5f;
+    }
+}

@@ -20,7 +20,7 @@ final class CoopScreen {
     /** Where the header's buttons were drawn last: x, y, w, h, action. */
     private final List<float[]> hits = new ArrayList<float[]>();
 
-    static float margin() { return Math.max(24f, Global.getSettings().getScreenWidth() * 0.022f); }
+    static float margin() { return Math.max(24f, Style.sw() * 0.022f); }
 
     /** How wide the header's buttons are, with or without DISCONNECT. */
     static float buttonsWidth(boolean disconnect) { return disconnect ? 2 * BUTTON_W + GAP : BUTTON_W; }
@@ -43,7 +43,7 @@ final class CoopScreen {
      * it, and the buttons. Returns how far down the header reaches: windows go below that.
      */
     float frame(String title, String line, Color lineColor, boolean disconnect) {
-        float sw = Global.getSettings().getScreenWidth(), sh = Global.getSettings().getScreenHeight();
+        float sw = Style.sw(), sh = Style.sh();
         float m = margin();
         LobbyScreen.fill(0f, 0f, sw, sh, BACKDROP);
         float hx = m + LobbyScreen.lunaCorner(), top = sh - m;
@@ -52,7 +52,7 @@ final class CoopScreen {
         if (line != null && !line.isEmpty()) y = Style.text(line, Style.body(), lineColor, hx, y, sw - m - hx - buttonsWidth(disconnect) - 20f) - 2f;
         buttons(sw - m, top + 2f, disconnect);
         y = Math.min(y, top - BUTTON_H - 6f) - 8f;
-        if (LobbyScreen.lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LobbyScreen.LUNA_BUTTONS_H - 8f);
+        if (LobbyScreen.lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LobbyScreen.LUNA_BUTTONS_H / Style.u() - 8f);
         LobbyScreen.fill(m, y, sw - 2 * m, 1f, LobbyScreen.LINE);
         return y - 14f;
     }
