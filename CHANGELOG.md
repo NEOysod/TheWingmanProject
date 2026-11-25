@@ -1,9 +1,10 @@
 # Changelog
 
-## Next
+## 0.1.2-beta
 
-- Rebuilt for Starsector 0.98.5a-RC9 and Wingman 0.9.4 (test branch). No changes of its own: it uses only the game's
-  public API, so the hotfix's renamed internals don't touch it. Needs the Wingman build of the same date.
+- For Starsector 0.98.5a-RC9 and Wingman 0.9.4-beta (everyone needs both). Rebuilt against them; no changes of its
+  own: it uses only the game's public API, so the hotfixes' renamed internals don't touch it. Wingman 0.9.4-beta
+  brings the chat (useful for agreeing on house rules), the ping readout and the UI changes to PvP lobbies too.
 
 ## 0.1.1-beta (public beta test)
 

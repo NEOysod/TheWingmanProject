@@ -3,7 +3,7 @@
 Player-versus-player battles for [The Wingman Project](https://github.com/NEOysod/TheWingmanProject), a co-op
 multiplayer mod for Starsector 0.98.5a. Public beta test.
 
-- Needs The Wingman Project with PvP support, the same version on every PC, and the same mod list everywhere
+- Needs The Wingman Project 0.9.4-beta, the same version on every PC, and the same mod list everywhere
   (Wingman checks it).
 - Pick **Multiplayer PvP Battles** at any bar, then **Host a match** or **Join a match** (Wingman's address and
   password, as on its join screen).
@@ -26,4 +26,4 @@ How it works and the rules: `docs/DESIGN.md`.
 ## Building
 
 `./build.sh /path/to/starsector-core /path/to/Wingman.jar` rebuilds `jars/WingmanPvP.jar`. The tests:
-`java -cp Wingman.jar:build/classes:build/test wingmanpvp.LobbyTest` after compiling `test/`.
+`java -cp Wingman.jar:build/classes:build/test wingmanpvp.LobbyCheck` after compiling `test/`.
