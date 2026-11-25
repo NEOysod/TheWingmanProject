@@ -1,4 +1,4 @@
-# The Wingman Project 0.9.2-beta
+# The Wingman Project 0.9.4-beta
 
 **Co-op multiplayer battles for Starsector.** One player hosts a battle; up to three friends join it and each
 fly a ship from the host's fleet, side by side, in real time.
@@ -11,7 +11,7 @@ part before you host.
 
 ## What you need
 
-- Starsector **0.98.5a-RC5**, the same build for everyone.
+- Starsector **0.98.5a-RC9**, the same build for everyone.
 - The **same mods, in the same versions**, as the host. Interface-only "utility" mods may differ. If yours
   differ, you're told exactly what to fix.
 - A way to reach the host's PC: the same home network, a virtual LAN (Radmin VPN, Tailscale, ZeroTier), or
@@ -55,7 +55,9 @@ delete it again and tell us.
 2. Set a password: **F3** in the CO-OP panel, then "Join password".
 3. Load your save: friends can connect now, see your fleet and pick their ships (your message feed says who
    picked what).
-4. Start any battle. Everyone chooses a ship, then a ready check waits for everyone. **Enter** starts it;
+4. The CO-OP panel (top right of the map) lists who is here, with CHAT under it. Each shrinks to a small tab
+   with its **-** button (**Ctrl+Shift+P**: both).
+5. Start any battle. Everyone chooses a ship, then a ready check waits for everyone. **Enter** starts it;
    **Ctrl+Enter** starts without waiting.
 
 **Join**
@@ -71,13 +73,18 @@ delete it again and tell us.
 | Who | Key | What it does |
 |---|---|---|
 | Anyone, title screen | **CO-OP**, then F1 / F2 / F3 | How-to / mod check / settings |
-| Anyone, battle | **Ctrl+Shift+O** | Settings |
+| Anyone, battle or campaign map | **Ctrl+Shift+O** | Settings |
+| Anyone, campaign map or lobby | **Ctrl+Shift+C** | Chat |
 | Anyone, battle | **F3** | Hide / show player tags (P1 green, P2 blue, P3 yellow, P4 white) |
 | Anyone, battle | **U** | Hand your ship to the AI and back |
 | Joiner, lobby (title screen) | Up / Down, **F**, Delete, F4 | Choose, pick, drop your pick; reopen the lobby |
 | Joiner, before the battle | Up / Down, **Enter**, W, then Enter / Backspace | Choose and take a ship (W: watch), then ready / change ship |
 | Host, battle | Ctrl+Shift+**2–9** | Remove that player |
 | Host, battle | Ctrl+Shift+T | Take back the ship you've targeted |
+| Host, campaign map | Ctrl+Shift+L / R / W / P | Officer links / friend refits / wish lists / shrink the panels |
+
+Keys can be changed in Settings, Keys. On Wingman's pages, **F1** or **?** lists the keys, and the mouse works
+for everything.
 
 Change ship during a battle with the game's **Transfer Command** on a friendly ship. Every setting has a short
 explanation on the settings page.

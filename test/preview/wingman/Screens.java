@@ -100,7 +100,7 @@ final class Screens {
         m.gear.addAll(Arrays.asList("w|Heavy Autocannon|2", "w|Heavy Mauler|1", "w|Harpoon MRM|2", "w|Light Mortar|2", "f|Talon Interceptor Wing|1"));
         m.hullmods = "Integrated Targeting Unit (S), Hardened Shields, Expanded Missile Racks, Auxiliary Thrusters";
         m.dmods = "Degraded Engines, Faulty Grid";
-        m.sprite = "graphics/ships/eagle.png";
+        m.sprite = "graphics/ships/eagle/eagle_base.png"; m.portrait = "graphics/portraits/portrait_corporate04.png";
         for (String n : new String[] { "Kyrizion", "Cy", "Mosk" }) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = n; p.slot = r.players.size() + 2; r.players.add(p); }
         for (int i = 0; i < big - 4; i++) { wingman.net.Roster.Player p = new wingman.net.Roster.Player(); p.name = BIG_NAMES[i % BIG_NAMES.length] + (i >= BIG_NAMES.length ? String.valueOf(i / BIG_NAMES.length + 1) : ""); p.slot = r.players.size() + 2; r.players.add(p); }
         return r;
@@ -114,6 +114,7 @@ final class Screens {
             wingman.net.BattleReport.Pilot q = new wingman.net.BattleReport.Pilot();
             q.slot = Integer.parseInt(p[0]); q.name = p[1]; q.ship = p[2]; q.kills = q.slot * 2 % 5; q.fighterKills = q.slot * 3; q.damageDealt = 4200 * q.slot; q.shieldDamageDealt = q.slot == 2 ? 9800 : 0; q.damageTaken = 1500 * q.slot;
             q.status = q.slot == 3 ? wingman.net.BattleReport.DESTROYED : q.slot == 4 ? wingman.net.BattleReport.WATCHED : wingman.net.BattleReport.ALIVE;
+            if (q.slot == 4) { q.kills = 0; q.fighterKills = 0; q.damageDealt = 0; q.damageTaken = 0; } // (watching: nothing to count)
             b.pilots.add(q);
         }
         b.sides[0].deployed = 9; b.sides[0].destroyed = 1; b.sides[0].retreated = 1; b.sides[0].lost.add("ISS Patience (Dominator)");
@@ -296,6 +297,7 @@ final class Screens {
             r.officer = (String) x[4]; r.permission = (Integer) x[5]; r.refitShip = (String) x[6];
             r.ping = r.slot == 2 ? 54 : r.slot == 3 ? 213 : -1;
             if (!r.officer.isEmpty()) r.officerNote = "Level 5, aggressive  -  captains the ship " + r.name + " picks";
+            if (!r.officer.isEmpty()) r.portrait = r.officer.startsWith("Mira") ? "graphics/portraits/portrait_corporate04.png" : "graphics/portraits/portrait_league05.png";
             rows.add(r);
         }
         for (int i = 0; i < big - 4; i++) {
@@ -317,7 +319,7 @@ final class Screens {
         for (int i = 0; i < big - 4; i++) { OfficerLinkPanel.Friend fr = new OfficerLinkPanel.Friend(); fr.slot = 5 + i; fr.name = BIG_NAMES[i % BIG_NAMES.length]; v.friends.add(fr); }
         if (big > 0) v.friend = 14;
         Object[][] os = { { "Mira Okonkwo", 5, "aggressive", "Linked to Kyrizion  -  ISS Long Wait, Eagle", "mine", "helmsmanship+ combat_endurance impact_mitigation+ field_modulation target_analysis" },
-                { "Tomas Reyes", 4, "steady", "Captain of ISS Hand of Fate, Conquest", "Leaves ISS Hand of Fate, Conquest when Kyrizion picks a ship.", "point_defense ordnance_expertise+ gunnery_implants damage_control" },
+                { "Tomas Reyes", 4, "steady", "Captain of ISS Hand of Fate, Conquest", "Leaves ISS Hand of Fate, Conquest when Kyrizion picks a ship.", "point_defense ordnance_expert+ gunnery_implants damage_control" },
                 { "Ana Weiss", 6, "cautious", "Linked to Cy", "Moves over from Cy.", "systems_expertise+ missile_specialization energy_weapon_mastery helmsmanship+ field_modulation polarized_armor+" },
                 { "Ido Hartmann", 2, "reckless", "Unassigned", "", "combat_endurance target_analysis" },
                 { "Sun Qian", 3, "steady", "Captain of ISS Lantern, Heron", "Leaves ISS Lantern, Heron when Kyrizion picks a ship.", "damage_control impact_mitigation+ point_defense" },
@@ -326,6 +328,8 @@ final class Screens {
             OfficerLinkPanel.Officer x = new OfficerLinkPanel.Officer();
             x.name = (String) o[0]; x.level = (Integer) o[1]; x.personality = (String) o[2]; x.status = (String) o[3];
             x.mine = "mine".equals(o[4]); x.moveNote = x.mine ? "" : (String) o[4];
+            String[] faces = { "corporate04", "hegemony09", "league05", "mercenary03", "corporate07", "hegemony05" };
+            x.portrait = "graphics/portraits/portrait_" + faces[v.officers.size() % faces.length] + ".png";
             x.statusColor = x.mine ? Panel.GOOD : x.status.startsWith("Linked") ? Panel.WARN : Panel.DIM;
             for (String sk : ((String) o[5]).split(" ")) { x.skills.add(sk.replace("+", "")); x.elite.add(sk.endsWith("+")); }
             v.officers.add(x);

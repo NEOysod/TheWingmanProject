@@ -572,7 +572,8 @@ final class LobbyScreen {
                 if (n > fit) {
                     int below = Math.max(0, n - from - fit);
                     String m = (from > 0 ? from + " above" : "") + (from > 0 && below > 0 ? ",  " : "") + (below > 0 ? below + " more below" : "") + "   (wheel to scroll)";
-                    text(m, Style.SMALL_FONT, Panel.DIM, px, y - perCol * line - 2f, pw);
+                    float my = y - perCol * line - 2f;
+                    if (my - Style.lineHeight(Style.SMALL_FONT) >= floor - 4f) text(m, Style.SMALL_FONT, Panel.DIM, px, my, pw); // (squeezed to one line: the count in the head says it, the wheel still scrolls)
                 }
             }
         }

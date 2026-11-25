@@ -1536,7 +1536,8 @@ the game's own (non-API) types counted as one, against each class of the new bui
   (1.5 at 1920 x 1080, 1 at 1280 x 720), as nothing is laid out for less. Player tags stay on the ships, unscaled.
   Every page fits at 1280 x 720 at size 1; the joiner's refit page folds its stats once on a short screen
   (`RefitScreen.compact`), and the lobby chat folds when there is no room. `test/preview` draws every page
-  (`-Dpreview.size=WxH`, `-Dpreview.ui=S`) for a look at each screen size.
+  (`-Dpreview.size=WxH`, `-Dpreview.ui=S`) for a look at each screen size; `-Dpreview.graphics=<starsector-core>` draws
+  the game's own pictures (ships, portraits, skill and weapon icons) where it has them. `docs/showcase` holds such renders.
 - **Keys** (`Keys`): the keys that work outside a page (settings, chat, officer links, friend refits, wish lists,
   tags, the host's take-back and remove) are kept as text ("Ctrl+Shift+L") under `key.<id>` with the other
   in-game settings, and matched with exact Ctrl, Shift and Alt. The settings' KEYS page takes the next key

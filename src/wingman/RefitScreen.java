@@ -2606,6 +2606,14 @@ final class RefitScreen {
       String var17 = this.search.isEmpty() && !this.typingSearch
          ? "Type to find " + var15 + " by name  (Ctrl+F)"
          : this.search + (this.typingSearch && var16 ? "_" : "");
+      // one line: the hint is cut at its end, what is typed keeps its end in view
+      if (this.search.isEmpty() && !this.typingSearch) {
+         var17 = Widgets.fit(var17, var5, var4 - 110.0F);
+      } else {
+         while (var17.length() > 1 && Style.width(var17, var5) > var4 - 110.0F) {
+            var17 = var17.substring(1);
+         }
+      }
       this.ui
          .text(var17, var5, this.search.isEmpty() && !this.typingSearch ? Style.FAINT : Panel.TEXT, var2 + 70.0F, var3 - (var6 - var7) / 2.0F, var4 - 110.0F);
       this.hits.add(new RefitScreen.Hit(var2, var3 - var6, var4, var6, 4, 13, ""));

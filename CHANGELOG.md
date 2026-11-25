@@ -1,6 +1,9 @@
 # Changelog
 
-## Next (on the test branch)
+## 0.9.4-beta
+
+For Starsector 0.98.5a-RC9. Everyone in a game needs the same game build and this version (protocol 63: 0.9.3
+can't play with it).
 
 - **Starsector 0.98.5a-RC9.** The hotfix renamed game internals again: the title menu (now `title.B`), the join
   mission (`title.Object.N` / `title.Object.for`, the mission id getter back to RC5's name), held-back objectives
@@ -41,7 +44,8 @@
   battle (host and joiners, both steps) takes clicks on its keys. Buttons and hints name keys as set in Settings,
   Keys, and the hints no longer run status text into the key names. The page size is capped at what the screen
   has room for (1.5 at 1920 x 1080, 1 at 1280 x 720) rather than drawing off the edge. Checked at 1280 x 720,
-  1366 x 768, 1920 x 1080, 2560 x 1440 and 3840 x 2160.
+  1366 x 768, 1920 x 1080, 2560 x 1440 and 3840 x 2160. At 1280 x 720 the refit page's search hint no longer runs
+  onto the filter buttons, and the lobby's PLAYERS box, squeezed by level-up cards, no longer draws past its edge.
 - **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
   is open, or where you left it. Ctrl+Shift+L still works.
 - **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)
@@ -121,11 +125,6 @@
   and what it costs; send them as any friend refit (the host checks it all again). No game internals: the game's
   own saved name for the mission's ship is read back through the API. The mission's screen shows every weapon and
   hull mod; the host's check catches what they don't have. S-mods can't be built in there.
-
-## 0.9.4-beta
-
-For Starsector 0.98.5a-RC7 (and RC6/RC5: each game build's names are tried in turn). Everyone in a game needs the
-same game build and this version. Same protocol as 0.9.3.
 
 - **Starsector 0.98.5a-RC7.** The hotfix renamed game internals again (the title menu, the join mission, held-back
   objectives, carrier bays, teleporters, the battle message feed). Each is now looked up from a table of names by
