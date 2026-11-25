@@ -140,6 +140,8 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         List<HostSession.Player> ps = players();
         List<PersonAPI> os = OfficerLinks.officers();
         if (!id.equals("link") && !id.equals("unlink") && !id.endsWith(":strip")) Widgets.click();
+        if (KeyHelp.isOpen("Officer links")) { KeyHelp.close(); return; } // a click while the key list is up only closes it
+        if (id.equals("keys")) { KeyHelp.toggle("Officer links"); return; }
         if (id.equals("close")) { close(); return; }
         if (id.equals("friend:left")) { tabFirst = Math.max(0, tabFirst - 1); return; }
         if (id.equals("friend:right")) { tabFirst++; return; }
@@ -307,12 +309,14 @@ final class OfficerLinkPanel implements CampaignInputListener, CampaignUIRenderi
         List<String> names = new ArrayList<String>();
         List<Color> colors = new ArrayList<Color>();
         for (Friend f : v.friends) { names.add("P" + f.slot + "  " + f.name); colors.add(PlayerTags.color(f.slot)); }
-        float stripW = x + w - 16f - (bar - 16f) - 120f - tx;
+        float stripW = x + w - 16f - 2f * (bar - 16f) - 6f - 120f - tx;
         tabFirst = Widgets.tabStrip(names, colors, v.friend, tabFirst, tx, top - bar + 8f, stripW, bar - 16f, hits, "friend");
         float cb = bar - 16f;
         Widgets.box(x + w - 16f - cb, top - bar + 8f, cb, cb, "X", Style.TEXT, false);
         hits.add(x + w - 16f - cb, top - bar + 8f, cb, cb, "close");
-        Style.textRight("Game paused", Style.SMALL_FONT, Style.FAINT, x + w - 16f - cb - 12f, top - (bar - Style.lineHeight(Style.SMALL_FONT)) / 2f);
+        Widgets.box(x + w - 16f - 2f * cb - 6f, top - bar + 8f, cb, cb, "?", Style.TEXT, KeyHelp.isOpen("Officer links"));
+        hits.add(x + w - 16f - 2f * cb - 6f, top - bar + 8f, cb, cb, "keys");
+        Style.textRight("Game paused", Style.SMALL_FONT, Style.FAINT, x + w - 16f - 2f * cb - 6f - 12f, top - (bar - Style.lineHeight(Style.SMALL_FONT)) / 2f);
 
         // the side: the picked officer
         float sideW = 380f, foot = 34f;

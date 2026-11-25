@@ -50,6 +50,7 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    private static final int CLOSE = 4;
    private static final int FOLD = 5;
    private static final int FOLD_ALL = 6;
+   private static final int KEYS = 7;
    private final Set<String> folded = new HashSet<>();
    private static final float ROW_ITEM = 46.0F;
    private static final float ROW_NAME = 36.0F;
@@ -61,6 +62,16 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    private static boolean shownCache = true;
    private static WishListPanel instance;
    private long seenAt;
+
+   /** Opens the page (the CO-OP panel's WISH LISTS). */
+   static void openPage() {
+      WishListPanel p = instance;
+      if (p == null || Pages.anyOpen() || friends().isEmpty()) return;
+      p.open = true;
+      p.seenAt = System.currentTimeMillis();
+      p.message = "";
+      p.scroll = 0.0F;
+   }
 
    static boolean isOpen() {
       return instance != null && instance.open;
@@ -283,7 +294,9 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
                      }
 
                      sound();
-                     this.act(var7.action, var7.player, var7.key);
+                     if (KeyHelp.isOpen("Wish lists")) KeyHelp.close(); // a click while the key list is up only closes it
+                     else if (var7.action == KEYS) KeyHelp.toggle("Wish lists");
+                     else this.act(var7.action, var7.player, var7.key);
                   }
 
                   var2 = friends();
@@ -300,6 +313,11 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
             if (!this.open) {
                this.hits.clear();
                this.window = null;
+               if (CampaignPlayerList.showing()) { // the CO-OP panel has WISH LISTS (and a tab when something is for sale here)
+                  this.button = null;
+                  this.wasDown = var3;
+                  return;
+               }
                this.drawButton(WishList.wishedCount(), WishList.availableHere());
                if (var3 && !this.wasDown && this.button != null && LobbyScreen.inside(this.button[0], this.button[1], this.button[2], this.button[3]) && !Pages.anyOpen()) {
                   this.open = true;
@@ -366,13 +384,16 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
       String var10 = var9 == null ? null : (var9.getName() != null && !var9.getName().isEmpty() ? var9.getName() : "this market");
       int[] var11 = WishList.canBuy(null, null);
       String var12 = var10 == null ? "not docked" : (var11[0] > 0 ? var11[0] + " for sale at " + var10 : "nothing for sale at " + var10);
-      float var13 = Style.window(var6, var7, var4, var5, "WISH LISTS", var12, 30.0F) - 10.0F;
+      float var13 = Style.window(var6, var7, var4, var5, "WISH LISTS", var12, 60.0F) - 10.0F;
       float var14 = 22.0F;
       float var15 = var6 + var4 - var14 - 10.0F;
       float var16 = var7 + var5 - 34.0F + (34.0F - var14) / 2.0F;
       boolean var17 = LobbyScreen.inside(var15, var16, var14, var14);
       Style.button(var15, var16, var14, var14, "X", Panel.DIM, true, var17);
       this.hits.add(new WishListPanel.Hit(var15, var16, var14, var14, 4, null, null));
+      boolean keysOver = LobbyScreen.inside(var15 - var14 - 6.0F, var16, var14, var14);
+      Style.button(var15 - var14 - 6.0F, var16, var14, var14, "?", Panel.DIM, true, keysOver || KeyHelp.isOpen("Wish lists"));
+      this.hits.add(new WishListPanel.Hit(var15 - var14 - 6.0F, var16, var14, var14, KEYS, null, null));
       float var18 = 52.0F;
       float var19 = 16.0F;
       float var20 = var7 + var18;
@@ -585,7 +606,8 @@ final class WishListPanel implements CampaignInputListener, CampaignUIRenderingL
    }
 
    private void drawButton(int var1, int var2) {
-      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     CTRL+SHIFT+W" : "WISH LISTS  (" + var1 + ")     CTRL+SHIFT+W";
+      String var12 = Keys.name("wishLists").toUpperCase();
+      String var3 = var2 > 0 ? "WISH LISTS:  " + var2 + " FOR SALE HERE     " + var12 : "WISH LISTS  (" + var1 + ")     " + var12;
       if (this.buttonLabel == null || !var3.equals(this.buttonText)) {
          this.buttonLabel = Global.getSettings().createLabel(var3, "graphics/fonts/orbitron12condensed.fnt");
          this.buttonText = var3;

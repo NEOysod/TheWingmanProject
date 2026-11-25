@@ -76,7 +76,7 @@ final class Settings {
                 "Type a number. Must be the same for everyone; the host needs this TCP port reachable. Normally 24816."));
 
         ITEMS.add(new Item(1, "uiScale", "Size of Wingman's pages and panels", LOCAL, true, new String[] { "0.75", "0.85", "1", "1.1", "1.25", "1.5", "1.75", "2" },
-                "On top of the game's own UI scaling. Bigger for a 4K screen, smaller to see more of the map. At 1280 x 720, 1 is the largest that fits everything."));
+                "On top of the game's own UI scaling. Bigger for a 4K screen, smaller to see more of the map. A size bigger than your screen has room for is used as the biggest that fits (at 1920 x 1080, 1.5; at 1280 x 720, 1)."));
         ITEMS.add(new Item(1, "playerColors", "Player colours", LOCAL, true, new String[] { "standard", "colorblind" },
                 "colorblind: colours told apart with any kind of colour blindness (yellow, sky blue, orange, white, purple, teal, red, blue...). The P number is always shown with them."));
         ITEMS.add(new Item(1, "pingReadout", "Ping in battle", LOCAL, true, new String[] { "mine", "everyone", "off" },

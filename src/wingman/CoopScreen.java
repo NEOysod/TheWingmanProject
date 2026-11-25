@@ -52,7 +52,7 @@ final class CoopScreen {
         if (line != null && !line.isEmpty()) y = Style.text(line, Style.body(), lineColor, hx, y, sw - m - hx - buttonsWidth(disconnect) - 20f) - 2f;
         buttons(sw - m, top + 2f, disconnect);
         y = Math.min(y, top - BUTTON_H - 6f) - 8f;
-        if (LobbyScreen.lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LobbyScreen.LUNA_BUTTONS_H / Style.ui - 8f);
+        if (LobbyScreen.lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LobbyScreen.LUNA_BUTTONS_H / Style.u() - 8f);
         LobbyScreen.fill(m, y, sw - 2 * m, 1f, LobbyScreen.LINE);
         return y - 14f;
     }

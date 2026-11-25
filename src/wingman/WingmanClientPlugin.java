@@ -1969,6 +1969,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         boolean lobbyUp = lobby != null && lobby.readyCheck;
         if (!popup && !lobbyUp && !retreatOffered) return;
+        if (!popup && lobbyUp) { // the ready check's key hints take clicks (the battle hasn't started: no gun fires)
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY) readyKey(h.value, h.ctrl, true);
+                }
+                e.consume();
+            }
+        }
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent()) continue;
             int key = e.getEventValue();
@@ -1976,60 +1988,62 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (popupKey(key, e.isCtrlDown())) e.consume();
                 continue;
             }
-            boolean choosing = lobbyUp && stage() == 1;
-            boolean takeKey = key == KEY_PICK || (choosing && Panel.isEnter(key) && !e.isCtrlDown());
-            if (!popup && choosing && (key == 200 || key == 208 || takeKey)) { // stage 1, the ship list: Up, Down, F or Enter
-                try {
-                    List<Puppet> ships = pickable();
-                    if (!ships.isEmpty()) {
-                        int at = 0;
-                        for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
-                        if (key == 200) at = (at + ships.size() - 1) % ships.size();
-                        else if (key == 208) at = (at + 1) % ships.size();
-                        Puppet chosen = ships.get(at);
-                        pickId = chosen.netId;
-                        if (takeKey) {
-                            String why = cannotFly(chosen);
-                            if (chosen.netId == ownId) { changingShip = false; pickNote = ""; } // keep the ship we have
-                            else if (why != null) pickNote = "That ship is " + why + ".";
-                            else { // the host is asked for it, as with Transfer Command; stage 2 once it says yes
-                                pickNote = "Asking the host for " + (chosen.ship.getName() == null ? chosen.ship.getHullSpec().getHullName() : chosen.ship.getName()) + "...";
-                                changingShip = false;
-                                watching = false;
-                                engine.setPlayerShipExternal(chosen.ship);
-                            }
-                        } else pickNote = "";
-                    }
-                } catch (Throwable t) {
-                    Global.getLogger(WingmanClientPlugin.class).warn("Wingman: choosing a ship from the list failed; use Transfer Command", t);
-                }
-                e.consume();
-                continue;
-            }
-            if (!popup && choosing && key == 17) { // W: go without a ship, watching
-                if (ownId >= 0) toPlaceholder();
-                watching = true;
-                changingShip = false;
-                pickNote = "";
-                e.consume();
-                continue;
-            }
-            if (!popup && lobbyUp && !choosing && key == 14) { // Backspace in stage 2: back to choosing a ship
-                changingShip = true;
-                iAmReady = false;
-                if (ownId >= 0) pickId = ownId;
-                e.consume();
-                continue;
-            }
-            if (!Panel.isEnter(key)) continue;
-            if (lobbyUp) {
-                enterPressed = true;
-            } else {
-                retreatNowUntil = System.currentTimeMillis() + 1500;
-                Ui.say(engine, "Co-op: retreating. The ship leaves the battle under its own power.");
-            }
-            e.consume();
+            if (readyKey(key, e.isCtrlDown(), lobbyUp)) e.consume();
         }
+    }
+
+    /** A key (or a click on its hint) while the ready check, or the retreat offer, is up. True if it was acted on. */
+    private boolean readyKey(int key, boolean ctrl, boolean lobbyUp) {
+        boolean choosing = lobbyUp && stage() == 1;
+        boolean takeKey = key == KEY_PICK || (choosing && Panel.isEnter(key) && !ctrl);
+        if (choosing && (key == 200 || key == 208 || takeKey)) { // stage 1, the ship list: Up, Down, F or Enter
+            try {
+                List<Puppet> ships = pickable();
+                if (!ships.isEmpty()) {
+                    int at = 0;
+                    for (int i = 0; i < ships.size(); i++) if (ships.get(i).netId == pickId) at = i;
+                    if (key == 200) at = (at + ships.size() - 1) % ships.size();
+                    else if (key == 208) at = (at + 1) % ships.size();
+                    Puppet chosen = ships.get(at);
+                    pickId = chosen.netId;
+                    if (takeKey) {
+                        String why = cannotFly(chosen);
+                        if (chosen.netId == ownId) { changingShip = false; pickNote = ""; } // keep the ship we have
+                        else if (why != null) pickNote = "That ship is " + why + ".";
+                        else { // the host is asked for it, as with Transfer Command; stage 2 once it says yes
+                            pickNote = "Asking the host for " + (chosen.ship.getName() == null ? chosen.ship.getHullSpec().getHullName() : chosen.ship.getName()) + "...";
+                            changingShip = false;
+                            watching = false;
+                            engine.setPlayerShipExternal(chosen.ship);
+                        }
+                    } else pickNote = "";
+                }
+            } catch (Throwable t) {
+                Global.getLogger(WingmanClientPlugin.class).warn("Wingman: choosing a ship from the list failed; use Transfer Command", t);
+            }
+            return true;
+        }
+        if (choosing && key == 17) { // W: go without a ship, watching
+            if (ownId >= 0) toPlaceholder();
+            watching = true;
+            changingShip = false;
+            pickNote = "";
+            return true;
+        }
+        if (lobbyUp && !choosing && key == 14) { // Backspace in stage 2: back to choosing a ship
+            changingShip = true;
+            iAmReady = false;
+            if (ownId >= 0) pickId = ownId;
+            return true;
+        }
+        if (!Panel.isEnter(key)) return false;
+        if (lobbyUp) {
+            enterPressed = true;
+        } else {
+            retreatNowUntil = System.currentTimeMillis() + 1500;
+            Ui.say(engine, "Co-op: retreating. The ship leaves the battle under its own power.");
+        }
+        return true;
     }
 
     /** Ctrl+Enter, as a popup's button gives it (a button carries no Ctrl). */
@@ -2528,8 +2542,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (!pickNote.isEmpty()) { lines.add(pickNote); colors.add(Panel.WARN); }
             }
             String footer = !synced ? "Choose a ship once the battle has loaded."
-                    : "Up/Down: choose     Enter or F: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
-            panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer);
+                    : "Up: previous     Down: next     Enter: take this ship     W: watch without a ship" + (ownId >= 0 ? "     (Enter on yours: keep it)" : "");
+            panel.mouse = true; // (the battle hasn't started: the hints take clicks)
+            try { panel.render("1 / 2   CHOOSE YOUR SHIP", lines, colors, footer); } finally { panel.mouse = false; }
             return;
         }
         // Stage 2: the ready check.
@@ -2547,13 +2562,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (!synced) {
             footer = "Loading the battle: " + built + "/" + lobby.expected + " ships..." + back;
         } else if (skippedShips > 0 && !iAmReady) {
-            footer = skippedShips + " ships are missing on your side (mods differ from the host).  Enter: ready anyway" + back;
+            footer = skippedShips + " ships are missing on your side (mods differ from the host).     Enter: ready anyway" + back;
         } else if (!iAmReady) {
             footer = "Enter: ready" + back;
         } else {
-            footer = "You are ready. Waiting for the host to start.  Enter: not ready" + back;
+            footer = "You are ready. Waiting for the host to start.     Enter: not ready" + back;
         }
-        panel.render("2 / 2   READY CHECK", lines, colors, footer);
+        panel.mouse = true;
+        try { panel.render("2 / 2   READY CHECK", lines, colors, footer); } finally { panel.mouse = false; }
     }
 
     /** The host's battle is paused (as of the last update): shown in large letters, since only the host can unpause. */

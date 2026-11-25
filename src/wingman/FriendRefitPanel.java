@@ -151,6 +151,8 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     private void act(String id, List<FriendRefit.Pending> list) {
         Widgets.click();
+        if (KeyHelp.isOpen("Friend refits")) { KeyHelp.close(); return; } // a click while the key list is up only closes it
+        if (id.equals("keys")) { KeyHelp.toggle("Friend refits"); return; }
         at = Math.max(0, Math.min(list.size() - 1, at));
         if (id.equals("accept")) accept(list.get(at));
         else if (id.equals("deny")) deny(list.get(at));
@@ -239,10 +241,12 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
         List<String> names = new ArrayList<String>(); // the refits waiting, as tabs (scrolling along when there are many)
         List<Color> colors = new ArrayList<Color>();
         for (FriendRefit.Pending q : list) { names.add("P" + q.player.slot + "  " + q.player.name); colors.add(PlayerTags.color(q.player.slot)); }
-        tabFirst = Widgets.tabStrip(names, colors, at, tabFirst, tx, top - bar + 8f, x + w - 16f - (bar - 16f) - 16f - tx, bar - 16f, hits, "tab");
+        tabFirst = Widgets.tabStrip(names, colors, at, tabFirst, tx, top - bar + 8f, x + w - 16f - 2f * (bar - 16f) - 6f - 16f - tx, bar - 16f, hits, "tab");
         float cb = bar - 16f;
         Widgets.box(x + w - 16f - cb, top - bar + 8f, cb, cb, "X", Style.TEXT, false);
         hits.add(x + w - 16f - cb, top - bar + 8f, cb, cb, "close");
+        Widgets.box(x + w - 16f - 2f * cb - 6f, top - bar + 8f, cb, cb, "?", Style.TEXT, KeyHelp.isOpen("Friend refits"));
+        hits.add(x + w - 16f - 2f * cb - 6f, top - bar + 8f, cb, cb, "keys");
 
         float sideW = 360f, foot = 64f;
         float sx = x + w - sideW, bodyTop = top - bar, bodyBottom = y + foot;
@@ -360,7 +364,7 @@ final class FriendRefitPanel implements CampaignInputListener, CampaignUIRenderi
 
     /** The small button, top right, while requests wait. */
     private void drawButton(int n) {
-        String text = "FRIEND REFIT" + (n == 1 ? "" : "S") + "  (" + n + ")     CTRL+SHIFT+R";
+        String text = "FRIEND REFIT" + (n == 1 ? "" : "S") + "  (" + n + ")     " + Keys.name("friendRefits").toUpperCase();
         if (buttonLabel == null || !text.equals(buttonText)) {
             buttonLabel = Global.getSettings().createLabel(text, SMALL);
             buttonLabel.setColor(new Color(120, 210, 255));

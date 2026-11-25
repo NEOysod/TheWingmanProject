@@ -25,7 +25,11 @@ import wingman.net.HostSession;
  * The CO-OP panel on the campaign map (host setting playerList), top right: who is connected, in their colour, the
  * ship each picked, their linked officer and how their refits are taken. A click on a friend opens their row: the
  * officer (ASSIGN or CHANGE opens the officer links page on them), their refits (LOOK ONLY, ASK ME, TRUST) and any
- * refit of theirs waiting (REVIEW). REFITS in the header opens the friend refit page, SETTINGS the settings page.
+ * refit of theirs waiting (REVIEW). REFITS in the header opens the friend refit page, SETTINGS the settings page; at
+ * its foot OFFICER LINKS and WISH LISTS open those pages (their own corner buttons stay away while this shows).
+ * Under it, the chat (ChatBox.host). The two minimize apart, each to a small tab in the corner (CO-OP and a count, CHAT
+ * and what is new); both minimized, the tabs share one line with REFITS and WISH LISTS when those have something. The
+ * key "coopPanel" tucks both away and brings them back. How they were left is remembered on this PC (UiState).
  * Shown only while friends are connected and nothing (a dialog, a fleet or cargo screen) is open over the map.
  * Registered on each game load as a transient listener: nothing of it goes into the save.
  */
@@ -44,6 +48,11 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
     private boolean broken;
     /** The friend whose row is open (their slot), 0 none. */
     private int openSlot;
+    /** The player list is minimized to its tab (remembered on this PC). */
+    static boolean listMin = UiState.get("coop.list.min", false);
+    /** What was minimized before the key tucked everything away (list, chat), to bring back; null if not tucked. */
+    private static boolean[] beforeTuck;
+    static final float TAB_H = 28f;
     private final Widgets.Hits hits = new Widgets.Hits();
 
     static void install() {
@@ -117,12 +126,18 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
                     char ch = e.getEventChar();
                     if (KeyHelp.isOpen("CO-OP panel") && down && (key == 1 || key == 59)) { KeyHelp.close(); e.consume(); continue; }
                     if (ChatBox.host.typing) { e.consume(); if (down) ChatBox.host.key(key, ch, ctrl, shift, alt); continue; }
-                    if (down && !Pages.anyOpen() && ChatBox.host.key(key, ch, ctrl, shift, alt)) e.consume();
+                    if (!down || Pages.anyOpen()) continue;
+                    if (Keys.is("coopPanel", key, ctrl, shift, alt)) { tuck(); e.consume(); continue; }
+                    if (Keys.is("chat", key, ctrl, shift, alt)) { ChatBox.host.startTyping(); beforeTuck = null; e.consume(); continue; } // (a minimized chat opens)
                     continue;
                 }
                 if (!e.isMouseEvent() || e.isMouseMoveEvent()) continue;
                 float mx = e.getX() / scale, my = e.getY() / scale;
-                if (ChatBox.host.at(mx, my) != null) { e.consume(); continue; } // (clicks are read while drawing)
+                if (ChatBox.host.at(mx, my) != null) { // (clicks are read while drawing; the wheel goes back through the lines)
+                    if (e.isMouseScrollEvent()) ChatBox.host.wheel(mx, my, e.getEventValue());
+                    e.consume();
+                    continue;
+                }
                 String id = hits.at(mx, my);
                 if (id == null || id.equals("settings")) continue; // (the settings page takes its own button)
                 if (e.isMouseScrollEvent()) { scroll = Math.max(0, scroll + (e.getEventValue() > 0 ? -1 : 1)); e.consume(); continue; }
@@ -166,6 +181,15 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             HostSession.Player open = bySlot(String.valueOf(openSlot));
             if (open != null) OfficerLinkPanel.openFor(open.name);
             else OfficerLinkPanel.open();
+        } else if (p[0].equals("min")) {
+            setListMin(true);
+        } else if (p[0].equals("list")) {
+            setListMin(false);
+        } else if (p[0].equals("chat")) {
+            ChatBox.host.setOpen(true);
+            beforeTuck = null;
+        } else if (p[0].equals("wish")) {
+            WishListPanel.openPage();
         } else if (p[0].equals("keys")) {
             KeyHelp.toggle("CO-OP panel");
         } else if (p[0].equals("refits")) {
@@ -178,6 +202,33 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
             setPermission(pl, Integer.parseInt(p[2]));
         }
         builtAt = 0; // shown as it now is
+    }
+
+    private static void setListMin(boolean min) {
+        listMin = min;
+        beforeTuck = null;
+        UiState.set("coop.list.min", min);
+    }
+
+    /** The key "coopPanel": everything to tabs, or (already so) back as it was before. */
+    private static void tuck() {
+        Widgets.click();
+        boolean chatMin = !ChatBox.host.open;
+        if (listMin && chatMin) {
+            boolean[] b = beforeTuck;
+            boolean list = b != null ? b[0] : false, chat = b != null ? b[1] : false;
+            if (list && chat) { list = false; chat = false; } // (they were both tabs already: open both)
+            listMin = list;
+            UiState.set("coop.list.min", list);
+            ChatBox.host.setOpen(!chat);
+            beforeTuck = null;
+        } else {
+            boolean[] b = { listMin, chatMin };
+            listMin = true;
+            UiState.set("coop.list.min", true);
+            ChatBox.host.setOpen(false);
+            beforeTuck = b;
+        }
     }
 
     private static HostSession.Player bySlot(String slot) {
@@ -280,6 +331,34 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
 
     void draw(List<Row> rows, int waiting) {
         hits.clear();
+        float sw = Style.sw(), sh = Style.sh(), right = sw - 10f, top = sh - 10f;
+        boolean chatMin = !ChatBox.host.open;
+        int unread = wingman.net.ChatLog.unread(), forSale = 0, wished = 0;
+        try { forSale = WishList.availableHere(); wished = WishList.wishedCount(); } catch (Throwable t) { /* none */ }
+        boolean pulse = (System.currentTimeMillis() / 600) % 2 == 0;
+        float y;
+        if (listMin) { // the player list as a tab; the chat's beside it if that is a tab too; what waits, beside them
+            boolean quiet = false;
+            for (Row r : rows) quiet |= r.quiet;
+            float tx = Widgets.tab(right, top, TAB_H, "CO-OP", String.valueOf(rows.size()), quiet ? Panel.WARN : Style.DIM, false, hits, "list") - 6f;
+            if (chatMin) tx = Widgets.tab(tx, top, TAB_H, "CHAT", unread > 0 ? String.valueOf(unread) : "", Panel.WARN, unread > 0, hits, "chat") - 6f;
+            if (waiting > 0) tx = Widgets.tab(tx, top, TAB_H, "REFITS", String.valueOf(waiting), Panel.WARN, pulse, hits, "refits") - 6f;
+            if (forSale > 0) tx = Widgets.tab(tx, top, TAB_H, "WISH LISTS", forSale + " here", Panel.GOOD, pulse, hits, "wish") - 6f;
+            y = top - TAB_H;
+            if (chatMin) { bottom = y; return; }
+        } else {
+            y = drawList(rows, waiting, wished, forSale, chatMin);
+        }
+        if (chatMin) { // the chat as a tab, under the list
+            Widgets.tab(right, y - 6f, TAB_H, "CHAT", unread > 0 ? String.valueOf(unread) : "", Panel.WARN, unread > 0, hits, "chat");
+            bottom = y - 6f - TAB_H;
+        } else {
+            bottom = ChatBox.host.draw(sw - W - 10f, y - 6f, W, Math.max(ChatBox.HEAD_H, y - 16f));
+        }
+    }
+
+    /** The player list, opened: a window top right. Returns its bottom. */
+    private float drawList(List<Row> rows, int waiting, int wished, int forSale, boolean chatMin) {
         String body = Style.body();
         float headH = Style.lineHeight(Style.SMALL_FONT) + 16f;
         float footH = 30f + 14f + Style.lineHeight(Style.SMALL_FONT) + 4f, moreH = 22f; // the OFFICER LINKS button, and a line under it
@@ -287,7 +366,7 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         // Room for friends: up to most of the screen's height; past that the list scrolls (the wheel, or the arrows).
         Row host = rows.isEmpty() ? null : rows.get(0);
         List<Row> friends = rows.size() > 1 ? rows.subList(1, rows.size()) : new ArrayList<Row>();
-        float chatH = ChatBox.host.height(ChatBox.HEAD_H + ChatBox.LINES_H + ChatBox.INPUT_H + 12f) + 6f;
+        float chatH = chatMin ? TAB_H + 6f : ChatBox.host.height(ChatBox.HEAD_H + ChatBox.LINES_H + ChatBox.INPUT_H + 12f) + 6f;
         float room = Math.max(ROW_H * 3f, Math.min(sh * 0.62f, sh - 30f - chatH) - headH - footH - ROW_H);
         float all = 0f;
         for (Row r : friends) all += height(r);
@@ -320,8 +399,11 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         Style.fill(x + 1f, hy, 3f, headH - 1f, Style.ACCENT);
         float ty = y + h - (headH - Style.lineHeight(Style.SMALL_FONT)) / 2f;
         Style.text("CO-OP", Style.SMALL_FONT, Style.ACCENT, x + 12f, ty, 80f);
-        // SETTINGS, then REFITS while any wait
-        float bh = headH - 8f, by = hy + 4f, right = x + W - 10f;
+        // minimize, SETTINGS, ?, then REFITS while any wait
+        float bh = headH - 8f, by = hy + 4f, right = x + W - 8f;
+        Widgets.minimizeBox(right - bh, by, bh);
+        hits.add(right - bh, by, bh, bh, "min");
+        right -= bh + 6f;
         String st = "SETTINGS";
         float sbw = Style.width(st, Style.SMALL_FONT) + 16f;
         Widgets.box(right - sbw, by, sbw, bh, st, Style.TEXT, false);
@@ -349,13 +431,16 @@ final class CampaignPlayerList implements CampaignUIRenderingListener, CampaignI
         // The foot: the officer links page for everyone (on the friend whose row is open, if one is).
         float fy = y + footH - 8f - 30f;
         Style.fill(x + 8f, y + footH - 2f, W - 16f, 1f, Style.alpha(Style.RULE, 60));
-        String ol = "OFFICER LINKS";
-        Widgets.box(x + 12f, fy, W - 24f, 30f, ol, Style.ACCENT, false);
-        Style.textRight(Keys.name("officerLinks"), Style.SMALL_FONT, Style.FAINT, x + W - 20f, fy + (30f + Style.lineHeight(Style.SMALL_FONT)) / 2f);
-        hits.add(x + 12f, fy, W - 24f, 30f, "links");
+        float half = (W - 24f - 8f) / 2f;
+        Widgets.box(x + 12f, fy, half, 30f, "OFFICER LINKS", Style.ACCENT, false);
+        hits.add(x + 12f, fy, half, 30f, "links");
+        String wl = forSale > 0 ? "WISH LISTS  " + forSale + " HERE" : wished > 0 ? "WISH LISTS  " + wished : "WISH LISTS";
+        float wx = x + 12f + half + 8f;
+        Widgets.box(wx, fy, half, 30f, wl, forSale > 0 ? Panel.GOOD : Style.ACCENT, forSale > 0 && (System.currentTimeMillis() / 600) % 2 == 0);
+        hits.add(wx, fy, half, 30f, "wish");
         Style.text("Click a friend to manage them.", Style.SMALL_FONT, Style.FAINT, x + 12f, fy - 4f, W - 24f);
-        // The chat, under it all: folded to one line until opened.
-        bottom = ChatBox.host.draw(x, y - 6f, W, Math.max(ChatBox.HEAD_H, y - 16f));
+        Style.textRight(Keys.name("officerLinks") + " / " + Keys.name("wishLists"), Style.SMALL_FONT, Style.FAINT, x + W - 12f, fy - 4f);
+        return y;
     }
 
     /** A round trip's colour: fine, slow, bad. */

@@ -842,6 +842,18 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             }
             popup = alertTitle != null;
         }
+        if (!popup && readyPhase == 1) { // the ready check's hints take clicks: Enter starts, Ctrl+Enter starts anyway
+            for (InputEventAPI e : events) {
+                if (e.isConsumed() || !e.isMouseEvent() || e.isMouseMoveEvent()) continue;
+                float mx = Style.mx(), my = Style.my();
+                if (!panel.contains(mx, my)) continue;
+                if (e.isLMBDownEvent()) {
+                    Panel.Hit h = panel.hitAt(mx, my);
+                    if (h != null && h.kind == Panel.Hit.KEY && Panel.isEnter(h.value)) { if (h.ctrl) forcePressed = true; else enterPressed = true; }
+                }
+                e.consume();
+            }
+        }
         if (!popup && readyPhase != 1) return;
         for (InputEventAPI e : events) {
             if (e.isConsumed() || !e.isKeyDownEvent() || !Panel.isEnter(e.getEventValue())) continue;
@@ -928,15 +940,16 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             colors.add(Panel.DIM);
             footer = "Enter: start without waiting";
         } else if (lobby.allReady()) {
-            footer = "Everyone is ready.  Enter: start the battle     Ctrl+Shift+2...: remove that player (K: the targeted ship's)";
+            footer = "Everyone is ready.     Enter: start the battle     Ctrl+Shift+2...: remove that player     " + Keys.name("kickTargeted") + ": the targeted ship's";
         } else {
             if (waitNoted) {
                 lines.add("Waited over a minute. Ctrl+Enter starts now; anyone still loading catches up as the battle runs.");
                 colors.add(Panel.WARN);
             }
-            footer = "Waiting for players...  Ctrl+Enter: start anyway     Ctrl+Shift+2...: remove that player";
+            footer = "Waiting for players...     Ctrl+Enter: start anyway     Ctrl+Shift+2...: remove that player";
         }
-        panel.render("READY CHECK", lines, colors, footer);
+        panel.mouse = true; // (the battle hasn't started: the hints take clicks)
+        try { panel.render("READY CHECK", lines, colors, footer); } finally { panel.mouse = false; }
     }
 
     private static boolean eligible(ShipAPI s) {

@@ -164,7 +164,7 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
      * takes its normal width and the menu may cover its lower left corner.
      */
     private float boxWidth() {
-        float clear = Style.sw() / 2f - 520f / Style.ui - MARGIN; // from the menu's right edge to ours (the menu is the game's, in real units)
+        float clear = Style.sw() / 2f - 520f / Style.u() - MARGIN; // from the menu's right edge to ours (the menu is the game's, in real units)
         return clear >= 380f ? Math.min(560f, clear) : 560f;
     }
 
@@ -466,6 +466,11 @@ public class WingmanTitlePlugin extends BaseEveryFrameCombatPlugin {
                         && LobbyScreen.inside(lobby.listBox[0], lobby.listBox[1], lobby.listBox[2], lobby.listBox[3])) { // the wheel goes through the fleet
                     int n = roster.members.size();
                     lobbyAt = Math.max(0, Math.min(n - 1, lobbyAt + (e.getEventValue() > 0 ? -1 : 1)));
+                    e.consume();
+                    continue;
+                }
+                if (e.isMouseScrollEvent() && lobbyOpen && open && lobby.page == LobbyScreen.FLEET
+                        && ChatBox.joiner.wheel(Style.mx(), Style.my(), e.getEventValue())) { // the wheel goes back through the chat
                     e.consume();
                     continue;
                 }

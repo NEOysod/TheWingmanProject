@@ -15,8 +15,8 @@
   fight; it now does that only while the joiner has no ship, and is parked out of sight otherwise.
 - Protocol 63.
 - **Chat on the campaign map.** For anyone who'd rather not talk on Discord: a CHAT box under the host's CO-OP
-  panel and under PLAYERS in a joiner's lobby. The host's starts folded (one line: how many new, and the newest,
-  faint), so it stays out of the way. Click the line under it or press **Ctrl+Shift+C**, type, Enter sends.
+  panel and under PLAYERS in a joiner's lobby. The host's starts as a small CHAT tab (with how many lines are new),
+  so it stays out of the way. Click it or press **Ctrl+Shift+C**, type, Enter sends; the mouse wheel scrolls back.
   Lines are kept short and a flood is cut off on the host.
 - **Ping readout.** Each joiner's round trip to the host is measured every 2 s and shown on the host's CO-OP panel
   and in everyone's lobby (grey, orange, red). In a battle, your own ping sits at the top of the screen and says
@@ -32,6 +32,16 @@
   and the host's take-back and remove. A key used twice is pointed out. Messages name the key as set.
 - **F1 lists the keys** on the officer links, friend refits and wish list pages, and **?** on the CO-OP panel.
 - Fixed: on the refit page's weapon groups, "1-5 of 7 weapons" was drawn over the first weapon.
+- **The CO-OP panel and the chat shrink separately**, each with its own **-** button, to a small tab. With both
+  shrunk, the campaign map keeps one small row of tabs in the corner: CO-OP (players), CHAT (new lines), and
+  REFITS or WISH LISTS only when something waits there; a click on a tab opens it. **Ctrl+Shift+P** (can be changed)
+  shrinks both at once and, again, puts them back as they were. Remembered on your PC.
+- **UI pass.** A **?** button on the officer links, friend refits and wish list pages lists their keys (as F1
+  does). WISH LISTS has a button at the bottom of the CO-OP panel next to OFFICER LINKS. The ready check before a
+  battle (host and joiners, both steps) takes clicks on its keys. Buttons and hints name keys as set in Settings,
+  Keys, and the hints no longer run status text into the key names. The page size is capped at what the screen
+  has room for (1.5 at 1920 x 1080, 1 at 1280 x 720) rather than drawing off the edge. Checked at 1280 x 720,
+  1366 x 768, 1920 x 1080, 2560 x 1440 and 3840 x 2160.
 - **OFFICER LINKS button** at the bottom of the CO-OP panel: opens the officer links page on the friend whose row
   is open, or where you left it. Ctrl+Shift+L still works.
 - **Menus can't get stuck.** On the campaign map, Wingman's pages (settings, officer links, friend refits, wish lists)

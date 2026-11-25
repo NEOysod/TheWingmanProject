@@ -74,7 +74,11 @@ and in a campaign friends can connect as soon as you load your save, while you a
    own LOADOUT rows on the refit page. Pick an option with Left/Right or a click; the host's game swaps the ship to it.
    Press **T** on a friend's refit to trust them: their refits are accepted as they come in (still checked).
    **The CO-OP panel** (top right of the map): click a friend for their officer, how their refits are taken
-   (**Look only**, **Ask me**, **Trust**) and any refit of theirs waiting.
+   (**Look only**, **Ask me**, **Trust**) and any refit of theirs waiting. **CHAT** sits under it. Each has a
+   **-** button that shrinks it to a small tab (click the tab to open it again); with both shrunk, all that is
+   left is one row of tabs: CO-OP (players), CHAT (new lines), and REFITS or WISH LISTS when something waits
+   there. **Ctrl+Shift+P** shrinks both at once and, pressed again, puts them back as they were. This is
+   remembered on your PC. The mouse wheel over the chat scrolls back through it.
    **Officers for friends:** click ASSIGN on a friend or OFFICER LINKS at the bottom of the CO-OP panel, or press **Ctrl+Shift+L** on the campaign
    map; pick the friend (tabs along the top, or Tab / Shift+Tab) and one of your officers (click a card, or the arrows), and click
    **LINK** (or press **Enter**). That officer then captains whichever ship the friend picks
@@ -83,8 +87,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
    level. Enter again (or Delete) unlinks it and puts its level cap back. Saves load fine without Wingman.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
-   player as loading, choosing a ship, or flying one and ready or not. Press **Enter** to start once everyone
-   is ready, or **Ctrl+Enter** to start without waiting.
+   player as loading, choosing a ship, or flying one and ready or not. Press **Enter** (or click it on the panel)
+   to start once everyone is ready, or **Ctrl+Enter** to start without waiting.
 
 **What only the host can do**
 - Give fleet orders. Joiners see them but cannot give any.
@@ -117,8 +121,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
      another player's name can't be picked.
    - **Tab** switches to **LAST BATTLE**: the host's after-action report (see "When the battle ends") and back.
    - **PLAYERS** shows each player's round trip to the host (grey is fine, orange slow, red very slow). Under it,
-     **CHAT**: click its line (or **Ctrl+Shift+C**), type, **Enter** sends, **Esc** stops typing. Everyone in
-     the game sees it, the host on their CO-OP panel.
+     **CHAT**: click its line (or **Ctrl+Shift+C**), type, **Enter** sends, **Esc** stops typing; the mouse
+     wheel scrolls back. Everyone in the game sees it, the host under their CO-OP panel.
    - If the link to the host drops, you are reconnected by yourself as soon as the host can be reached again
      (setting *Rejoin by myself after a drop*).
    - **Refit:** while the host is docked at a market, the lobby says so, and the card of the ship you picked has
@@ -150,7 +154,8 @@ and in a campaign friends can connect as soon as you load your save, while you a
    - Without a lobby pick, if you flew one of these ships last time, you are already seated in it (see
      "Put me back in my last ship" in the settings).
 7. **Step 2 of 2: ready check.** It shows your ship and every player's. Press **Enter** for ready
-   (**Backspace** goes back to step 1 to change ship). The battle starts when the host presses Enter.
+   (**Backspace** goes back to step 1 to change ship); the keys on the panel can be clicked too. The battle starts
+   when the host presses Enter.
 
 **When the battle ends** you go straight back to the lobby (the game's own mission results, which only know your
 copy of the battle, are skipped), still connected, and it opens on **LAST BATTLE**: the host's report of the battle.
@@ -244,6 +249,7 @@ start **Wingman: Join Game** instead. It does the same thing.
 | Campaign map (host) | **Ctrl+Shift+R**, then YES / NO (or A / D), T | Friends' refits: accept / deny; trust that friend |
 | Campaign map (host) | **Ctrl+Shift+L** | Officer links: give a friend one of your officers |
 | Campaign map (host), lobby (joiner) | **Ctrl+Shift+C** | Chat: start typing (Enter sends, Esc stops typing) |
+| Campaign map (host) | **Ctrl+Shift+P** | Shrink the CO-OP panel and chat to tabs; again: back as they were |
 | Officer links, friend refits, wish lists | F1 | The keys on that page |
 | Lobby (joiner, title screen) | 1 to 8 | Pick your officer's next skill (when it can level up) |
 | Lobby (joiner, title screen) | Enter / Esc | Join the host's battle (when there is one) / back to the panel (F4 opens the lobby again) |
@@ -257,8 +263,9 @@ start **Wingman: Join Game** instead. It does the same thing.
 
 Wingman's keys that work outside its pages (settings, chat, officer links, friend refits, wish lists, player
 tags, the host's take-back and remove) can be changed in **Settings, Keys**, in case another mod uses the same.
-The table shows the defaults. **F1** on the officer links, friend refits and wish list pages (and **?** on the
-CO-OP panel) lists the keys there.
+The table shows the defaults. **F1** or the **?** button on the officer links, friend refits and wish list pages
+(and **?** on the CO-OP panel) lists the keys there. Outside battles, everything can also be done with the mouse;
+the ready check before a battle takes clicks too.
 
 ## 6. Settings
 
@@ -294,7 +301,7 @@ You do not need to change anything to play. The defaults aim for the smoothest p
 ### Interface
 | Setting | Default | What it does |
 |---|---|---|
-| Size of Wingman's pages and panels | 1 | 0.75 to 2, on top of the game's own UI scaling. Bigger for a 4K screen. At 1280 x 720, 1 is the largest that fits everything. |
+| Size of Wingman's pages and panels | 1 | 0.75 to 2, on top of the game's own UI scaling. Bigger for a 4K screen. A size bigger than the screen has room for is used as the biggest that fits (1.5 at 1920 x 1080, 1 at 1280 x 720). 1280 x 720 is the smallest screen supported. |
 | Player colours | standard | colorblind: colours told apart with any kind of colour blindness. The P number is always shown with them. |
 | Ping in battle | mine | mine: your round trip to the host at the top of the screen (orange or red when slow, SPIKE when it jumps). everyone: every player's. off. |
 | Rejoin by myself after a drop | on | Joiner: if the link drops while you are in the lobby, you are reconnected as soon as the host can be reached (for 10 minutes). Not after the host removed you. |

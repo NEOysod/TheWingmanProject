@@ -1532,21 +1532,33 @@ the game's own (non-API) types counted as one, against each class of the new bui
 - **Size** (`uiScale`): Wingman's pages and panels are laid out in the screen's size divided by the setting
   (`Style.sw()`, `sh()`, `mx()`, `my()`, `eventScale()`) and drawn inside `Style.push()` / `pop()`, a GL scale.
   Pushes nest (only the outermost scales), so a page drawn by a panel drawn by the title screen is scaled once.
-  Player tags stay on the ships, unscaled. Every page fits at 1280 x 720 at size 1; the joiner's refit page
-  folds its stats once on a short screen (`RefitScreen.compact`), and the lobby chat folds when there is no room.
+  `Style.u()` is the size in use: a setting above 1 is lowered until the scaled screen is at least 1280 x 720
+  (1.5 at 1920 x 1080, 1 at 1280 x 720), as nothing is laid out for less. Player tags stay on the ships, unscaled.
+  Every page fits at 1280 x 720 at size 1; the joiner's refit page folds its stats once on a short screen
+  (`RefitScreen.compact`), and the lobby chat folds when there is no room. `test/preview` draws every page
+  (`-Dpreview.size=WxH`, `-Dpreview.ui=S`) for a look at each screen size.
 - **Keys** (`Keys`): the keys that work outside a page (settings, chat, officer links, friend refits, wish lists,
   tags, the host's take-back and remove) are kept as text ("Ctrl+Shift+L") under `key.<id>` with the other
   in-game settings, and matched with exact Ctrl, Shift and Alt. The settings' KEYS page takes the next key
   pressed. Keys inside an open page stay fixed: a page takes every key while it is up.
-- **Key help** (`KeyHelp`): F1 on the campaign pages (officer links, friend refits, wish lists) or "?" on the
-  CO-OP panel draws that page's keys and Wingman's own over it; it closes with F1, Esc, or its page.
+- **Key help** (`KeyHelp`): F1 or "?" on the campaign pages (officer links, friend refits, wish lists), or "?" on
+  the CO-OP panel, draws that page's keys and Wingman's own over it; it closes with F1, Esc, a click, or its page.
+- **The host's campaign corner** (`CampaignPlayerList`): the CO-OP panel and the chat each minimize on their own
+  (`coop.list.min`, `chat.host.open` in `UiState`, a small file in saves/common: this PC's layout, not settings).
+  A minimized one is a tab (`Widgets.tab`) in a row along the top right: CO-OP with the player count, CHAT with
+  the unread count, and REFITS / WISH LISTS chips only while a refit waits or a wish list item is for sale at the
+  market. The `coopPanel` key minimizes both and remembers how they were (`beforeTuck`) to put them back.
+- **Mouse outside combat:** every campaign and lobby page takes clicks for what its keys do. In a battle, only
+  the ready check (paused, before the fight) does: the panel's key chips are hits that run the same code as the
+  key (`readyKey` on a joiner; Enter / Ctrl+Enter on the host). The fight itself stays on keys.
 - **Colours** (`playerColors`): `PlayerTags.color()` reads a second set after Okabe and Ito's palette when
   `colorblind` is chosen; every P colour is drawn with its P number.
 
 ## Chat and round trips
 
-- **Chat** (`ChatBox`, `ChatLog`): one box per PC: the host's under the CO-OP panel (folded until opened; folded
-  it shows how many lines are new and the newest, faint), the joiner's under PLAYERS in the lobby. Typing starts
+- **Chat** (`ChatBox`, `ChatLog`): one box per PC: the host's under the CO-OP panel (a CHAT tab with the unread
+  count until opened), the joiner's under PLAYERS in the lobby. The wheel over the lines scrolls back through
+  `ChatLog.KEPT` lines; scrolled back, new lines don't move the view, and a "newer below" line returns to the end. Typing starts
   with a click on its line or the chat key; while typing, every key is the chat's (consumed before the
   campaign sees it). The host's own lines go out as P1. Nothing in a line is ever acted on.
 - **Round trips** (`Pings`, `PingReadout`): the CO-OP panel and the lobby show each joiner's (grey under 120

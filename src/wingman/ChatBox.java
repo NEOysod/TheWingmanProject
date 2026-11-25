@@ -7,26 +7,47 @@ import wingman.net.ChatLog;
 
 /**
  * The co-op chat as a small box: under the CO-OP panel on the host's campaign map, under PLAYERS in a joiner's lobby.
- * Folded it is one line (CHAT, and how many lines are new); opened it shows the last lines and a line to type in.
+ * The host's minimizes to a small CHAT tab (drawn by CampaignPlayerList); the joiner's folds to one line (CHAT, and
+ * how many lines are new). Opened it shows the last lines and a line to type in.
  * Typing starts with a click on that line or the chat key (Keys "chat"); Enter sends, Esc stops typing. While typing,
  * every key is the chat's; otherwise none is.
  */
 final class ChatBox {
     interface Sender { boolean send(String text); }
 
-    /** The host's box (folded until opened: it stays out of the way) and the joiner's (open). */
-    static final ChatBox host = new ChatBox(false), joiner = new ChatBox(true);
+    /** The host's box (a tab until opened: it stays out of the way) and the joiner's (open), as last left on this PC. */
+    static final ChatBox host = new ChatBox("chat.host.open", false, true), joiner = new ChatBox("chat.lobby.open", true, false);
 
     boolean open, typing;
+    /** Its head has a minimize button (the host's), rather than folding on a click anywhere on it (the joiner's). */
+    final boolean minimizable;
+    private final String stateKey;
     final StringBuilder draft = new StringBuilder();
     Sender sender;
     private final Widgets.Hits hits = new Widgets.Hits();
     private long drawnAt;
     private String problem = "";
+    /** Lines scrolled back from the newest (the wheel over the lines), and what the log was when last drawn. */
+    private int back, seenVersion, seenSize;
+    /** Where the lines were drawn ({x, y, w, h}), for the wheel; null when not open. */
+    private float[] linesBox;
 
     static final float HEAD_H = 26f, INPUT_H = 28f, LINES_H = 150f;
 
-    private ChatBox(boolean open) { this.open = open; }
+    private ChatBox(String stateKey, boolean open, boolean minimizable) {
+        this.stateKey = stateKey;
+        this.minimizable = minimizable;
+        boolean o = open;
+        try { o = UiState.get(stateKey, open); } catch (Throwable t) { /* as designed */ }
+        this.open = o;
+    }
+
+    /** Open or minimize it (remembered on this PC). */
+    void setOpen(boolean o) {
+        open = o;
+        if (!o) typing = false;
+        try { UiState.set(stateKey, o); } catch (Throwable t) { /* for now only */ }
+    }
 
     /** How tall it is drawn (folded: one line; open: the lines too, at most 'room'). */
     float height(float room) {
@@ -55,15 +76,23 @@ final class ChatBox {
         Style.frame(x, y, w, h, new Color(6, 12, 20, 228), Style.EDGE, 6f);
         // the head: CHAT, what is new, and the fold
         float hy = top - HEAD_H;
-        boolean overHead = Widgets.over(x, hy, w, HEAD_H);
+        boolean overHead = !minimizable && Widgets.over(x, hy, w, HEAD_H);
         Style.fill(x + 1f, hy, w - 8f, HEAD_H - 1f, overHead ? Style.HOVER : Style.BAR);
         Style.fill(x + 1f, hy, 3f, HEAD_H - 1f, Style.ACCENT);
         float ty = top - (HEAD_H - Style.lineHeight(Style.SMALL_FONT)) / 2f;
         Style.text("CHAT", Style.SMALL_FONT, Style.ACCENT, x + 12f, ty, 60f);
         int unread = ChatLog.unread();
         if (opened) ChatLog.seen();
-        String right = opened ? "FOLD" : open ? (unread > 0 ? unread + " NEW" : "CLICK TO CHAT") : unread > 0 ? unread + " NEW" : "OPEN";
-        Style.textRight(right, Style.SMALL_FONT, !opened && unread > 0 ? Panel.WARN : Style.DIM, x + w - 12f, ty);
+        String right = opened ? (minimizable ? "" : "FOLD") : open ? (unread > 0 ? unread + " NEW" : "CLICK TO CHAT") : unread > 0 ? unread + " NEW" : "OPEN";
+        float rightEdge = x + w - 12f;
+        if (minimizable) { // a minimize button at the right of the head: the box becomes a small CHAT tab
+            float bs = HEAD_H - 8f, bx = x + w - 8f - bs, by = hy + 4f;
+            Widgets.minimizeBox(bx, by, bs);
+            hits.add(bx, by, bs, bs, "fold");
+            rightEdge = bx - 8f;
+            if (opened) Style.textRight(Keys.name("chat") + ": type", Style.SMALL_FONT, Style.FAINT, rightEdge, ty);
+        }
+        Style.textRight(right, Style.SMALL_FONT, !opened && unread > 0 ? Panel.WARN : Style.DIM, rightEdge, ty);
         if (!opened && (unread > 0 || open)) { // the newest line, faint, so a glance tells what it is about
             List<ChatLog.Line> last = ChatLog.last(1);
             if (!last.isEmpty()) {
@@ -73,23 +102,39 @@ final class ChatBox {
                 Style.text(Widgets.fit(t, Style.SMALL_FONT, tw), Style.SMALL_FONT, Style.FAINT, x + 60f, ty, tw);
             }
         }
+        linesBox = null;
         if (open && !opened) { // no room to open it here: the newest line, and a click (or the chat key) asks for the room
             hits.add(x, hy, w, HEAD_H, "type");
             typing = false;
             return y;
         }
-        hits.add(x, hy, w, HEAD_H, "fold");
+        if (!minimizable) hits.add(x, hy, w, HEAD_H, "fold");
         if (!opened) { typing = false; return y; }
 
         // the lines, newest at the bottom
         float areaTop = hy - 6f, inputY = y + 6f, areaBottom = inputY + INPUT_H + 6f;
         float cx = x + 10f, chipW = Style.width("P00", Style.SMALL_FONT) + 10f, tx = cx + chipW + 6f, tw = x + w - 10f - tx;
-        List<ChatLog.Line> lines = ChatLog.last(40);
+        List<ChatLog.Line> lines = ChatLog.last(ChatLog.KEPT);
+        // scrolled back (the wheel): stays on the same lines as new ones arrive
+        int v = ChatLog.version();
+        if (back > 0 && v != seenVersion) back += Math.max(0, lines.size() - seenSize);
+        seenVersion = v;
+        seenSize = lines.size();
+        back = Math.max(0, Math.min(back, lines.size() - 1));
         float at = areaBottom;
         if (lines.isEmpty()) {
             Style.text("Nothing said yet. Only the players in this game see it.", Style.SMALL_FONT, Style.FAINT, cx, areaTop - 2f, w - 20f);
         }
-        for (int i = lines.size() - 1; i >= 0; i--) {
+        linesBox = new float[] { x, areaBottom, w, areaTop - areaBottom };
+        if (back > 0) { // a line along the bottom of the lines: back to the newest
+            float bh = Style.lineHeight(Style.SMALL_FONT) + 4f;
+            boolean over = Widgets.over(x + 8f, at, w - 16f, bh);
+            Style.fill(x + 8f, at, w - 16f, bh, over ? Style.HOVER : Style.alpha(Style.ACCENT, 20));
+            Style.text(back + " newer below   (wheel down, or click)", Style.SMALL_FONT, over ? Style.TEXT : Style.DIM, x + 16f, at + bh - 2f, w - 32f);
+            hits.add(x + 8f, at, w - 16f, bh, "newest");
+            at += bh + 4f;
+        }
+        for (int i = lines.size() - 1 - back; i >= 0; i--) {
             ChatLog.Line l = lines.get(i);
             String t = l.name + ":  " + l.text;
             float th = Style.height(t, body, tw);
@@ -119,18 +164,32 @@ final class ChatBox {
         return y;
     }
 
+    /** The mouse wheel at a point: over the lines, back through them (up) or towards the newest (down). True if taken. */
+    boolean wheel(float mx, float my, int value) {
+        float[] b = linesBox;
+        if (!shown() || !open || b == null || mx < b[0] || mx > b[0] + b[2] || my < b[1] || my > b[1] + b[3]) return false;
+        back = Math.max(0, back + (value > 0 ? 2 : -2));
+        return true;
+    }
+
     /** What of the box is under the point ("" the box itself), or null. */
     String at(float mx, float my) { return shown() ? hits.at(mx, my) : null; }
 
     /** A click on it (by what at() said). */
     void click(String id) {
         if (id == null) { typing = false; return; }
-        if (id.equals("fold")) { open = !open; typing = open && typing; Widgets.click(); }
+        if (id.equals("fold")) { setOpen(!open); Widgets.click(); }
         else if (id.equals("type")) { typing = true; problem = ""; }
+        else if (id.equals("newest")) back = 0;
     }
 
     /** Start typing (the chat key): opens it too. */
-    void startTyping() { open = true; typing = true; problem = ""; }
+    void startTyping() {
+        if (!open) setOpen(true);
+        typing = true;
+        problem = "";
+        drawnAt = System.currentTimeMillis(); // (it is drawn from the next frame: what is typed until then is kept)
+    }
 
     /**
      * A key going down. True if the chat took it: always while typing; otherwise only the chat key. Read everything

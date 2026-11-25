@@ -51,7 +51,9 @@ final class KeyHelp {
         } else if ("CO-OP panel".equals(what)) {
             r.add(new String[] { "Click a friend", "Their officer, how their refits are taken, a refit waiting" });
             r.add(new String[] { "Wheel", "Scroll the players (a big game)" });
-            r.add(new String[] { "Click CHAT", "Open or fold the chat; click the line under it to type" });
+            r.add(new String[] { "Click -", "The players or the chat to a small tab (click the tab to open it)" });
+            r.add(new String[] { Keys.name("coopPanel"), "Both to tabs, or back as they were" });
+            r.add(new String[] { Keys.name("chat"), "Type in the chat (opens it if it is a tab); Enter sends, Esc stops" });
         }
         r.add(new String[] { "", "" });
         r.add(new String[] { "", "WINGMAN'S KEYS (change them in Settings, Keys)" });

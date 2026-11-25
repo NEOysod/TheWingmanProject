@@ -246,10 +246,14 @@ public class UiPreview {
             if (!only.isEmpty() && !s.name.contains(only)) continue;
             W = s.w; H = s.h;
             mouseX = s.mx; mouseY = s.my;
-            if (Boolean.getBoolean("preview.p720")) { // every screen at the smallest size supported
-                mouseX = mouseX < 0 ? mouseX : mouseX * 1280f / W; mouseY = mouseY < 0 ? mouseY : mouseY * 720f / H;
-                W = 1280; H = 720;
+            String size = System.getProperty("preview.size", Boolean.getBoolean("preview.p720") ? "1280x720" : "");
+            if (!size.isEmpty()) { // every screen at one screen size (the mouse kept at the same place relative to it)
+                int nw = Integer.parseInt(size.split("x")[0]), nh = Integer.parseInt(size.split("x")[1]);
+                mouseX = mouseX < 0 ? mouseX : mouseX * nw / W; mouseY = mouseY < 0 ? mouseY : mouseY * nh / H;
+                W = nw; H = nh;
             }
+            String ui = System.getProperty("preview.ui", "");
+            if (!ui.isEmpty()) Style.ui = Float.parseFloat(ui);
             setUp();
             backdrop();
             try { s.draw.run(); } catch (Throwable t) { t.printStackTrace(); }

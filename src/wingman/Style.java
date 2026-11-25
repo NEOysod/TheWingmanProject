@@ -22,20 +22,36 @@ final class Style {
     // ---- size: Wingman's pages and panels are drawn in units of the screen divided by this (setting uiScale) ----
     static volatile float ui = 1f;
 
+    /**
+     * The size in use: as set, except that a size above 1 is capped to what still leaves 1280 x 720 of our units (the
+     * least every page is made for), so no setting pushes a page off the screen. 1 and below are as set.
+     */
+    static float u() {
+        float chosen = ui;
+        if (chosen <= 1f) return chosen;
+        try {
+            float fit = Math.min(Global.getSettings().getScreenWidth() / 1280f, Global.getSettings().getScreenHeight() / 720f);
+            return Math.max(1f, Math.min(chosen, fit));
+        } catch (Throwable t) {
+            return 1f;
+        }
+    }
+
     /** The screen's width and height in our units. */
-    static float sw() { return Global.getSettings().getScreenWidth() / ui; }
-    static float sh() { return Global.getSettings().getScreenHeight() / ui; }
+    static float sw() { return Global.getSettings().getScreenWidth() / u(); }
+    static float sh() { return Global.getSettings().getScreenHeight() / u(); }
     /** The mouse in our units. */
-    static float mx() { return Global.getSettings().getMouseX() / ui; }
-    static float my() { return Global.getSettings().getMouseY() / ui; }
+    static float mx() { return Global.getSettings().getMouseX() / u(); }
+    static float my() { return Global.getSettings().getMouseY() / u(); }
     /** What an input event's place is divided by to be in our units. */
-    static float eventScale() { return Global.getSettings().getScreenScaleMult() * ui; }
+    static float eventScale() { return Global.getSettings().getScreenScaleMult() * u(); }
 
     /** Start drawing in our units (the matching pop() must follow, in a finally). Returns what pop() needs. */
     static boolean push() {
-        if (depth++ > 0 || ui == 1f) return false; // (inside another push: already in our units)
+        float s = u();
+        if (depth++ > 0 || s == 1f) return false; // (inside another push: already in our units)
         GL11.glPushMatrix();
-        GL11.glScalef(ui, ui, 1f);
+        GL11.glScalef(s, s, 1f);
         return true;
     }
 

@@ -77,6 +77,33 @@ final class Widgets {
         Style.text(t, Style.SMALL_FONT, on || over ? Color.WHITE : Style.alpha(c, 230), x + (w - tw) / 2f, y + (h + th) / 2f, w);
     }
 
+    /** A square minimize button (a short bar in a box), brighter under the mouse. */
+    static void minimizeBox(float x, float y, float s) {
+        boolean over = over(x, y, s, s);
+        Style.fill(x, y, s, s, over ? Style.alpha(Style.ACCENT, 60) : Style.alpha(Style.ACCENT, 14));
+        Style.outline(x, y, s, s, over ? Style.ACCENT : Style.alpha(Style.ACCENT, 110));
+        float bw = Math.max(6f, s * 0.45f);
+        Style.fill(x + (s - bw) / 2f, y + s * 0.3f, bw, 2f, over ? Color.WHITE : Style.alpha(Style.ACCENT, 230));
+    }
+
+    /**
+     * A small tab, its right edge at 'right' and its top at 'top': a word and, if any, a count in its own colour (a
+     * minimized panel, or something waiting). Returns its left edge.
+     */
+    static float tab(float right, float top, float h, String word, String count, Color countColor, boolean pulse, Hits hits, String id) {
+        float lw = Style.width(word, Style.SMALL_FONT), cw = count.isEmpty() ? 0f : Style.width(count, Style.SMALL_FONT);
+        float w = 14f + lw + (count.isEmpty() ? 0f : 8f + cw) + 12f;
+        float x = right - w, y = top - h;
+        boolean over = over(x, y, w, h);
+        Style.frame(x, y, w, h, over ? new Color(16, 34, 54, 240) : new Color(6, 12, 20, 228), pulse ? countColor : over ? Style.ACCENT : Style.EDGE, 5f);
+        Style.fill(x + 1f, y + 1f, 3f, h - 2f, Style.ACCENT);
+        float ty = y + (h + Style.lineHeight(Style.SMALL_FONT)) / 2f;
+        Style.text(word, Style.SMALL_FONT, over ? Color.WHITE : Style.ACCENT, x + 12f, ty, lw + 4f);
+        if (!count.isEmpty()) Style.text(count, Style.SMALL_FONT, countColor, x + 12f + lw + 8f, ty, cw + 4f);
+        if (hits != null) hits.add(x, y, w, h, id);
+        return x;
+    }
+
     /** A row of toggles across 'w', one lit; returns their x positions (left of each, then the right edge). */
     static float[] toggles(String[] names, int on, float x, float y, float w, float h, Color c, Hits hits, String id) {
         float[] at = new float[names.length + 1];

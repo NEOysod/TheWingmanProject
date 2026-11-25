@@ -58,6 +58,7 @@ final class Keys {
     static {
         add("settings", "Settings page", "Campaign map, battle", "Ctrl+Shift+O");
         add("chat", "Chat: start typing", "Campaign map (host), lobby (joiner)", "Ctrl+Shift+C");
+        add("coopPanel", "CO-OP panel and chat to tabs", "Campaign map (host); again: back as they were", "Ctrl+Shift+P");
         add("officerLinks", "Officer links page", "Campaign map (host)", "Ctrl+Shift+L");
         add("friendRefits", "Friend refits page", "Campaign map (host)", "Ctrl+Shift+R");
         add("wishLists", "Wish lists page", "Campaign map", "Ctrl+Shift+W");

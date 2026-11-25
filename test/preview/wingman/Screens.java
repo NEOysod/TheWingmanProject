@@ -140,7 +140,8 @@ final class Screens {
         v.noteColor = Panel.GOOD;
         v.reserveRight = CoopScreen.buttonsWidth(true) + 14f;
         l.render(v);
-        new CoopScreen().buttons(UiPreview.W - CoopScreen.margin(), UiPreview.H - CoopScreen.margin() + 2f, true);
+        boolean pushed = Style.push(); // (as the game draws them: in renderScaled, at the chosen size)
+        try { new CoopScreen().buttons(Style.sw() - CoopScreen.margin(), Style.sh() - CoopScreen.margin() + 2f, true); } finally { Style.pop(pushed); }
     }
 
     static wingman.net.RefitData refitData() {
@@ -304,7 +305,8 @@ final class Screens {
         }
         if (whole) set(pl, "openSlot", 3);
         if (big > 0) set(pl, "scroll", 6);
-        pl.draw(rows, 1);
+        boolean pushed = Style.push(); // (as the game draws it: in render, at the chosen size)
+        try { pl.draw(rows, 1); } finally { Style.pop(pushed); }
     }
 
     static void officers() {
@@ -404,7 +406,17 @@ final class Screens {
             ChatBox.host.open = false; ChatBox.host.typing = false; ChatBox.host.draft.setLength(0);
         } }));
         out.add(new Shot("chat-host-folded", 1920, 1080, -1, -1, new Runnable() { public void run() {
-            chat(); try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            chat(); ChatBox.host.open = false; try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+        } }));
+        out.add(new Shot("coop-list-min-chat-open", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = true; CampaignPlayerList.listMin = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            CampaignPlayerList.listMin = false; ChatBox.host.open = false;
+        } }));
+        out.add(new Shot("coop-both-min", 1920, 1080, -1, -1, new Runnable() { public void run() {
+            chat(); ChatBox.host.open = false; CampaignPlayerList.listMin = true;
+            try { playerList(); } catch (Exception e) { throw new RuntimeException(e); }
+            CampaignPlayerList.listMin = false;
         } }));
         out.add(new Shot("chat-lobby", 1920, 1080, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));
         out.add(new Shot("chat-lobby-1366", 1366, 768, -1, -1, new Runnable() { public void run() { chat(); lobby(LobbyScreen.FLEET, false); } }));

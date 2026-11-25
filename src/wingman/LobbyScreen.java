@@ -171,7 +171,7 @@ final class LobbyScreen {
                 y = Math.min(y, by - 4f);
             }
             y -= 10f;
-            if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H / Style.ui - 8f);
+            if (lunaCorner() > 0f) y = Math.min(y, sh * 0.975f - LUNA_BUTTONS_H / Style.u() - 8f);
             fill(m, y, sw - 2 * m, 1f, LINE);
             float contentTop = y - 14f;
 
@@ -224,7 +224,7 @@ final class LobbyScreen {
         if (luna == null) {
             try { luna = Global.getSettings().getModManager().isModEnabled("lunalib"); } catch (Throwable t) { luna = Boolean.FALSE; }
         }
-        return luna.booleanValue() ? LUNA_BUTTONS_W / Style.ui : 0f; // (LunaLib's buttons are in real units)
+        return luna.booleanValue() ? LUNA_BUTTONS_W / Style.u() : 0f; // (LunaLib's buttons are in real units)
     }
 
     private static String sizeTag(String hullSize) {
