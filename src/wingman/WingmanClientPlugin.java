@@ -4417,6 +4417,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** The game's teleporter system class in this build (the name differs build by build; others are learned as met). */
     private static String teleporterClass() {
         String v = Mods.gameVersion();
+        if (v.contains("RC9")) return "com.fs.starfarer.combat.systems.J";
         if (v.contains("RC8")) { StringBuilder n = new StringBuilder("com.fs.starfarer.combat.systems.O0o"); for (int i = 0; i < 253; i++) n.append('O'); return n.toString(); }
         if (v.contains("RC7")) return "com.fs.starfarer.combat.systems.I";
         if (v.contains("RC6")) return "com.fs.starfarer.combat.systems.int";

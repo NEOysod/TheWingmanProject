@@ -18,7 +18,7 @@ import com.fs.starfarer.api.combat.ShipAPI;
  * battle. So a bay's pending replacement is cleared here, the way the game itself clears it when a fighter is
  * finished, without anything being launched: the request, its timer, the sparks, and any queued requests.
  *
- * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.oOOO.B, as of 0.98.5a), set through
+ * The bay class keeps these in private fields (com.fs.starfarer.combat.entities.ship.A.new in 0.98.5a-RC9), set through
  * java.lang.invoke, which the script sandbox allows. Their names are obfuscated with accented letters, written as
  * escapes. If they can't be reached, the sparks show as before, with one log line.
  */
@@ -26,10 +26,11 @@ final class BayQuiet {
     private BayQuiet() {}
 
     /**
-     * The bay's fields by game build, newest first (0.98.5a-RC8, RC7, RC6/RC5): the replacement under way (its class
-     * and field), its build timer, the "being built" effect (class and field), further replacements asked for.
+     * The bay's fields by game build, newest first (0.98.5a-RC9, RC8, RC7, RC6/RC5): the replacement under way (its
+     * class and field), its build timer, the "being built" effect (class and field), further replacements asked for.
      */
     private static final String[][] NAMES = {
+        { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.oOOO", "class.void$interface", "new.void$interface" },
         { "com.fs.starfarer.combat.ai.oO0O$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.o" + repeat('O', 255), "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
         { "com.fs.starfarer.combat.ai.M$Oo", "super.void$interface", "do.return$interface", "com.fs.starfarer.renderers.fx.A", "\u00f8O\u00f5o00", "\u00f4O\u00f5o00" },
         { "com.fs.starfarer.combat.ai.M$Oo", "\u00d8O\u00f5o00", "oO\u00f5o00", "com.fs.starfarer.renderers.fx.super", "class.void$interface", "new.void$interface" },

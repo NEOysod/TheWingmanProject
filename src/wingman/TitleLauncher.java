@@ -27,10 +27,11 @@ final class TitleLauncher {
 
     /**
      * A mission's spec (its id, its script), a mission prepared from one, the spec store's list of them and the
-     * spec's id: scrambled names, by game build, newest first: 0.98.5a-RC8, RC7, RC6, RC5. The first set whose
+     * spec's id: scrambled names, by game build, newest first: 0.98.5a-RC9, RC8, RC7, RC6, RC5. The first set whose
      * classes and methods are all there is used.
      */
     private static final String[][] MISSION_NAMES = {
+        { "com.fs.starfarer.title.Object.N", "com.fs.starfarer.title.Object.for", "\u00d200000", "\u00d500000" },
         { "com.fs.starfarer.title.C.while", "com.fs.starfarer.title.C.for", "\u00d200000", "class" },
         { "com.fs.starfarer.title.C.Oo0" + repeat('O', 253), "com.fs.starfarer.title.C.K", "\u00d200000", "\u00d500000" },
         { "com.fs.starfarer.title.ooOO.Oo0O", "com.fs.starfarer.title.ooOO.o0oO", "new", "\u00d500000" },

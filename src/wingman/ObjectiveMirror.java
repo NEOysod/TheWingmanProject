@@ -36,9 +36,10 @@ final class ObjectiveMirror {
 
     /**
      * The objective spec class, the spec store's lookup (Class, String), the spec's "effect class" setter and its
-     * script getter (to be sure it is the right class): 0.98.5a-RC8, RC7, RC6, RC5.
+     * script getter (to be sure it is the right class): 0.98.5a-RC9, RC8, RC7, RC6, RC5.
      */
     private static final String[][] NAMES = {
+        { "com.fs.starfarer.loading.specs.S", "super", "\u00d300000", "String" },
         { "com.fs.starfarer.loading.specs.oOOo", "o00000", "\u00d300000", "String" },
         { "com.fs.starfarer.loading.specs.supersuper", "super", "Object", "\u00d400000" },
         { "com.fs.starfarer.loading.specs.oOOo", "o00000", "\u00d300000", "\u00d400000" },

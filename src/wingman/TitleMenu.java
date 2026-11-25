@@ -19,11 +19,11 @@ final class TitleMenu {
     private TitleMenu() {}
 
     /**
-     * The menu's class by game build, newest first: 0.98.5a-RC8 "Oo" and 254 more capital O's (as 0.98a), RC7 and RC5
-     * "Object", RC6 "C". Each is tried in full (the field's type must match), as a name can be another class in
+     * The menu's class by game build, newest first: 0.98.5a-RC9 "B", RC8 "Oo" and 254 more capital O's (as 0.98a), RC7
+     * and RC5 "Object", RC6 "C". Each is tried in full (the field's type must match), as a name can be another class in
      * another build. Checked by test/InternalsCheck.
      */
-    private static final String[] WIDGET_CLASSES = { "com.fs.starfarer.title.Oo" + repeat('O', 254), "com.fs.starfarer.title.Object", "com.fs.starfarer.title.C" };
+    private static final String[] WIDGET_CLASSES = { "com.fs.starfarer.title.B", "com.fs.starfarer.title.Oo" + repeat('O', 254), "com.fs.starfarer.title.Object", "com.fs.starfarer.title.C" };
 
     private static String repeat(char c, int n) { StringBuilder sb = new StringBuilder(n); for (int i = 0; i < n; i++) sb.append(c); return sb.toString(); }
 

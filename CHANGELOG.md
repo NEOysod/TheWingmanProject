@@ -2,6 +2,11 @@
 
 ## Next (on the test branch)
 
+- **Starsector 0.98.5a-RC9.** The hotfix renamed game internals again: the title menu (now `title.B`), the join
+  mission (`title.Object.N` / `title.Object.for`, the mission id getter back to RC5's name), held-back objectives
+  (`specs.S`, the spec store's lookup now `super`), carrier bays (same class, fields back to RC6's names), the
+  teleporter class (`systems.J`) and the fighter wing class. RC9's names go first in each table; RC8 and older still
+  work through the same tables (the message feed is built for RC9, as the build reads its name from the game).
 - Fixed: built-in weapons were missing from the refit page's weapon groups when a hull mod or the ship's variant
   put them there (a modded hull's built-in gun), so a group holding one looked empty. The host now sends them; they
   show as "(built in)", can be grouped, and count in the stats.
