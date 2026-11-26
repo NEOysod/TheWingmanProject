@@ -1539,15 +1539,40 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.NOTICE:
                 Ui.say(engine, "Co-op: " + Msg.readUtf(p.data));
                 break;
-            case Msg.RESET:
+            case Msg.RESET: {
                 hostPaused = false;
                 pdAims.clear();
                 Subsystems.reset();
-                toPlaceholder();
-                for (Puppet pp : puppets.values()) engine.removeEntity(pp.ship);
+                // A refresh we asked for (requestResync), not a new battle: the ship we fly is kept as it is, and
+                // we stay at its helm, with its modules. Its description comes again and is passed over (spawn: it
+                // is already here). Until 0.9.4 it was torn down and built again like every other ship, and we
+                // were put in the stand-in meanwhile and seated again after: a step that could fail and leave
+                // players out of their ships for no reason they could see.
+                Puppet keep = null;
+                if (reboardId >= 0 && reboardId == ownId) {
+                    Puppet mine = puppets.get(ownId);
+                    try {
+                        if (mine != null && !mine.fighter && !mine.module && mine.ship != null && mine.ship.isAlive() && !mine.ship.isHulk()
+                                && engine.isEntityInPlay(mine.ship) && engine.getPlayerShip() == mine.ship) keep = mine;
+                    } catch (Throwable t) { keep = null; }
+                }
+                List<Puppet> kept = new ArrayList<Puppet>();
+                if (keep != null) {
+                    kept.add(keep);
+                    for (Puppet pp : puppets.values()) {
+                        try { if (pp.module && pp.ship.getParentStation() == keep.ship) kept.add(pp); } catch (Throwable t) { /* rebuilt with the rest */ }
+                    }
+                    refreshesKept++;
+                    Global.getLogger(WingmanClientPlugin.class).info("Wingman: refreshing the battle; we stay in our ship (" + keep.ship.getHullSpec().getHullId()
+                            + (kept.size() > 1 ? ", with " + (kept.size() - 1) + " modules" : "") + ")");
+                } else {
+                    toPlaceholder();
+                }
+                for (Puppet pp : puppets.values()) if (!kept.contains(pp)) engine.removeEntity(pp.ship);
                 for (MissilePuppet mp : missiles.values()) engine.removeEntity(mp.missile);
                 puppets.clear();
                 byShip.clear();
+                for (Puppet pp : kept) { puppets.put(pp.netId, pp); byShip.put(pp.ship, pp); }
                 hostWings.clear();
                 departed.clear();
                 for (MissilePuppet mp : releasing) engine.removeEntity(mp.missile);
@@ -1588,7 +1613,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 localMissiles.clear();
                 missiles.clear();
                 byMissile.clear();
-                ownId = -1;
+                ownId = keep != null ? keep.netId : -1;
                 hostFlagship = -1;
                 missing.clear();
                 skippedShips = 0;
@@ -1596,7 +1621,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 checkMisses = 0;
                 stallAlerted = false;
                 for (ShipAPI s : new ArrayList<ShipAPI>(engine.getShips())) { // drones our copies launched
-                    try { if (s.isDrone() && s.getDroneSource() != null) engine.removeEntity(s); } catch (Throwable t) { /* stays */ }
+                    try { if (s.isDrone() && s.getDroneSource() != null && (keep == null || s != keep.ship)) engine.removeEntity(s); } catch (Throwable t) { /* stays */ }
                 }
                 orders.reset();
                 environment.reset();
@@ -1608,6 +1633,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 sentBuilt = -1;
                 lobby = null;
                 break;
+            }
             case Msg.SIDE: {
                 // A ship changed sides on the host (boarded, hacked, taken over by a script).
                 In in = Msg.reader(p.data);
@@ -1677,7 +1703,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (engine.getPlayerShip() == pp.ship) toPlaceholder();
                 if (how == Msg.DESPAWN_DESTROYED || how == Msg.DESPAWN_WRECKED || how == Msg.DESPAWN_NO_WRECK) {
                     pp.guard.standAside = true;
-                    if (!pp.fighter && how != Msg.DESPAWN_NO_WRECK) {
+                    // A drone the size of a fighter is reported destroyed as a fighter is (its blast), but the host
+                    // keeps no wreck of a drone or a module (see WingmanHostPlugin.trackShips): until 0.9.4, one was
+                    // kept here, the counts of wrecks no longer agreed, and every joiner refreshed the whole battle
+                    // a few seconds later, which took them out of their ships.
+                    if (pp.drone) { try { pp.ship.setHulkChanceOverride(0f); } catch (Throwable t) { /* the game decides */ } }
+                    if (!pp.fighter && !pp.drone && !pp.module && how != Msg.DESPAWN_NO_WRECK) {
                         // The host has a wreck where this ship was, so there is one here too, and it stays
                         // under the host's direction (see followWrecks).
                         try { pp.ship.setHulkChanceOverride(1f); } catch (Throwable t) { /* the game decides */ }
@@ -3349,6 +3380,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      */
     private final Map<Integer, Puppet> departed = new java.util.LinkedHashMap<Integer, Puppet>();
     private int standIns, wrongLaunchers;
+    /** Refreshes of the whole battle in which we stayed in our ship (see RESET). */
+    private int refreshesKept;
 
     private static String caughtLine() {
         String c = AgentGate.caughtSummary();

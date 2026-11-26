@@ -75,6 +75,12 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
     game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
     their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- Fixed: players thrown out of their ships for no reason they could see. Behind it: when a drone the size of a
+  fighter was destroyed (Domain Explorarium's PD drones, say), each joiner kept a wreck of it that the host
+  doesn't keep, so the counts of wrecks stopped agreeing and every joiner refreshed the whole battle a few
+  seconds later. A refresh tore down every ship, the one you fly included, and seated you again afterwards,
+  which didn't always stick. Now a drone leaves no wreck on a joiner either, and a refresh keeps the ship you fly
+  (and its modules) as it is, with you at its helm; only the rest of the battle is built again.
 - Fixed: the ship you fly hung back from pulls and blasts that happen on the host (UAF's Lion's Roar sucking
   ships in, then flinging them; a mod's tractor beam; a collision that went differently there). Your ship moves
   by your controls at once and was only drawn toward the real one's position, slowly and with slack, so it

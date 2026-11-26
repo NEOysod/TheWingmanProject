@@ -1014,8 +1014,14 @@ react. Replayed damage is not counted as local.
 
 - **Drift check** (`CHECK` every 3 s): counts and id sums of ships, fighters and wrecks, with ships the joiner knows
   of but couldn't build counted in. Three ship/fighter misses in a row (five for wrecks, once a battle) → resync.
-- **Resync** (`requestResync`): at most 5 a battle, with a minimum gap; the joiner remembers its ship and is put back
-  in it after `ASSIGN`.
+- **Resync** (`requestResync`): at most 5 a battle, with a minimum gap. The ship the joiner flies is kept through
+  it: on the `RESET` that answers its own request (`reboardId == ownId`), that puppet and its modules stay in
+  `puppets`, the joiner stays at the helm, and their `SPAWN`s are passed over (`spawn` skips a known id); everything
+  else is built again. If it can't be kept (not alive, not in play, not at the helm), the joiner goes to the
+  stand-in and is put back in it after `ASSIGN` (`reboard`, every frame for 15 s), as before 0.9.4.
+- **Drones leave no wreck** on a joiner: the host keeps none (a drone or module is `part` in `trackShips`), though a
+  fighter-sized one is reported `DESPAWN_DESTROYED` like a fighter. Until 0.9.4 one was kept, the wreck counts
+  disagreed, and every joiner refreshed at once.
 - **Rescue:** twice a second, a puppet the local game lost or killed while the host has it is rebuilt at the host's
   place (3 times at most), damage state restored, the player put back at the helm if it was theirs.
 - **Reconnect:** the battle pauses, the ship is remembered, `connect` is retried every 3 s up to 10 times with the
