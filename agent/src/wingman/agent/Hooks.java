@@ -40,7 +40,10 @@ public final class Hooks {
     private Hooks() {}
 
 
-    public static void setBridge(Bridge b) { Shared.bridge = b; Shared.acting = null; Shared.owners.clear(); }
+    public static void setBridge(Bridge b) { Shared.bridge = b; Shared.acting = null; Shared.owners.clear(); Shared.guardScripts = false; }
+
+    /** A joiner's battle: mods' scripts failing in wrapped methods are caught (see frameFailed). Until the next setBridge. */
+    public static void guardScripts(boolean on) { Shared.guardScripts = on; }
     public static boolean installed() { return true; }
     public static Object acting() { return Shared.acting; }
 
@@ -192,6 +195,41 @@ public final class Hooks {
 
     public static void exitFrame(Object prev) {
         Shared.acting = prev;
+    }
+
+    /**
+     * A wrapped method of a mod failed (it has left its frame already). Thrown on, as without the agent, except in
+     * a joiner's co-op battle: there the mod's scripts run on this PC's copy of the host's battle, where what they
+     * look at can differ (a missile built here from the host's description, a ship this PC could only stand in
+     * for), and the host's game, where they run for real, decides what happens anyway. So there the failure is
+     * noted for Wingman's log (see Shared.failed) and the battle goes on without what the script would have done
+     * this time. Plugins' advance is left to Wingman's own guard (PluginGuard), which switches a failing one off;
+     * errors of the machine itself (out of memory and the like) are always thrown on.
+     */
+    public static void frameFailed(Throwable t, int kind) throws Throwable {
+        Bridge b = Shared.bridge;
+        if (!Shared.guardScripts || b == null || kind == 4 || t instanceof VirtualMachineError || t instanceof ThreadDeath) throw t;
+        boolean live;
+        try { live = b.live(); } catch (Throwable x) { live = false; }
+        if (!live) throw t;
+        String where = where(t);
+        synchronized (Shared.failed) {
+            Object[] f = Shared.failed.get(where);
+            if (f != null) ((int[]) f[0])[0]++;
+            else if (Shared.failed.size() < Shared.MAX_FAILED) Shared.failed.put(where, new Object[] { new int[] { 1 }, t });
+        }
+        Shared.failedCount++;
+    }
+
+    /** The mod's method a failure came out of (the wrapped one: its stack frame is the renamed original). */
+    static String where(Throwable t) {
+        try {
+            for (StackTraceElement e : t.getStackTrace()) {
+                String m = e.getMethodName();
+                if (m.endsWith("$wingman")) return e.getClassName() + "." + m.substring(0, m.length() - 8);
+            }
+        } catch (Throwable x) { /* named by its kind alone */ }
+        return t.getClass().getName();
     }
 
     // ---- what scripts ask ----

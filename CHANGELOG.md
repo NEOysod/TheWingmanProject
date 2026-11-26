@@ -63,6 +63,26 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
   In a big simulated battle (40 ships, 80 fighters, 200 missiles) the updates now cost about 16% more than
   0.9.4-beta's (48 to 56 KB/s per joiner); fighters in every update and the quicker stats, damage and script
   values add some on top. All of it stays far under the host's 6 MB/s limit.
+- **Fixed: a joiner's game stopping when UAF's Swaras rockets hit** (`uaf_swaras_onhit`, a NullPointerException).
+  A copy of a missile the host fired is built on the joiner's PC, and needs a launcher to be made; when the
+  launcher wasn't found on its ship there, any weapon of that side was borrowed. The rocket's on-hit script looks
+  its strength up by its launcher's name, found nothing for the borrowed one, and stopped the game. Now:
+  - a copy is given a launcher of the right name: the weapon in the host's launcher's place on that ship, else
+    one of that name on the same ship, on another ship of that side, or on any ship;
+  - only when there is none of that name anywhere is another weapon borrowed, and then the copy never makes its
+    hit by itself: it's carried out by hand at the host's point, where a failing script is caught;
+  - with the agent: on a joiner, any mod's script that fails while running on the joiner's copy of the battle (a
+    hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
+    game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
+    their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- Fixed: Burn Drive and Maneuvering Jets could be learned as teleports ("moves its ship by jumping" in the log),
+  after which copies of ships using them snapped about instead of flying. When the bandwidth limit leaves a ship
+  out of a few updates, the joiner carries it on by its old speed, and the update after a burn drive lit looked
+  like a jump. The joiner now knows which states were only its own guess: those aren't judged at all, the jump
+  test allows for how far a guess may have drifted, and a system is only blamed for jumps between two real
+  updates in a row. Systems that only change the engines (type ENGINE_MOD: burn drive, jets, a mod's afterburner)
+  are never taken for teleports, so what this build wrongly learned on your PC is ignored (and put right in
+  saves/common/wingman_movers.txt the next time something is learned).
 
 ## 0.9.4-beta
 

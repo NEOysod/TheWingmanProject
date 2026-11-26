@@ -18,7 +18,49 @@ final class JoinerAgentLink implements Bridge {
 
     private JoinerAgentLink(WingmanClientPlugin joiner) { this.joiner = joiner; }
 
-    static void install(WingmanClientPlugin joiner) { Hooks.setBridge(new JoinerAgentLink(joiner)); }
+    static void install(WingmanClientPlugin joiner) {
+        Hooks.setBridge(new JoinerAgentLink(joiner));
+        logged.clear();
+        try {
+            Hooks.guardScripts(true);
+        } catch (LinkageError e) { // an older agent than this Wingman: everything else still works
+            Global.getLogger(JoinerAgentLink.class).info("Wingman agent: too old to catch mods' scripts failing here; restart the game after updating");
+        }
+    }
+
+    private static final java.util.Set<String> logged = new java.util.HashSet<String>();
+    private static long seen;
+
+    /**
+     * Mods' scripts the agent caught failing on this PC's copy of the battle (see Hooks.frameFailed): each is put
+     * in the log once, with its error, the first time. Cheap when there is nothing new; called every frame.
+     */
+    static void reportCaught() {
+        long n = wingman.agent.Shared.failedCount;
+        if (n == seen) return;
+        seen = n;
+        java.util.List<Object[]> news = new java.util.ArrayList<Object[]>();
+        synchronized (wingman.agent.Shared.failed) {
+            for (java.util.Map.Entry<String, Object[]> e : wingman.agent.Shared.failed.entrySet()) {
+                if (logged.add(e.getKey())) news.add(new Object[] { e.getKey(), e.getValue()[1] });
+            }
+        }
+        for (Object[] f : news) {
+            Global.getLogger(JoinerAgentLink.class).warn("Wingman guard: a mod's script (" + f[0] + ") failed on this PC's copy of the battle; "
+                    + "caught, so the game goes on (the host's game, where it runs for real, decides what it does). Noted once", (Throwable) f[1]);
+        }
+    }
+
+    /** For the end-of-battle line: how often each caught script failed. */
+    static String caughtSummary() {
+        StringBuilder sb = new StringBuilder();
+        synchronized (wingman.agent.Shared.failed) {
+            for (java.util.Map.Entry<String, Object[]> e : wingman.agent.Shared.failed.entrySet()) {
+                sb.append(sb.length() == 0 ? "" : ", ").append(e.getKey()).append(" ").append(((int[]) e.getValue()[0])[0]).append("x");
+            }
+        }
+        return sb.toString();
+    }
 
     public boolean live() { return joiner.agentLive(); }
 

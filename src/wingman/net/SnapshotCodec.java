@@ -777,6 +777,7 @@ public final class SnapshotCodec {
                     st.netId = e.getKey();
                     shipFrom(kept.f, st);
                     st.weaponAngles = kept.angles;
+                    st.carried = true;
                     snap.ships.add(st);
                 }
             }
@@ -809,6 +810,7 @@ public final class SnapshotCodec {
                     Snapshot.MissileState m = new Snapshot.MissileState();
                     m.id = e.getKey();
                     missileFrom(kept, m);
+                    m.carried = true;
                     snap.missiles.add(m);
                 }
             }

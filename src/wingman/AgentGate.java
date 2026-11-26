@@ -84,6 +84,18 @@ final class AgentGate {
         }
     }
 
+    /** On a joiner's PC, each frame: mods' scripts the agent has caught failing go in the log (once each). */
+    static void reportCaught() {
+        if (!linked || !present()) return;
+        try { JoinerAgentLink.reportCaught(); } catch (LinkageError e) { /* an older agent: it catches nothing */ }
+    }
+
+    /** Mods' scripts caught failing this session, with how often ("" for none). */
+    static String caughtSummary() {
+        if (!present()) return "";
+        try { return JoinerAgentLink.caughtSummary(); } catch (LinkageError e) { return ""; }
+    }
+
     /** Co-op stopped in this battle: the hooks give the real answers again. */
     static void stop() {
         linked = false;

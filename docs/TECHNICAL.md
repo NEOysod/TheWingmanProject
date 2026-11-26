@@ -769,6 +769,12 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
     explains, beyond `100 + ½ |Δv| dt` units (`Motion.jumped`). (Before: `150 + 0.3 ×` the sum of the speeds, which
     missed a Phase Skimmer on any ship going over ~400.) The copy is put straight there (`jumped`, `markJump`),
     with the teleport trail if its system teleports.
+  - **Guessed states** (`ShipState.carried`, `MissileState.carried`, set by the unpacker for things an update
+    said nothing of): not judged (no jump, burst or spin read from them). When the state before was one, the jump
+    test allows for its drift, `|v − v_real| × (t − t_real)` against the last state an update did speak of
+    (`Motion.guessSlack`): nothing when the host left it out because the guess was right, a lot when the bandwidth
+    limit left out a ship that had just lit a burn drive (that read as a jump, and taught `Movers` that Burn Drive
+    and Maneuvering Jets teleport).
   - A **burst**: faster than `1.2 ×` the hull's own top speed (as modified, plus the zero-flux boost) + 20, or
     speed changing faster than `3 ×` its engines' acceleration (or deceleration) + 150 units/s² (`Motion.burst`):
     a burn drive, plasma jets, a phase ship, a mod's dash, a collision's knock. Held 0.4 s (`Motion.Watch`).
@@ -795,7 +801,9 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
     spec type contains `DISPLACER` or `TELEPORTER` or it is the game's teleporter class; BURST if tagged
     `movement`, if its `aiHints` give a speed increase or burst movement, or its type has `BURN` or `JETS`. Then
     learned: a jump or a burst seen within 1.5 s of the host's system starting (not while phased), twice, makes
-    it a JUMP or BURST system; kept in `saves/common/wingman_movers` (`id=jump|burst`; delete it to forget) and
+    it a JUMP or BURST system (a jump only between two real states at most `Motion.LEARN_GAP` = 0.1 s apart; never
+    JUMP for type `ENGINE_MOD`, which only changes the engines: a learned one is read as BURST and put right on the
+    next save); kept in `saves/common/wingman_movers` (`id=jump|burst`; delete it to forget) and
     logged once. A learned teleporter is no longer run on copies.
   - The joiner's own ship: *fast* (`ownFast`) while the host's figures show a burst, our copy is in a burst by
     speed, or a moving system is in its IN or OUT stage on either side; then, and 0.4 s after, the wider slack
@@ -914,8 +922,13 @@ firing bit clears.
 
 - **Pairing:** the joiner's own launch is kept when it matches the host's (same projectile, same ship, within 700
   units), since everything the mod's scripts did at launch belongs to it. Unpaired local missiles are untouchable
-  and removed after 0.5 s; if nothing local appears within 0.25 s a copy is built (`build`, by exact projectile id,
-  borrowing a same-side launcher if the ship is gone; at most 30 a frame); a late real one replaces the copy.
+  and removed after 0.5 s; if nothing local appears within 0.25 s a copy is built (`build`, by exact projectile id;
+  at most 30 a frame); a late real one replaces the copy. Its launcher must have the host's launcher's name, since
+  on-hit scripts go by it (UAF's Swaras rockets look their strength up by it): the weapon in that place on our copy
+  of the ship if its id is the one the host's ship has there (`ShipSpawn.weaponOrderIds`), else one of that name on
+  the same ship, on another ship of that side, then any side (`named`). Only if none exists is another weapon
+  borrowed (`wrongLauncher`, counted): such a copy's hit is always carried out by hand at once (`strike`), never by
+  the game, so the script is called inside a try.
 - **`takeOver`:** collisions off (a missile never hits anything on a joiner by itself). The game's plain missile AI
   becomes `PuppetMissileAI` (no steering, flame on); the game's special brains stay; a mod's AI runs inside
   `GuardedMissileAI`, which switches off just that script on an error. A missile whose launcher has a mod effect
@@ -1329,6 +1342,14 @@ method of the old name and flags runs it inside `Hooks.enterFrame(context, kind)
 `advance(F,List)` (plugins: only one added for a joiner's ship, else nothing changes). The renamed method is
 called with `invokespecial`, so a subclass's override calling `super` doesn't loop. So the ship a mod's code runs
 for is known even when the call doesn't come through `Ship.advance`.
+
+The wrapper's handler leaves the frame and calls `Hooks.frameFailed(t, kind)`, which throws `t` on, as without the
+agent, unless a joiner's battle is on (`Hooks.guardScripts(true)` from `JoinerAgentLink.install`, cleared by every
+`setBridge`, and only while the bridge is `live`): there a mod's script failing on the joiner's copy of the battle
+is noted (`Shared.failed`: class.method -> times, first error) and the method returns. Not for plugins' `advance`
+(kind 4: `PluginGuard` switches a failing plugin off) or `VirtualMachineError`/`ThreadDeath`. Wingman logs each
+place once with its error (`JoinerAgentLink.reportCaught`, every frame; cheap when nothing is new) and the counts
+in the end-of-battle line. A Wingman jar with an older agent just doesn't catch (`LinkageError`, logged).
 
 **Strict JVMs (Java 22 and later).** These check every name in a class an agent changed, even with verification
 switched off, and refuse the game's obfuscated names ("this.super"): changing `CombatEngine` stops the game from

@@ -37,6 +37,15 @@ public final class Shared {
     public static final long[] polledKeys = new long[4];
 
     public static volatile boolean recording;
+    /**
+     * A joiner's battle (set by Wingman): a mod's script failing inside a wrapped method (Patcher.Frame: a hullmod's,
+     * a ship system's, a weapon's, an on-hit script) is caught instead of stopping the game. See Hooks.frameFailed.
+     */
+    public static volatile boolean guardScripts;
+    /** Scripts caught failing that way: where (class.method) -> { int[] { times }, the first failure }. */
+    public static final Map<String, Object[]> failed = Collections.synchronizedMap(new java.util.LinkedHashMap<String, Object[]>());
+    public static volatile long failedCount;
+    public static final int MAX_FAILED = 100;
     public static final Map<String, int[]> misses = Collections.synchronizedMap(new java.util.LinkedHashMap<String, int[]>());
     public static final int MAX_MISSES = 400;
 

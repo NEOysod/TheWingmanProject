@@ -71,11 +71,36 @@ public final class Motion {
      * Unlike a margin that grows with speed, this still sees a short jump of a fast ship.
      */
     public static boolean jumped(float x0, float y0, float vx0, float vy0, float x1, float y1, float vx1, float vy1, float dt) {
+        return jumped(x0, y0, vx0, vy0, x1, y1, vx1, vy1, dt, 0f);
+    }
+
+    /**
+     * As above, allowing 'slack' units more: the first state was a guess (the update said nothing of the ship and
+     * the joiner's unpacker carried it on), which may have drifted from the truth by up to that much.
+     */
+    public static boolean jumped(float x0, float y0, float vx0, float vy0, float x1, float y1, float vx1, float vy1, float dt, float slack) {
         dt = Math.max(0f, Math.min(1f, dt));
         float ex = x1 - (x0 + 0.5f * (vx0 + vx1) * dt), ey = y1 - (y0 + 0.5f * (vy0 + vy1) * dt);
         float dvx = vx1 - vx0, dvy = vy1 - vy0;
-        float reach = JUMP_MARGIN + 0.5f * (float) Math.sqrt(dvx * dvx + dvy * dvy) * dt;
+        float reach = JUMP_MARGIN + 0.5f * (float) Math.sqrt(dvx * dvx + dvy * dvy) * dt + Math.max(0f, slack);
         return ex * ex + ey * ey > reach * reach;
+    }
+
+    /** A jump is put down to the ship's system (see wingman.Movers) only across updates at most this far apart (seconds). */
+    public static final float LEARN_GAP = 0.1f;
+
+    /**
+     * How far off the joiner's guess for a thing may have drifted while updates said nothing of it (see
+     * Snapshot.ShipState.carried): up to how much its speed has changed since the last update that did, over that
+     * time. The host leaves a thing out when the guess is right (then its speed hasn't changed, and this is about
+     * nothing), or when the bandwidth limit has no room for it (then a ship that has just lit its burn drive was
+     * guessed on at its old speed). realAt: the host's time of that last update (negative: none yet).
+     */
+    public static float guessSlack(float realVx, float realVy, float realAt, float vx, float vy, float hostTime) {
+        if (realAt < 0f) return 0f;
+        float gap = Math.max(0f, Math.min(1f, hostTime - realAt));
+        float dvx = vx - realVx, dvy = vy - realVy;
+        return (float) Math.sqrt(dvx * dvx + dvy * dvy) * gap;
     }
 
     /** A copy moved by this game's own physics beyond this (units), plus what its engines could add, was pushed. */

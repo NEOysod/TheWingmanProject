@@ -35,6 +35,12 @@ final class Movers {
 
     /** By system id: what its description says. */
     private static final Map<String, Integer> described = new HashMap<String, Integer>();
+    /**
+     * Systems that only change how the engines work (type ENGINE_MOD: burn drive, maneuvering jets, plasma jets,
+     * a mod's afterburner). However fast, the ship flies there, so such a system is never taken for a jump: a
+     * jump seen while one runs is the figures' fault (an update the bandwidth limit left out), not the system's.
+     */
+    private static final java.util.Set<String> engineOnly = new java.util.HashSet<String>();
     /** By system id: what was learned by watching (kept on this PC). */
     private static Map<String, Integer> learned;
     /** By system id: sightings so far of a jump / a burst while it ran, not yet enough to learn from. */
@@ -49,6 +55,7 @@ final class Movers {
         try { id = sys.getId(); } catch (Throwable t) { return JUMP; } // can't tell: the kind that must not be pushed
         Integer l = id == null ? null : learned().get(id);
         int d = describe(sys, id);
+        if (l != null && l == JUMP && engineOnly.contains(id)) l = BURST; // (an older build could learn that wrongly)
         return l == null ? d : Math.max(d, l);
     }
 
@@ -72,6 +79,7 @@ final class Movers {
             if (sys == null || kind(sys) >= what) return;
             String id = sys.getId();
             if (id == null) return;
+            if (what == JUMP && engineOnly.contains(id)) return; // its ship only flies, however fast
             int[] n = seen.get(id);
             if (n == null) seen.put(id, n = new int[3]);
             if (++n[what] < SIGHTINGS) return;
@@ -99,6 +107,7 @@ final class Movers {
                 try { json = spec.getSpecJson(); } catch (Throwable t) { /* the rest decides */ }
                 String type = json == null ? "" : json.optString("type", "").toUpperCase(java.util.Locale.ROOT);
                 if (type.contains("DISPLACER") || type.contains("TELEPORTER")) kind = JUMP;
+                if (type.equals("ENGINE_MOD") && id != null) engineOnly.add(id);
                 if (kind == STILL) {
                     boolean movement = false;
                     try { movement = spec.hasTag("movement"); } catch (Throwable t) { /* hints decide */ }
@@ -150,7 +159,10 @@ final class Movers {
     private static void save() {
         try {
             StringBuilder sb = new StringBuilder("# Ship systems Wingman has seen move their ship sharply (jump or burst). Delete this file to forget them.\n");
-            for (Map.Entry<String, Integer> e : learned().entrySet()) sb.append(e.getKey()).append('=').append(e.getValue() == JUMP ? "jump" : "burst").append('\n');
+            for (Map.Entry<String, Integer> e : learned().entrySet()) {
+                if (e.getValue() == JUMP && engineOnly.contains(e.getKey())) e.setValue(BURST); // put right
+                sb.append(e.getKey()).append('=').append(e.getValue() == JUMP ? "jump" : "burst").append('\n');
+            }
             Global.getSettings().writeTextFileToCommon(FILE, sb.toString());
         } catch (Throwable t) { /* kept until the game closes */ }
     }

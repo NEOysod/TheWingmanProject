@@ -28,6 +28,12 @@ public final class Snapshot {
          * between updates along the curve it is on, not in a straight line.
          */
         public float ax, ay, angAcc;
+        /**
+         * Joiner only, not sent: this update said nothing of the ship, so these are the unpacker's guess (its last
+         * figures carried on). Often right to the pixel (the host left it out because the guess was right), but
+         * not always (the bandwidth limit left it out): never a measure of how the ship really moved.
+         */
+        public boolean carried;
         public float hull = 1f; // 0..1
         public float cr = 1f;   // combat readiness 0..1, sent in half-percent steps
         public float flux, hardFlux;
@@ -91,6 +97,8 @@ public final class Snapshot {
         public float angVel;
         /** How fast its speed and turn rate were changing (see ShipState.ax). */
         public float ax, ay, angAcc;
+        /** Joiner only: the unpacker's guess, not news (see ShipState.carried). */
+        public boolean carried;
         public int flags;
         /** How long the missile has been flying on the host, in seconds. Its fuel runs by this clock, not the joiner's. */
         public float flightTime;

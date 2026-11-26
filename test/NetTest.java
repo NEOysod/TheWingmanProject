@@ -296,7 +296,7 @@ public class NetTest {
                 SnapshotCodec.Encoder pe = new SnapshotCodec.Encoder(); SnapshotCodec.Decoder pd = new SnapshotCodec.Decoder();
                 Snapshot ps = new Snapshot();
                 for (int i = 0; i < 100; i++) { Snapshot.MissileState m = new Snapshot.MissileState(); m.id = 1000 + i; m.x = i * 31.7f; m.y = -i * 3.3f; m.vx = 287.3f; m.vy = -113.9f; m.facing = 200f; ps.missiles.add(m); }
-                int steady = 0, n = 0; boolean near = true; float t = 10f;
+                int steady = 0, n = 0, guessed = 0, spoken = 0; boolean near = true; float t = 10f;
                 for (int f = 0; f < 240; f++) {
                     float dt = 0.012f + (f % 5) * 0.003f; t += dt; ps.tick = f; ps.hostTime = t;
                     for (Snapshot.MissileState m : ps.missiles) { m.x += m.vx * dt; m.y += m.vy * dt; m.flightTime += dt; }
@@ -304,8 +304,10 @@ public class NetTest {
                     if (!pe.lastKey) { steady += wire.length; n++; }
                     Snapshot pg = pd.decode(wire);
                     if (!alike(ps, pg)) near = false;
+                    for (Snapshot.MissileState m : pg.missiles) { if (m.carried) guessed++; else spoken++; }
                 }
                 check("100 missiles flying straight for 240 uneven updates: " + (steady / n) + " bytes an update, never more than half a unit out", near && steady / n < 120);
+                check("the joiner knows which of them it carried on by the guess (" + guessed + ") and which an update spoke of (" + spoken + ")", guessed > spoken && spoken >= 100);
             }
             {   // a road that loses updates, delivers some out of order, and reports back late (UDP)
                 SnapshotCodec.Encoder ue = new SnapshotCodec.Encoder(); SnapshotCodec.Decoder ud = new SnapshotCodec.Decoder();

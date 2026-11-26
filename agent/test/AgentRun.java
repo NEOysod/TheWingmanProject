@@ -195,6 +195,34 @@ public class AgentRun {
         hull.fail = true;
         try { hull.advanceInCombat(joiner, 0.016f); check(false, "the mod's exception came through"); } catch (IllegalStateException expected) { /* passed on */ }
         check(ModScript.who(Global.getCombatEngine()) == host, "after a mod's exception: the real answer again");
+        // 6e. A joiner's battle: a mod's script failing on this PC's copy of the battle is caught and noted instead.
+        Hooks.guardScripts(true);
+        long failedBefore = wingman.agent.Shared.failedCount;
+        try {
+            hull.advanceInCombat(joiner, 0.016f);
+            hull.advanceInCombat(host, 0.016f);
+            check(true, "joiner's battle: a hullmod's exception is caught");
+        } catch (IllegalStateException e) {
+            check(false, "joiner's battle: a hullmod's exception came through");
+        }
+        check(ModScript.who(Global.getCombatEngine()) == host, "after a caught failure: the real answer again");
+        Object[] noted = wingman.agent.Shared.failed.get("testmod.Hull.advanceInCombat");
+        check(noted != null && ((int[]) noted[0])[0] == 2 && noted[1] instanceof IllegalStateException
+                && wingman.agent.Shared.failedCount == failedBefore + 2, "the failure noted once, counted twice: " + wingman.agent.Shared.failed.keySet());
+        testmod.Rocket rocket = new testmod.Rocket();
+        rocket.onHit(null, null, null, false, null, Global.getCombatEngine());
+        rocket.launcher = "borrowed_gun";
+        try {
+            rocket.onHit(null, null, null, false, null, Global.getCombatEngine());
+            check(rocket.dealt == 10f && wingman.agent.Shared.failed.containsKey("testmod.Rocket.onHit"), "an on-hit script told the wrong launcher: caught, noted");
+        } catch (NullPointerException e) {
+            check(false, "an on-hit script's NullPointerException came through on a joiner");
+        }
+        live = false;
+        try { hull.advanceInCombat(joiner, 0.016f); check(false, "battle over: the mod's exception came through"); } catch (IllegalStateException expected) { check(true, "battle over (bridge not live): thrown on as without the agent"); }
+        live = true;
+        Hooks.setBridge(hostBridge);
+        try { hull.advanceInCombat(joiner, 0.016f); check(false, "a new bridge: guard off"); } catch (IllegalStateException expected) { check(true, "a new bridge (the host's): thrown on"); }
         hull.fail = false;
         final ShipAPI joinerApi = joiner;
         com.fs.starfarer.api.combat.WeaponAPI gunOnJoiner = (com.fs.starfarer.api.combat.WeaponAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(),

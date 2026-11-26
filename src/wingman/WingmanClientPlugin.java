@@ -99,6 +99,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float[] lastCooldown, lastShotAt, aheadSince;
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
         final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts and jumps, as the host's figures show them
+        float realVx, realVy, realAt = -1f; // its speed in the last update that actually spoke of it, and the host's time then
         float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
         float shieldRate;           // how fast the host's shield on it was turning (degrees/s, from its last two updates)
         float anglesAt = -100f;     // the host time of the turret angles held
@@ -133,6 +134,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float releaseBy = -1f;   // the host's copy has released its next stage: ours gets this long to do the same
         int wantTarget = -2;     // ship the host says it is aimed at, still to be passed to its script (-2: nothing to pass)
         final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts, jumps and spins (see Motion)
+        float realVx, realVy, realAt = -1f; // as for ships (see Puppet)
         boolean jumped;          // the host's missile has just moved in a way no engine could: go straight there
         final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // for smooth corrections
     }
@@ -533,6 +535,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         for (Puppet pp : puppets.values()) apply(pp, pp == handsOn, amount);
         catchUpShots(handsOn, amount);
+        AgentGate.reportCaught();
         prof.mark(2);
         for (MissilePuppet mp : missiles.values()) applyMissile(mp, amount);
         reviveMissiles(amount);
@@ -874,16 +877,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         try {
             Snapshot.MissileState was = mp.target;
             MissileAPI m = mp.missile;
+            if (ms.carried) return; // the unpacker's guess: nothing new about how it moves
             if (was != null) {
                 float dt = mp.track.empty() ? 0f : hostTime - mp.track.newestTime();
                 if (dt <= 0f || dt > 1f) dt = Math.max(0f, Math.min(1f, now - mp.targetAt));
-                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, ms.x, ms.y, ms.vx, ms.vy, dt)) {
+                float slack = was.carried ? wingman.net.Motion.guessSlack(mp.realVx, mp.realVy, mp.realAt, ms.vx, ms.vy, hostTime) : 0f;
+                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, ms.x, ms.y, ms.vx, ms.vy, dt, slack)) {
                     mp.jumped = true;
                     mp.track.markJump(hostTime);
                     mp.motion.jump(now);
                     missileJumps++;
                 }
             }
+            if (hostTime > mp.realAt) { mp.realVx = ms.vx; mp.realVy = ms.vy; mp.realAt = hostTime; }
             if (m == null) return;
             if (wingman.net.Motion.burstAlong(ms.vx, ms.vy, ms.ax, ms.ay, m.getMaxSpeed(), m.getAcceleration())) {
                 if (!mp.motion.surging(now)) missileBursts++;
@@ -997,23 +1003,30 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             boolean phased = st.cloak >= 1 && st.cloak <= 3;
             // put down to its system only soon after the system started, and not while phased (phase speed is the cloak's)
             boolean byItsSystem = (running || ranBefore) && now - pp.sysStartedAt < 1.5f && !phased;
-            if (was != null) {
+            // A state the unpacker carried on by its guess (the update said nothing of the ship) is no news of how
+            // it moves: it is neither judged nor, below, taken as a measure of bursts and spins. When the update
+            // before was such a guess, the jump test allows for how far off that guess may have drifted.
+            boolean news = !st.carried;
+            if (news && was != null) {
                 float dt = pp.track.empty() ? 0f : hostTime - pp.track.newestTime();
                 if (dt <= 0f || dt > 1f) dt = Math.max(0f, Math.min(1f, now - pp.targetAt));
-                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, st.x, st.y, st.vx, st.vy, dt)) {
+                float slack = was.carried ? wingman.net.Motion.guessSlack(pp.realVx, pp.realVy, pp.realAt, st.vx, st.vy, hostTime) : 0f;
+                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, st.x, st.y, st.vx, st.vy, dt, slack)) {
                     pp.jumped = true;
                     pp.track.markJump(hostTime);
                     pp.motion.jump(now);
                     fastJumps++;
-                    if (byItsSystem && !pp.module) Movers.sawJump(pp.ship.getSystem());
+                    // Learned from only when the update before spoke of the ship too, and came just before.
+                    if (byItsSystem && !pp.module && !was.carried && dt <= wingman.net.Motion.LEARN_GAP) Movers.sawJump(pp.ship.getSystem());
                 }
             }
-            if (!pp.module && wingman.net.Motion.burst(st.vx, st.vy, st.ax, st.ay, normalTop(pp.ship), engineAcc(pp.ship))) {
+            if (news && hostTime > pp.realAt) { pp.realVx = st.vx; pp.realVy = st.vy; pp.realAt = hostTime; }
+            if (news && !pp.module && wingman.net.Motion.burst(st.vx, st.vy, st.ax, st.ay, normalTop(pp.ship), engineAcc(pp.ship))) {
                 if (!pp.motion.surging(now)) fastBursts++;
                 pp.motion.burst(now);
                 if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
             }
-            if (!pp.module && wingman.net.Motion.spin(st.angVel, st.angAcc, maxTurn(pp.ship), turnAcc(pp.ship))) {
+            if (news && !pp.module && wingman.net.Motion.spin(st.angVel, st.angAcc, maxTurn(pp.ship), turnAcc(pp.ship))) {
                 if (!pp.motion.spinning(now)) fastSpins++;
                 pp.motion.spin(now);
                 if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
@@ -2440,7 +2453,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -3320,7 +3333,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * word that it is gone can overtake its last missiles; those still need to name it as their launcher.
      */
     private final Map<Integer, Puppet> departed = new java.util.LinkedHashMap<Integer, Puppet>();
-    private int standIns;
+    private int standIns, wrongLaunchers;
+
+    private static String caughtLine() {
+        String c = AgentGate.caughtSummary();
+        return c.isEmpty() ? "" : "; mods' scripts caught failing here (the agent): " + c;
+    }
+
+    /** The ship's weapon of this name, if it has one. */
+    private static WeaponAPI named(ShipAPI ship, String weaponId) {
+        if (ship == null || weaponId == null) return null;
+        try {
+            for (WeaponAPI w : ship.getAllWeapons()) if (weaponId.equals(w.getId())) return w;
+        } catch (Throwable t) { /* none, then */ }
+        return null;
+    }
 
     /** The ship that launched a missile: on the field, or gone within the last twenty seconds. */
     private Puppet launcherShip(int netId) {
@@ -3338,6 +3365,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         String weaponId, projId;
         boolean scripted;
         boolean standIn; // built with a borrowed launcher because its own is not on our side
+        boolean wrongLauncher; // and that launcher is not even the same weapon (none of that name anywhere here)
         float x, y, facing, vx, vy, at;
         float flown, maxFlight, arming = -1f; // the host's lifetime numbers for it
     }
@@ -3880,14 +3908,20 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         m.getLocation().set(x - dx * 6f, y - dy * 6f);
         m.getVelocity().set(dx * speed, dy * speed);
         m.setFacing(facing);
-        try {
-            m.setCollisionClass(mp.collision != null && mp.collision != CollisionClass.NONE ? mp.collision : CollisionClass.MISSILE_NO_FF);
-            m.setArmingTime(0f);
-        } catch (Throwable t) { /* the hit is then carried out by hand */ }
+        // Built with a launcher that isn't the weapon the host's was fired from (none of that name is anywhere
+        // here): the game's own hit would hand the mod's on-hit script that wrong launcher, and a script that goes
+        // by its name stops the game. So that hit is carried out by hand at once, where a failing script is caught.
+        boolean byHand = mp.launch != null && mp.launch.wrongLauncher;
+        if (!byHand) {
+            try {
+                m.setCollisionClass(mp.collision != null && mp.collision != CollisionClass.NONE ? mp.collision : CollisionClass.MISSILE_NO_FF);
+                m.setArmingTime(0f);
+            } catch (Throwable t) { /* the hit is then carried out by hand */ }
+        }
         mp.target = null; // no more steering from the host
         mp.hitX = x; mp.hitY = y; mp.hitShield = onShield;
         mp.hitTarget = target == null ? null : target.ship;
-        mp.hitBy = clock + 0.1f;
+        mp.hitBy = byHand ? clock : clock + 0.1f;
         striking.add(mp);
     }
 
@@ -4146,33 +4180,39 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // the game stops with an error if the answer is "none".
         Puppet source = launcherShip(p.sourceId);
         WeaponAPI weapon = null;
-        if (source != null) {
-            if (p.weaponIndex >= 0 && p.weaponIndex < source.weapons.length) weapon = source.weapons[p.weaponIndex];
-            // A second stage is a different missile from the one its launcher is loaded with, so the launcher
-            // is found by its place on the ship first, by name second, and failing both any weapon will do.
-            if (weapon == null) {
-                List<WeaponAPI> all = source.ship.getAllWeapons();
-                for (WeaponAPI w : all) {
-                    if (p.weaponId.equals(w.getId())) { weapon = w; break; }
-                }
-                if (weapon == null && !all.isEmpty()) weapon = all.get(0);
-            }
+        // Which weapon the host's missile was fired from: what the host's ship has in that place (a second stage
+        // is a different missile from the one its launcher is loaded with), or else the weapon the host named.
+        // Mods' on-hit scripts ask the missile for its launcher and go by its name (UAF's Swaras rockets look
+        // their strength up by it), so a copy is only ever given a launcher of that name if there is one anywhere.
+        String launcherId = p.weaponId;
+        if (source != null && source.info != null && p.weaponIndex >= 0 && p.weaponIndex < source.info.weaponOrderIds.size()) {
+            String there = source.info.weaponOrderIds.get(p.weaponIndex);
+            if (there != null && !there.isEmpty()) launcherId = there;
         }
-        // Its launcher is nowhere on our side (it died before we joined, say), but some missiles cannot be made
-        // without naming one. Borrow a launcher: the same weapon on another ship of that side if there is
-        // one, otherwise any weapon of that side. The missile then flies as a plain copy of the host's.
+        if (source != null) {
+            WeaponAPI placed = p.weaponIndex >= 0 && p.weaponIndex < source.weapons.length ? source.weapons[p.weaponIndex] : null;
+            if (placed != null && launcherId.equals(placed.getId())) weapon = placed;
+            if (weapon == null) weapon = named(source.ship, launcherId);
+            if (weapon == null && !launcherId.equals(p.weaponId)) weapon = named(source.ship, p.weaponId);
+        }
+        // Not on its own ship here (it died before we joined, our copy's loadout differs, say), but some missiles
+        // cannot be made without naming a launcher. Borrow one of the same name from another ship, of that side
+        // first; only if there is none anywhere, any weapon of that side, and then the copy must never be left to
+        // make its hit by itself (see strike): the mod's script would be told the wrong launcher.
         if (weapon == null) {
             WeaponAPI any = null;
             Puppet anyShip = null;
-            for (Puppet pp : puppets.values()) {
-                if (pp.owner != p.owner || pp.fighter) continue;
-                for (WeaponAPI w : pp.ship.getAllWeapons()) {
-                    if (p.weaponId.equals(w.getId())) { weapon = w; source = pp; break; }
-                    if (any == null) { any = w; anyShip = pp; }
+            for (int pass = 0; pass < 2 && weapon == null; pass++) {
+                for (Puppet pp : puppets.values()) {
+                    if (pp.fighter || (pass == 0) != (pp.owner == p.owner)) continue;
+                    WeaponAPI w = named(pp.ship, launcherId);
+                    if (w == null && !launcherId.equals(p.weaponId)) w = named(pp.ship, p.weaponId);
+                    if (w != null) { weapon = w; source = pp; break; }
+                    if (pass == 0 && any == null && pp.ship != null && !pp.ship.getAllWeapons().isEmpty()) { any = pp.ship.getAllWeapons().get(0); anyShip = pp; }
                 }
-                if (weapon != null) break;
             }
-            if (weapon == null && any != null) { weapon = any; source = anyShip; }
+            if (weapon == null && source != null && !source.ship.getAllWeapons().isEmpty()) { any = source.ship.getAllWeapons().get(0); anyShip = source; }
+            if (weapon == null && any != null) { weapon = any; source = anyShip; p.wrongLauncher = true; wrongLaunchers++; }
             if (weapon != null) { p.standIn = true; standIns++; }
         }
         // Built by its exact make where the host named one: a warhead released by another missile is its own

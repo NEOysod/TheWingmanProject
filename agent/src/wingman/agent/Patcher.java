@@ -200,6 +200,7 @@ public final class Patcher {
         if (!wraps.isEmpty()) {
             int enter = methodRef(ex, next, hooksClass, "enterFrame", "(Ljava/lang/Object;I)Ljava/lang/Object;");
             int exit = methodRef(ex, next, hooksClass, "exitFrame", "(Ljava/lang/Object;)V");
+            int failed = methodRef(ex, next, hooksClass, "frameFailed", "(Ljava/lang/Throwable;I)V");
             int codeUtf = utf(ex, next, "Code");
             int smtUtf = major >= 50 ? utf(ex, next, "StackMapTable") : 0;
             int objClass = classConst(ex, next, "java/lang/Object");
@@ -230,7 +231,7 @@ public final class Patcher {
                     paramClass[i] = ci;
                 }
                 byte[] method = wrapper((mAccess & ~0x0060) /* not synchronized, not bridge */, nameIdx, descIdx, codeUtf, smtUtf,
-                        params, paramClass, thisClass, objClass, throwClass, fr, enter, exit, renamedRef);
+                        params, paramClass, thisClass, objClass, throwClass, fr, enter, exit, failed, renamedRef);
                 added.write(method);
                 wrapped++;
                 synchronized (fr) { fr.hits++; }
@@ -309,11 +310,15 @@ public final class Patcher {
      * The wrapper method:
      * <pre>
      *   prev = Hooks.enterFrame(context, kind);
-     *   try { this.name$wingman(params...); } finally { Hooks.exitFrame(prev); }
+     *   try { this.name$wingman(params...); }
+     *   catch (Throwable t) { Hooks.exitFrame(prev); Hooks.frameFailed(t, kind); return; }  // frameFailed rethrows it, unless...
+     *   Hooks.exitFrame(prev);
      * </pre>
+     * ...unless on a joiner's PC, where a mod's script failing on this PC's copy of the battle is caught there
+     * instead of stopping the game (see Hooks.frameFailed). Every wrapped method returns nothing.
      */
     private static byte[] wrapper(int access, int nameIdx, int descIdx, int codeUtf, int smtUtf, List<String> params, int[] paramClass,
-            int thisClass, int objClass, int throwClass, Frame fr, int enter, int exit, int renamedRef) throws IOException {
+            int thisClass, int objClass, int throwClass, Frame fr, int enter, int exit, int failed, int renamedRef) throws IOException {
         int[] slot = new int[params.size()];
         int s = 1;
         for (int i = 0; i < params.size(); i++) {
@@ -342,7 +347,13 @@ public final class Patcher {
         load(code, 'L', prevLocal);
         code.write(0xb8); code.write(exit >>> 8); code.write(exit & 0xFF);
         load(code, 'L', errLocal);
-        code.write(0xbf); // athrow
+        if (fr.desc.endsWith(")V")) {
+            code.write(0x10); code.write(fr.kind); // bipush kind
+            code.write(0xb8); code.write(failed >>> 8); code.write(failed & 0xFF);
+            code.write(0xb1); // return
+        } else {
+            code.write(0xbf); // athrow
+        }
         byte[] c = code.toByteArray();
 
         // StackMapTable: one full frame at the handler. Locals: this, the parameters, prev; stack: a Throwable.

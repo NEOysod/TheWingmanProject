@@ -45,6 +45,21 @@ public class MotionTest {
         check(!Motion.jumped(0f, 0f, 300f, 0f, r, r, 0f, 300f, 1f), "a quarter turn at speed with no update between: no jump");
         check(!Motion.jumped(0f, 0f, 120f, 0f, 120f * 0.5f, 0f, 120f, 0f, 0.5f), "half a second of updates left out (guessed right): no jump");
 
+        // updates left out: the joiner's guess carried a ship on at its old speed
+        {
+            // A destroyer at 100 lights its burn drive just after its last update; the bandwidth limit leaves it out
+            // for half a second, and the guess carries it on at 100. The truth: 0.1 s more at 100, then 0.4 s at 600.
+            float lastAt = 10f, t = 10.5f, guessX = 100f * (t - 1f / 30f - lastAt), truthX = 100f * 0.1f + 600f * 0.4f;
+            float slack = Motion.guessSlack(100f, 0f, lastAt, 600f, 0f, t);
+            check(Motion.jumped(guessX, 0f, 100f, 0f, truthX, 0f, 600f, 0f, tick), "a burn drive the guess missed looks like a jump by itself ("
+                    + Math.round(truthX - guessX) + " units off)");
+            check(!Motion.jumped(guessX, 0f, 100f, 0f, truthX, 0f, 600f, 0f, tick, slack), "allowing for the guess's drift: no jump");
+            // Phase Skimmer after the ship was left out because the guess was right (steady at 120 for a second).
+            float s2 = Motion.guessSlack(120f, 0f, 20f, 120f, 0f, 21f);
+            check(s2 < 1f && Motion.jumped(120f, 0f, 120f, 0f, 124f + 300f, 0f, 120f, 0f, tick, s2), "Phase Skimmer after a steady stretch left out: still a jump");
+            check(Motion.guessSlack(0f, 0f, -1f, 600f, 0f, 5f) == 0f, "no update spoke of it before: no allowance");
+        }
+
         // a watch holds a burst a moment, and counts bursts once each
         Motion.Watch w = new Motion.Watch();
         w.burst(1f); w.burst(1.03f); w.burst(1.06f);
