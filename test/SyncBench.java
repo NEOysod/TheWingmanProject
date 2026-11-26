@@ -25,6 +25,9 @@ import wingman.net.*;
  * the host had them that much earlier; the delay is reported.
  */
 public class SyncBench {
+    /** Flux sent exactly (the host since 0.9.4); -Dbench.fluxBand=true: the old 1% band. */
+    static final boolean EXACT_FLUX = !Boolean.getBoolean("bench.fluxBand");
+
     static final float DT = 1f / 60f;
 
     // ---- The host's battle ----
@@ -167,7 +170,7 @@ public class SyncBench {
                 st.hull = b.hull; st.cr = b.cr; st.flux = b.flux; st.hardFlux = b.hardFlux;
                 st.flags = b.shield ? Snapshot.F_DEFENSE : 0; st.shieldFacing = b.shieldFacing; st.firing = b.firing;
                 st.weaponAngles = b.angles.clone(); st.shotTotals = b.totals.clone();
-                st.fluxStep = Math.max(5f, b.maxFlux * 0.01f);
+                st.fluxStep = EXACT_FLUX ? 0f : Math.max(5f, b.maxFlux * 0.01f);
                 s.ships.add(st);
             }
         }

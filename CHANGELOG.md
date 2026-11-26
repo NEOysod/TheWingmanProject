@@ -17,7 +17,18 @@
     jumped somewhere else first).
   - Ships whose system doesn't move them (shields, dampers) are no longer held tighter while it runs, which made
     them shake a little.
-  Only the joiner's PC changes: a joiner with this build can play with a host on 0.9.4-beta.
+  This one is the joiner's alone: a joiner with this build can play with a host on 0.9.4-beta.
+- **Flux, armor and hull as exact as the host's.** Now that bandwidth isn't the worry:
+  - every ship's flux and hard flux go exactly (before, only once the bar had moved by a hundredth): about 10%
+    more upload in a big battle;
+  - armor, disabled weapons and engines, and ammo go as often as updates do for a ship that was just hit (before:
+    four times a second);
+  - your own flux bar is held to the host's within a quarter of a percent (before: a whole percent, closed
+    slowly), and put right at once if a vent or a shot made it a tenth apart. Comparisons right at a shot are left
+    out, so it doesn't jiggle while you fire;
+  - hull already went exactly (65,536 steps).
+  The flux and armor changes are the host's; the flux bar of the ship you fly is the joiner's. Builds still mix:
+  each side's part works whatever the other runs.
 
 ## 0.9.4-beta
 

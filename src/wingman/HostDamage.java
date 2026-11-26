@@ -16,13 +16,16 @@ import wingman.net.HostSession;
 import wingman.net.Msg;
 
 /**
- * Host side of armor and EMP damage. These change in bursts and are bulky (an armor grid is a couple of
- * hundred cells), so instead of riding in every snapshot they are checked four times a second and only
- * the ships whose state actually changed are sent, and of their armor only the cells that changed.
+ * Host side of armor and EMP damage (and ammo). An armor grid is a couple of hundred cells, so it doesn't ride in
+ * every snapshot: only the ships whose state actually changed are sent, and of their armor only the cells that
+ * changed. A ship with news (hit, ammo used, flown by a player, never sent) is looked at as often as updates go
+ * (30 times a second; four times a second until 0.9.4); the rest take turns four times a second, an eighth each.
  */
 final class HostDamage {
     private final Map<Integer, DamageState.Ship> lastSent = new HashMap<Integer, DamageState.Ship>();
-    private long lastTickAt, lastFullAt;
+    private long lastTickAt, lastSlowAt, lastFullAt;
+    /** Ships with news are looked at this often (ms); the rest, in turns, every SLOW_MS. */
+    static final long FAST_MS = 33, SLOW_MS = 250;
     private boolean broken;
     private int round;
     /** Ships with something new to report for certain (ammo used), looked at on the next pass. */
@@ -45,11 +48,13 @@ final class HostDamage {
     void tick(HostSession session, Map<Integer, ShipAPI> byId, java.util.Set<Integer> hit) {
         if (broken || session.getPlayers().isEmpty()) return;
         long now = System.currentTimeMillis();
-        if (now - lastTickAt < 250) return;
+        if (now - lastTickAt < FAST_MS) return;
         lastTickAt = now;
+        boolean slow = now - lastSlowAt >= SLOW_MS;
+        if (!slow && hit == null) return; // no way to tell who was hit: everyone, at the slow rate, as before
+        if (slow) { lastSlowAt = now; round++; }
         if (now - lastFullAt > 10000) { lastFullAt = now; lastSent.clear(); } // periodic refresh as a safety net
         try {
-            round++;
             java.util.Set<Integer> flown = new java.util.HashSet<Integer>();
             for (HostSession.Player p : session.getPlayers()) if (p.shipNetId >= 0) flown.add(p.shipNetId);
             DamageState out = new DamageState();
@@ -57,8 +62,8 @@ final class HostDamage {
                 ShipAPI s = e.getValue();
                 if (s.isFighter()) continue;
                 Integer id = e.getKey();
-                if (hit != null && lastSent.containsKey(id) && !hit.contains(id) && !touched.contains(id) && !flown.contains(id)
-                        && ((id + round) & 7) != 0) { passedOver++; continue; }
+                boolean news = hit == null || !lastSent.containsKey(id) || hit.contains(id) || touched.contains(id) || flown.contains(id);
+                if (!news && !(slow && ((id + round) & 7) == 0)) { passedOver++; continue; }
                 looked++;
                 DamageState.Ship d = read(e.getKey(), s);
                 // Armor goes as the cells that changed since last time; the whole grid only the first time, on

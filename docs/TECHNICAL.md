@@ -287,7 +287,9 @@ there on every PC.
 Per ship (`ShipState`): id, position, velocity, facing, turn rate, hull (0-1), CR, flux and hard flux, flags
 (shield, overload, venting, system on, phased), shield facing, firing bits (64 weapons), system and cloak stage
 (0 idle … 4 cooldown) and level, turret angles (1 byte each), and shot totals. Host-only: `exact` (flown by a
-player), `fluxStep` (1% of capacity, at least 5).
+player), `fluxStep` (how far flux may sit off before it is sent again: 0 since 0.9.4, flux goes exactly for every
+ship; it was 1% of capacity, at least 5, which `SyncBench -Dbench.fluxBand=true` still measures: about 10% less
+upload in a big battle).
 
 Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight time.
 
@@ -298,7 +300,7 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
 - **Unseen enemies** (`trimUnseen`): an enemy no one on side 0 can see (shared fog of war, cached 250 ms) is sent
   about once a second unless it fired or was hit; unseen missiles every 2 s. In full again the moment it is seen.
 - **With `sendEverything` off,** the host keeps a `Sent` record per entity and dead-reckons where the joiner thinks
-  it is; a ship goes in only if it strayed (1.5 units or 1°), changed hull, CR, flags, flux (1% of capacity, or
+  it is; a ship goes in only if it strayed (1.5 units or 1°), changed hull, CR, flags, flux (`fluxStep`, or
   across zero), shield (3°) or system, fired, turned a turret, is flown, or wasn't refreshed for about half a
   second. Fighters go in every other update unless firing or hit. Missiles: when they stray (3 units, 4°, 0.25 s
   of flight), at least every two refresh intervals.
@@ -569,7 +571,7 @@ expected count.
 
 | Class | Sends | How |
 | --- | --- | --- |
-| `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | 4×/s, at most 40 ships per message. Reads a ship only if hit, touched (ammo), flown, never sent, or on a 1-in-8 rotation; everything again every 10 s. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
+| `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | A ship hit, touched (ammo), flown or never sent: read every 33 ms (as often as updates go; 4×/s until 0.9.4); the rest on a 1-in-8 rotation 4×/s; everything again every 10 s; at most 40 ships per message. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
 | `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 57 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
 | `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the planets behind the battle (read from the engine, with each one's look; `Backdrop`), the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
 | `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
@@ -837,9 +839,12 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   does gets an immediate answer here, kept in step with the host's later one:
   - movement, turning, shield, system, vent, the group in hand: already local (above, 7.6, 7.7);
   - **flux bar** (`ownFlux`): the flux and hard flux of our ship are recorded each frame with its position, and the
-    host's figures compared with ours at the moment they were true (the same ack as `reconcile`); only a
-    difference over `max(15, 1% of capacity)` is closed, at 4/s, the record shifted with it. Before, the bar
-    showed the host's figures a round trip late: firing, it rose after the shots and fell back after a vent;
+    host's figures compared with ours at the moment they were true (the same ack as `reconcile`); a difference
+    over `max(3, 0.25% of capacity)` is closed at 10/s, one of a tenth of the bar or more (a vent or a shot only
+    one side had) at once, the record shifted with it (until 0.9.4: `max(15, 1%)` at 4/s). A comparison within
+    0.06 s of a step in our flux (`Steps`: over `max(20, 0.5%)` in a frame: a shot, a vent ending) is left out:
+    there a frame's difference in timing is the whole shot. Before any of this, the bar showed the host's figures
+    a round trip late: firing, it rose after the shots and fell back after a vent;
   - **ammo**: on our ship a host count *above* ours is the host not yet having fired what we have, so it is taken
     only if it stays above for a second (a reload, a refill); a lower count is taken at once.
 
@@ -1528,7 +1533,7 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
     real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,
     `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
   - `MotionTest`: bursts and jumps told from ordinary flying (top speed, a nav bonus, engines' acceleration, a
-    skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between).
+    skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between), and `Steps`.
   - `wingman.JumpTest` (in `test/wingman`): the own ship's jump handling against a simulated Phase Skimmer: the
     same moment, a frame apart, 150 ms apart, a jump the host's update doesn't show as one, a jump on one side only.
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name

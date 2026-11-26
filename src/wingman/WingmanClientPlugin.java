@@ -589,11 +589,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + " units from the real one on the host once the delay is taken out, at most " + Math.round(ownWorst) + ", put straight back "
                     + ownSnaps + " times; compared " + reconChecks + " times, " + reconMisses + " could not be compared; ship system used "
                     + sysUsesTotal + " times so far (" + sysConfirmed + " seen to happen on the host, " + sysResent + " sent a second time, "
-                    + sysUnconfirmed + " never happened there); flux bar pulled toward the host's " + fluxFixes + " frames; jumps (a teleporting system or a script) "
+                    + sysUnconfirmed + " never happened there); flux bar pulled toward the host's " + fluxFixes + " frames (" + fluxSnaps + " put right at once, "
+                    + fluxSteps.skipped + " comparisons left out by a step); jumps (a teleporting system or a script) "
                     + ownJumps.jumpsHere + " here, " + ownJumps.jumpsThere + " on the host, " + ownJumps.skipped + " comparisons left out around them, "
                     + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
-            ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0;
+            ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0; fluxSnaps = 0; fluxSteps.skipped = 0;
             if (fastBursts + fastJumps > 0 || Movers.learnedThisSession() > 0) {
                 Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts and " + fastJumps + " jumps seen in the host's figures; "
                         + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt)");
@@ -4554,6 +4555,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** The host's flux and hard flux minus ours at the same moment (delay taken out), when reconReady. */
     private float reconFlux, reconHard;
     private boolean reconFluxReady;
+    /** When our own ship's flux jumped in a frame (a shot, a vent ending): comparisons right then are left out. */
+    private final wingman.net.Steps fluxSteps = new wingman.net.Steps();
+    private int fluxSnaps;
     private int pastNext, pastCount;
     private float reconX, reconY;
     private Puppet reconShip;
@@ -4636,7 +4640,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * Returns false if there is nothing to compare yet.
      */
     private boolean reconcile(Puppet pp, Snapshot.ShipState t) {
-        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; ownJumps.reset(); }
+        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; ownJumps.reset(); fluxSteps.reset(); }
         Vector2f loc = pp.ship.getLocation();
         if (pastCount > 0) { // did our copy jump since the last record (its system, or a script)? (our own corrections move the record with it)
             int prev = (pastNext - 1) & 255;
@@ -4645,6 +4649,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         pastT[pastNext] = clock; pastX[pastNext] = loc.x; pastY[pastNext] = loc.y;
         FluxTrackerAPI ft = pp.ship.getFluxTracker();
+        if (pastCount > 0) { // a step in our flux since the last record? (our own corrections move the record with it)
+            int prev = (pastNext - 1) & 255;
+            float step = Math.max(20f, pp.ship.getMaxFlux() * 0.005f);
+            if (Math.abs(ft.getCurrFlux() - pastFlux[prev]) > step || Math.abs(ft.getHardFlux() - pastHard[prev]) > step)
+                fluxSteps.note(0.5f * (pastT[prev] + clock));
+        }
         pastFlux[pastNext] = ft.getCurrFlux(); pastHard[pastNext] = ft.getHardFlux();
         pastNext = (pastNext + 1) & 255;
         if (pastCount < 256) pastCount++;
@@ -4673,8 +4683,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean comparable = ownJumps.comparable(when, clock, roundTrip, (float) Math.sqrt(ex * ex + ey * ey));
         reconX = comparable ? ex : 0f;
         reconY = comparable ? ey : 0f;
-        reconFlux = t.flux - fl;
-        reconHard = t.hardFlux - hf;
+        // Flux the same way: right by a step (a shot, a vent ending) a frame's timing is the whole step, so left out.
+        boolean fluxComparable = !fluxSteps.near(when, 0.06f);
+        reconFlux = fluxComparable ? t.flux - fl : 0f;
+        reconHard = fluxComparable ? t.hardFlux - hf : 0f;
         reconFluxReady = true;
         reconReady = true;
         reconChecks++;
@@ -4691,8 +4703,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      */
     private boolean ownFlux(FluxTrackerAPI flux, float room, float amount) {
         if (cfg == null || !cfg.hideLatency || !cfg.predictOwnShip || !reconFluxReady || amount <= 0f) return false;
-        float slack = Math.max(15f, room * 0.01f);
-        float k = Math.min(1f, amount * 4f);
+        // Held to the host's within a quarter of a percent of the bar (until 0.9.4: a whole percent, closed slowly);
+        // a tenth of the bar or more apart (a vent or a shot one side didn't have) is put right at once.
+        float slack = Math.max(3f, room * 0.0025f);
+        boolean far = Math.abs(reconFlux) > room * 0.1f || Math.abs(reconHard) > room * 0.1f;
+        float k = far ? 1f : Math.min(1f, amount * 10f);
+        if (far) fluxSnaps++;
         float cf = Math.abs(reconFlux) > slack ? reconFlux * k : 0f, ch = Math.abs(reconHard) > slack ? reconHard * k : 0f;
         if (cf != 0f || ch != 0f) {
             float f = Math.max(0f, Math.min(room, flux.getCurrFlux() + cf));

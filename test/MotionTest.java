@@ -53,6 +53,15 @@ public class MotionTest {
         w.jump(2f);
         check(w.jumpedWithin(2.2f, 0.3f) && !w.jumpedWithin(2.5f, 0.3f), "a jump is remembered for as long as asked");
 
+        // steps (a shot's flux): comparisons right by one are left out, others made
+        wingman.net.Steps st = new wingman.net.Steps();
+        st.note(3.0f);
+        check(st.near(3.04f, 0.06f) && st.near(2.97f, 0.06f), "a comparison right by a step is left out");
+        check(!st.near(3.1f, 0.06f) && !st.near(2.9f, 0.06f), "one a little further off is made");
+        check(st.skipped == 2, "and the ones left out are counted");
+        for (int i = 0; i < 8; i++) st.note(10f + i);
+        check(!st.near(3.0f, 0.06f), "only the last few steps are kept");
+
         System.out.println(failed == 0 ? "MOTION PASSED (" + checks + " checks)" : "MOTION FAILED (" + failed + " of " + checks + ")");
         if (failed > 0) System.exit(1);
     }

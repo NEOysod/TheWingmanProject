@@ -1646,10 +1646,10 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 }
             }
 
-            // How the packer may treat it: a ship a player flies goes exactly; for the rest, flux is only sent
-            // again once the bar has moved by a hundredth.
+            // How the packer may treat it: a ship a player flies goes exactly. Flux goes exactly for every ship
+            // (until 0.9.4 only once the bar had moved by a hundredth: a saving bandwidth no longer needs).
             st.exact = flown.contains(id);
-            st.fluxStep = Math.max(5f, s.getMaxFlux() * 0.01f);
+            st.fluxStep = 0f;
             int hull = Math.round(Snapshot.clamp(st.hull, 0f, 1f) * 65535f), cr = Math.round(Snapshot.clamp(st.cr, 0f, 1f) * 200f);
             Sent last = sentShips.get(id);
             // A system starting or stopping, or a change of state, is when a ship's stats move: have them looked at now.

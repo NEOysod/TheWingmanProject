@@ -19,7 +19,7 @@ import java.util.Map;
  * that same guess from the previous update's numbers, and only what differs from the guess is sent. The guess
  * goes on at the rate the speeds were changing (both ends work that out from the speeds they hold), so a
  * missile speeding up or a fighter in a steady turn is guessed right too. The host also lets a value sit a hair
- * off the truth (half a unit of position, a hundredth of a flux bar) rather than send it; it keeps count of what
+ * off the truth (half a unit of position; flux as far as the host's fluxStep allows) rather than send it; it keeps count of what
  * the joiner actually holds, so those hairs never add up. Something whose every value is where the guess puts
  * it is left out of the update altogether, and both ends carry it on by the guess (for at most CARRY updates
  * in a row). The joiner's game is handed every ship and missile it holds, sent or carried.

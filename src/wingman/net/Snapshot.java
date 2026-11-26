@@ -48,7 +48,8 @@ public final class Snapshot {
 
         /**
          * Host only, not sent: how the update packer may treat this ship. 'exact': every value goes as it is
-         * (the ships players fly). 'fluxStep': how far flux may sit from the truth before it is sent again.
+         * (the ships players fly). 'fluxStep': how far flux may sit from the truth before it is sent again (0: never,
+         * the host's choice since 0.9.4).
          */
         public boolean exact;
         public float fluxStep;
