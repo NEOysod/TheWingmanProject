@@ -83,6 +83,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         short[] angles;          // each weapon's angle relative to the hull, as last sent by the host (65536 steps a turn)
         float[] turretRate;      // how fast each was turning relative to the hull (degrees/s, from the last two updates)
         float systemOff, cloakOff, phaseOff;
+        float statsHoldUntil;   // its stats aren't compared before this (a system or cloak just changed stage; see statsSettled)
+        boolean overloadedHere; float overloadHereAt = -100f; // overloaded on this PC, and since when
         float goneAt;            // when the host said it was gone (kept a little longer as the launcher of its last missiles) // how long our copy's systems have been in a different stage from the host's
         int transferState = -1; // -1 unknown, 0 allowed, 1 blocked
         DamageState.Ship damage; // latest armor / EMP state from the host
@@ -101,6 +103,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts and jumps, as the host's figures show them
         float realVx, realVy, realAt = -1f; // its speed in the last update that actually spoke of it, and the host's time then
         float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
+        int sysUses, sysUseCounted = -1, sysBurstCounted = -1, sysJumpCounted = -1; // its system's uses seen; the last one not to be judged by, or already credited
         float shieldRate;           // how fast the host's shield on it was turning (degrees/s, from its last two updates)
         float anglesAt = -100f;     // the host time of the turret angles held
         float setX, setY, setVx, setVy, setAt = -100f; // where and how fast we left it last frame (see Motion.shoved)
@@ -866,8 +869,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** The ship's top speed by its own means (as modified, with the zero-flux boost); very high if it can't be read. */
     private static float normalTop(ShipAPI s) {
         try {
+            // Its own engines' top speed, as if they all worked (a ship drifting after a flameout is no burst), with
+            // the zero-flux boost once (the game's own "zero_flux_boost" on the stat is left out with the penalty).
             MutableShipStatsAPI m = s.getMutableStats();
-            return m.getMaxSpeed().getModifiedValue() + Math.max(0f, m.getZeroFluxSpeedBoost().getModifiedValue());
+            return ShipStats.withoutEngines(m.getMaxSpeed()) + Math.max(0f, m.getZeroFluxSpeedBoost().getModifiedValue());
         } catch (Throwable t) {
             return 100000f;
         }
@@ -1014,10 +1019,18 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             Snapshot.ShipState was = pp.target;
             boolean running = st.system >= 1 && st.system <= 3;
             boolean ranBefore = was != null && was.system >= 1 && was.system <= 3;
-            if (running && !ranBefore) pp.sysStartedAt = now;
             boolean phased = st.cloak >= 1 && st.cloak <= 3;
-            // put down to its system only soon after the system started, and not while phased (phase speed is the cloak's)
-            boolean byItsSystem = (running || ranBefore) && now - pp.sysStartedAt < 1.5f && !phased;
+            // Its engines out or damaged: it may drift faster than its own engines allow, or be knocked about,
+            // whatever its system does; such a use isn't counted either way.
+            boolean engineTrouble = pp.damage != null && (pp.damage.flamedOut || pp.damage.enginesDisabled != 0);
+            if (running && !ranBefore) {
+                pp.sysStartedAt = now;
+                pp.sysUses++;
+                if (!pp.module && !phased && !engineTrouble && !st.carried) Movers.used(pp.ship.getSystem()); else pp.sysUseCounted = pp.sysUses;
+            }
+            // put down to its system only soon after the system started, and not while phased (phase speed is the
+            // cloak's); and only once per use, for a burst and for a jump (see Movers.saw)
+            boolean byItsSystem = (running || ranBefore) && now - pp.sysStartedAt < 1.5f && !phased && !engineTrouble && pp.sysUseCounted != pp.sysUses;
             // A state the unpacker carried on by its guess (the update said nothing of the ship) is no news of how
             // it moves: it is neither judged nor, below, taken as a measure of bursts and spins. When the update
             // before was such a guess, the jump test allows for how far off that guess may have drifted.
@@ -1032,19 +1045,22 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     pp.motion.jump(now);
                     fastJumps++;
                     // Learned from only when the update before spoke of the ship too, and came just before.
-                    if (byItsSystem && !pp.module && !was.carried && dt <= wingman.net.Motion.LEARN_GAP) Movers.sawJump(pp.ship.getSystem());
+                    if (byItsSystem && !pp.module && !was.carried && dt <= wingman.net.Motion.LEARN_GAP && pp.sysJumpCounted != pp.sysUses) {
+                        pp.sysJumpCounted = pp.sysUses;
+                        Movers.sawJump(pp.ship.getSystem());
+                    }
                 }
             }
             if (news && hostTime > pp.realAt) { pp.realVx = st.vx; pp.realVy = st.vy; pp.realAt = hostTime; }
             if (news && !pp.module && wingman.net.Motion.burst(st.vx, st.vy, st.ax, st.ay, normalTop(pp.ship), engineAcc(pp.ship))) {
                 if (!pp.motion.surging(now)) fastBursts++;
                 pp.motion.burst(now);
-                if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
+                if (byItsSystem && pp.sysBurstCounted != pp.sysUses) { pp.sysBurstCounted = pp.sysUses; Movers.sawBurst(pp.ship.getSystem()); }
             }
             if (news && !pp.module && wingman.net.Motion.spin(st.angVel, st.angAcc, maxTurn(pp.ship), turnAcc(pp.ship))) {
                 if (!pp.motion.spinning(now)) fastSpins++;
                 pp.motion.spin(now);
-                if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
+                if (byItsSystem && pp.sysBurstCounted != pp.sysUses) { pp.sysBurstCounted = pp.sysUses; Movers.sawBurst(pp.ship.getSystem()); }
             }
             // The shield's turn rate, so it can be carried on between updates instead of standing still in steps.
             boolean shieldNow = (st.flags & Snapshot.F_DEFENSE) != 0, shieldBefore = was != null && (was.flags & Snapshot.F_DEFENSE) != 0;
@@ -1489,7 +1505,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         } else {
                             Puppet pp = puppets.get(n.ship);
                             if (pp == null) continue;
+                            // The ship we fly runs its scripts here, under our own controls, a round trip ahead of
+                            // the host's (as its system does): a value they changed here lately is left as it is.
+                            // Copying the host's over it put it back by that much (a counter back up, a charge
+                            // given again, a timer run twice). A value only the host's scripts set is copied as before.
+                            if (n.ship == ownId && ownNoteLocal(pp.ship, n.key)) { ownNotesKept++; continue; }
                             if (v == null) pp.ship.removeCustomData(n.key); else pp.ship.setCustomData(n.key, v);
+                            if (n.ship == ownId) ownNoteLeft.put(n.key, v);
                         }
                         notesApplied++;
                     } catch (Throwable th) { /* that one value is skipped */ }
@@ -2499,7 +2521,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage)" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -4605,7 +4627,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         if (restHave && restWant) return 0f;
         apart += amount;
         boolean opposite = running(have) != running(want);
-        float patience = own ? 0.8f : opposite ? 0f : 0.25f;
+        // (On ours, at least a round trip and a little: on a slow link the host's answer to our key takes longer
+        // than 0.8 s, and the system was switched off here before the host had even started it.)
+        float patience = own ? Math.max(0.8f, roundTrip > 0f ? Math.min(2f, roundTrip + 0.3f) : 0.8f) : opposite ? 0f : 0.25f;
         if (apart < patience) return apart;
         float progress = want == ShipSystemAPI.SystemState.IN ? hostLevel
                 : want == ShipSystemAPI.SystemState.OUT ? 1f - hostLevel : 0f;
@@ -4667,6 +4691,81 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         return 0f;
     }
     private int systemsForced, systemsStarted, systemsStopped, systemSoundsPlayed, overloadsHeard;
+    private int statsHeldBack;
+
+    /** On the ship we fly: each script value as we last left it, and when this game's scripts last changed one. */
+    private final Map<String, Object> ownNoteLeft = new HashMap<String, Object>();
+    private final Map<String, Float> ownNoteChanged = new HashMap<String, Float>();
+    private int ownNoteShip = -1, ownNotesKept;
+
+    /** Has this game's own script changed this value on our ship lately (since we last left it)? */
+    private boolean ownNoteLocal(ShipAPI ship, String key) {
+        if (ownNoteShip != ownId) { ownNoteShip = ownId; ownNoteLeft.clear(); ownNoteChanged.clear(); }
+        Object cur = ship.getCustomData() == null ? null : ship.getCustomData().get(key);
+        if (ownNoteLeft.containsKey(key) && !eqNote(cur, ownNoteLeft.get(key))) {
+            ownNoteChanged.put(key, clock);
+            ownNoteLeft.put(key, cur);
+        }
+        Float at = ownNoteChanged.get(key);
+        float window = Math.max(0.5f, roundTrip > 0f ? Math.min(1.5f, roundTrip + 0.3f) : 0.5f);
+        return at != null && clock - at < window;
+    }
+
+    private static boolean eqNote(Object a, Object b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        if (a instanceof Number && b instanceof Number) return ((Number) a).doubleValue() == ((Number) b).doubleValue();
+        return a.equals(b);
+    }
+
+    /**
+     * Can a ship's stats be compared with the host's now? Not while its system or phase cloak is starting or
+     * ending on either side, or runs on one side only, nor for a moment after (figures from before the change
+     * are still on their way). Both sides put the system's own changes on the stats (a burn drive's speed, an ammo
+     * feeder's rate of fire, a phase cloak's time flow), a moment apart: a correction worked out across that moment
+     * doubled them or took them away until the next one. On the ship you fly, whose system starts a round trip
+     * before the host's, that was every use: an ammo feeder fired at its normal rate at first, and at double rate
+     * for a moment after it had ended. A system this copy doesn't run at all (a teleporter, drones, one held back
+     * by SystemWatch) puts nothing on the stats here, so the host's are taken as they are.
+     */
+    private boolean statsSettled(Puppet pp, Snapshot.ShipState t, boolean own) {
+        boolean agree;
+        try {
+            agree = stagesAgree(pp.ship.getSystem(), t.system, !own && notRunHere(pp.ship.getSystem()))
+                    && stagesAgree(pp.ship.getPhaseCloak(), t.cloak, false);
+        } catch (Throwable th) {
+            return true;
+        }
+        if (!agree) {
+            pp.statsHoldUntil = clock + Math.max(0.25f, roundTrip > 0f ? Math.min(1f, roundTrip + 0.1f) : 0.25f);
+            statsHeldBack++;
+            return false;
+        }
+        return clock >= pp.statsHoldUntil;
+    }
+
+    /** Both at rest (idle or cooling down) or both fully on; a stage between (charging up or down) never agrees. */
+    private static boolean stagesAgree(ShipSystemAPI sys, int hostStage, boolean notRunHere) {
+        if (sys == null || notRunHere) return true;
+        int here = stageClass(sys.getState().ordinal()), there = stageClass(hostStage);
+        return here == there && here != 1;
+    }
+
+    /** 0 at rest (idle, cooldown), 1 changing (charging up or down), 2 on. */
+    private static int stageClass(int stage) {
+        return stage == 2 ? 2 : stage == 1 || stage == 3 ? 1 : 0;
+    }
+
+    /** A system that followSystem never runs on a copy of someone else's ship. */
+    private boolean notRunHere(ShipSystemAPI sys) {
+        if (sys == null) return false;
+        try {
+            if (teleports(sys) || sys instanceof com.fs.starfarer.api.combat.DroneLauncherShipSystemAPI) return true;
+            return watch.blocked(sys, cfg == null ? null : cfg.neverMirrorSystems);
+        } catch (Throwable th) {
+            return false;
+        }
+    }
 
     // ---- How a teleport looks on someone else's ship ----
     // A teleporter (vanilla Phase Skimmer, mods' blinks) is never run on a copy of someone else's ship: the copy
@@ -5212,7 +5311,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // second while a system is running on it or it is the ship in our hands (that is when this game's own
         // scripts keep changing them); otherwise once a second is plenty.
         boolean lively = own || t.system != 0 || t.cloak != 0;
-        if (pp.hostStats != null && cfg != null && cfg.syncStats && !statsBroken
+        if (pp.hostStats != null && cfg != null && cfg.syncStats && !statsBroken && statsSettled(pp, t, own)
                 && (pp.statsDue || ((frame + pp.netId) % (lively ? 6 : 60)) == 0)) {
             pp.statsDue = false;
             try {
@@ -5245,6 +5344,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // has been drawn once, as after a refresh from the host): then it is simply tried again next frame.
         try {
             boolean overloaded = (t.flags & Snapshot.F_OVERLOADED) != 0;
+            boolean overHere = flux.isOverloaded();
+            if (overHere && !pp.overloadedHere) pp.overloadHereAt = clock;
+            pp.overloadedHere = overHere;
             if (overloaded && !flux.isOverloaded()) {
                 flux.forceOverload(0f);
                 // Pushed into an overload, the game's copy is silent: its sound and "OVERLOADED" come only with an
@@ -5254,7 +5356,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     try { flux.playOverloadSound(); flux.showOverloadFloatyIfNeeded(); overloadsHeard++; } catch (Throwable th) { /* silent, as before */ }
                 }
             }
-            else if (!overloaded && flux.isOverloaded()) flux.stopOverload();
+            else if (!overloaded && flux.isOverloaded()) {
+                // On the ship we fly, our own guns and shield put flux on it here a round trip before they do on
+                // the host (see ownFlux), so it can overload here first: the host's "not overloaded" may be from
+                // before that. It is given that long to say so too, rather than stopped and started again.
+                float grace = Math.max(0.3f, roundTrip > 0f ? Math.min(1f, roundTrip + 0.2f) : 0.3f);
+                if (!own || clock - pp.overloadHereAt >= grace) flux.stopOverload();
+            }
             pp.hostOverloaded = overloaded;
             pp.overloadKnown = true;
             if (!own) {

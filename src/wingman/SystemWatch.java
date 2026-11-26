@@ -153,6 +153,13 @@ final class SystemWatch {
         save();
     }
 
+    /** Is this system kept off copies (it took the game down once, or the joiner listed it)? Nothing is noted. */
+    boolean blocked(ShipSystemAPI sys, List<String> never) {
+        String id;
+        try { id = sys.getId(); } catch (Throwable t) { return false; }
+        return id != null && (blocked.contains(id) || (never != null && never.contains(id)));
+    }
+
     /** May this system be switched on from the host's state? Notes the attempt first if it is a mod's and untried. */
     boolean allow(ShipSystemAPI sys, List<String> never) {
         String id;

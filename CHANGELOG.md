@@ -75,6 +75,28 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
     game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
     their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- A pass over the joiner's handlers for more of the same kind (something both games work out, copied across
+  as well, or the host's word arriving a moment after this PC's own):
+  - Stats are no longer copied while a ship system or phase cloak is starting or ending, or is on one side
+    only. Both games put the system's effect on the stats a moment apart, and a correction across that moment
+    doubled it or took it away: on the ship you fly, every use of an Ammo Feeder fired at the normal rate at
+    first and at double rate for a moment after it had ended (a burn drive's speed, a phase cloak's time flow,
+    the same).
+  - Script values on the ship you fly: its scripts run here under your controls, a round trip ahead of the
+    host's, so a value they changed lately is no longer overwritten with the host's older one (a counter put
+    back up, a charge given again). Values only the host's scripts set are copied as before.
+  - Timers in scripts are recognised after 1.5 s of changing at every look (protocol 64 waited 6 s, and copied
+    them 15 times a second meanwhile, so they jumped about).
+  - Ship systems are learned as "moving" only from most of their uses (bursts on 2 of 3 uses, at least 3; jumps
+    on half, at least 2), one sighting per use, never while the ship's engines are damaged or out. Two
+    sightings used to be enough, and a ship knocked by a blast while its Ammo Feeder or Targeting Feed ran
+    taught that those move it (its copies were then held close while they ran, which only makes them shake).
+    What older test builds learned is forgotten and learned again.
+  - Your ship overloading here a moment before the host says so (your guns' flux counts here first) is no
+    longer stopped and started again.
+  - Your ship system is switched back to the host's state only after a round trip and a little (at least
+    0.8 s as before): on a slow link it was switched off before the host had even started it.
+  - A ship drifting after a flameout no longer counts as being in a burst.
 - Fixed: a flameout (or engines knocked out) stopped the ship you fly dead instead of letting it drift. The
   host's top speed, acceleration and turn rate were copied as the game had them, with its engine-damage
   penalty in (nothing left in a flameout); that "top speed 0" could arrive while your copy's engines were still

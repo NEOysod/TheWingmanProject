@@ -16,8 +16,8 @@ import com.fs.starfarer.api.combat.ShipSystemSpecAPI;
  * all (shields, dampers, weapon boosts). Told first from the system's own description, the same way for every mod:
  * its type (DISPLACER or TELEPORTER), the game's own teleporter class, its "movement" tag, and the hints it gives
  * the game's AI about speed. Then learned by watching (see wingman.net.Motion): a system whose ship is seen to jump,
- * or to burst, while it runs, twice, is taken for one that does, and that is kept on this PC for next time
- * (saves/common/wingman_movers.txt). What it is used for:
+ * or to burst, soon after it starts, on most of the times it is used (see saw), is taken for one that does, and
+ * that is kept on this PC for next time (saves/common/wingman_movers.txt). What it is used for:
  * <ul>
  * <li>a teleporter is never run on a copy of someone else's ship (the copy can't know where the real one goes and
  *     would jump somewhere else first); the copy appears where the host's does, with the system's look drawn;</li>
@@ -36,9 +36,15 @@ final class Movers {
      * Plasma Burn as teleports: their copies then glowed with the teleport shimmer and snapped about. A jump in an
      * older file is read as a burst (held close, its system still run), and learned again if it really is one.
      */
-    private static final String VERSION = "(v2)";
-    /** Sightings before a system that isn't described as one is taken for one. */
-    static final int SIGHTINGS = 2;
+    private static final String VERSION = "(v3)";
+    /**
+     * A system is learned as a mover once its ship was seen to burst on at least BURST_USES of the uses watched,
+     * and on two thirds of them; to jump on at least JUMP_USES, and on half. One burst or jump per use counts.
+     * (Test builds before (v3) learned from any two sightings, even within one use: a ship knocked by a blast
+     * while its Ammo Feeder or Targeting Feed ran taught that those move it, and its copies were then held close
+     * while they ran, which only makes them shake. A file from before (v3) is forgotten and learned again.)
+     */
+    static final int BURST_USES = 3, JUMP_USES = 2;
 
     /** By system id: what its description says. */
     private static final Map<String, Integer> described = new HashMap<String, Integer>();
@@ -50,7 +56,7 @@ final class Movers {
     private static final java.util.Set<String> engineOnly = new java.util.HashSet<String>();
     /** By system id: what was learned by watching (kept on this PC). */
     private static Map<String, Integer> learned;
-    /** By system id: sightings so far of a jump / a burst while it ran, not yet enough to learn from. */
+    /** By system id: { uses watched, uses with a burst, uses with a jump }, not yet enough to learn from. */
     private static final Map<String, int[]> seen = new HashMap<String, int[]>();
     private static int learnedNow;
     private static String teleporterClass;
@@ -72,10 +78,21 @@ final class Movers {
     /** Does it move the ship sharply at all (a burst or a jump)? */
     static boolean moves(ShipSystemAPI sys) { return kind(sys) != STILL; }
 
-    /** The ship was seen to jump while this system ran (or had just run). */
+    /** This system was just switched on (on the host) on a ship being watched: one more use to judge it by. */
+    static void used(ShipSystemAPI sys) {
+        try {
+            String id = sys == null ? null : sys.getId();
+            if (id == null) return;
+            int[] n = seen.get(id);
+            if (n == null) seen.put(id, n = new int[3]);
+            n[0]++;
+        } catch (Throwable t) { /* not counted */ }
+    }
+
+    /** The ship was seen to jump soon after this system started (once per use, see WingmanClientPlugin.noteMotion). */
     static void sawJump(ShipSystemAPI sys) { saw(sys, JUMP); }
 
-    /** The ship was seen in a burst while this system ran. */
+    /** The ship was seen in a burst soon after this system started (once per use). */
     static void sawBurst(ShipSystemAPI sys) { saw(sys, BURST); }
 
     /** Systems learned this session (for the log). */
@@ -89,7 +106,9 @@ final class Movers {
             if (what == JUMP && engineOnly.contains(id)) return; // its ship only flies, however fast
             int[] n = seen.get(id);
             if (n == null) seen.put(id, n = new int[3]);
-            if (++n[what] < SIGHTINGS) return;
+            n[what]++;
+            int uses = Math.max(n[0], n[what]);
+            if (what == BURST ? n[what] < BURST_USES || n[what] * 3 < uses * 2 : n[what] < JUMP_USES || n[what] * 2 < uses) return;
             learned().put(id, what);
             learnedNow++;
             save();
@@ -97,7 +116,7 @@ final class Movers {
             Global.getLogger(Movers.class).info("Wingman: the ship system " + name + " moves its ship "
                     + (what == JUMP ? "by jumping: from now on it isn't run on copies of others' ships, which appear where the host's does"
                             : "in bursts: copies are held close while it starts and ends")
-                    + " (seen " + n[what] + " times; remembered on this PC in saves/common/" + FILE + ")");
+                    + " (seen on " + n[what] + " of " + Math.max(n[0], n[what]) + " uses; remembered on this PC in saves/common/" + FILE + ")");
         } catch (Throwable t) { /* not learned: copies are handled as before */ }
     }
 
@@ -151,13 +170,13 @@ final class Movers {
         try {
             if (Global.getSettings().fileExistsInCommon(FILE)) {
                 String text = Global.getSettings().readTextFileFromCommon(FILE);
-                // Written by an older build (no VERSION mark): its jumps may be misreadings, so read as bursts.
+                // Written by an older build (no VERSION mark): learned too eagerly, so forgotten (learned again).
                 boolean trusted = text != null && text.contains(VERSION);
-                if (text != null) for (String line : text.split("\n")) {
+                if (text != null && trusted) for (String line : text.split("\n")) {
                     int eq = line.indexOf('=');
                     if (eq <= 0 || eq > 200) continue;
                     String v = line.substring(eq + 1).trim();
-                    int k = "jump".equals(v) ? (trusted ? JUMP : BURST) : "burst".equals(v) ? BURST : -1;
+                    int k = "jump".equals(v) ? JUMP : "burst".equals(v) ? BURST : -1;
                     if (k > 0) learned.put(line.substring(0, eq).trim(), k);
                 }
             }

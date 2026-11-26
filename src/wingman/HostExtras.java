@@ -40,8 +40,12 @@ final class HostExtras implements DamageTakenModifier {
     static final long HURTS_MS = 33, STATS_MS = 33, NOTES_MS = 66;
     /** Stats passes between two looks at a ship with nothing going on (once a second at STATS_MS). */
     static final int STATS_IDLE_EVERY = 30;
-    /** A script value changing at every look for this many looks running is a timer, left alone (6 s at NOTES_MS). */
-    static final int RESTLESS_LOOKS = 90;
+    /**
+     * A script value changing at every look for this many looks running is a timer, left alone (1.5 s at NOTES_MS).
+     * Protocol 64 looked 15 times as often and kept 6 s: for those first 6 s a timer the joiner's copy of the script
+     * keeps for itself was overwritten 15 times a second with one a round trip old, and jumped about.
+     */
+    static final int RESTLESS_LOOKS = 23;
     /** Ships whose stats changed lately, and until when they count as changing (System.currentTimeMillis()). */
     private final Map<Integer, Long> statsChanging = new HashMap<Integer, Long>();
     private final Map<Integer, float[]> sentStats = new HashMap<Integer, float[]>();
