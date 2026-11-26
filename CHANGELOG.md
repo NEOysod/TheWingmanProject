@@ -2,13 +2,22 @@
 
 ## Next (on the test branch)
 
-- **Phase Skimmer (and other jumps) on the ship you fly as a joiner no longer jitter.** Your ship runs on your PC a
-  moment ahead of the real one on the host and is kept with it by comparing the two at the same moment. Around a
-  jump that comparison was off by up to the whole jump (300 units for a Phase Skimmer, from a single frame's
-  difference in timing), and the ship was pulled back toward where it jumped from, then forward again. Now the
-  comparisons around a jump are left out, the real ship's jump is waited for, and if only one side jumped (no
-  charge left on the other) the ship is put straight where the real one is instead of sliding there. Only the
-  joiner's PC changes: a joiner with this build can play with a host on 0.9.4-beta.
+- **One handler for fast ship systems and teleports, vanilla or any mod's.** Fast movement is now told from how a
+  ship moves, not from which system it has: a *burst* (faster, or changing speed faster, than its own engines
+  can: burn drive, plasma jets, a phase ship, a mod's dash, a knock) or a *jump* (Phase Skimmer, Phase Teleporter,
+  a mod's blink, a script). Which systems do it is read from their description (type, "movement" tag, the speed
+  hints they give the AI) and learned by watching; what's learned is kept on your PC (saves/common/wingman_movers).
+  - **Phase Skimmer and other jumps on the ship you fly no longer jitter.** Your ship runs on your PC a moment
+    ahead of the real one and is kept with it by comparing the two at the same moment; around a jump that was off
+    by up to the whole jump (300 units for a skim, from one frame of timing), so the ship was pulled back and
+    forth. Now comparisons around a jump are left out, the real ship's jump is waited for, and if only one side
+    jumped (no charge left on the other) your ship is put straight where the real one is instead of sliding.
+  - Jumps of other ships are seen at any speed (a skim on a ship going over ~400 was missed and slid across).
+  - A mod's teleporting system nobody described is learned after two jumps and no longer run on copies (where it
+    jumped somewhere else first).
+  - Ships whose system doesn't move them (shields, dampers) are no longer held tighter while it runs, which made
+    them shake a little.
+  Only the joiner's PC changes: a joiner with this build can play with a host on 0.9.4-beta.
 
 ## 0.9.4-beta
 

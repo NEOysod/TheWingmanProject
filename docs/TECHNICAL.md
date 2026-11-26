@@ -750,13 +750,33 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
 - Each puppet is carried forward from its last state: position + (velocity + ½ acceleration × a) × age, velocity
   + acceleration × a, facing and turn rate likewise, with age capped at 1 s and a = min(age, 0.25 s)
   (`ACC_REACH`: past a quarter of a second it goes on in a straight line). Missiles the same (age capped at 2 s).
-  Ships: the acceleration is capped at 400 + 4 × speed (`clampAcc`); while the host reports the system or the
-  right-click system running (stage 1-3) it is not used at all, the tolerance is cut to `3 + 0.01 v` and the
-  excess closed at 25/s, velocity blended at 60/s.
+  Ships: the acceleration is capped at 400 + 4 × speed (`clampAcc`); while a ship is *surging* (see **Fast
+  movement** below) it is not used at all, the tolerance is cut to `3 + 0.01 v` and the excess closed at 25/s,
+  velocity blended at 60/s.
 - **Tolerance:** inside `3 + 0.05 v` units for ships (`5 + 0.06 v` fighters, `6 + 0.06 v` missiles; × `syncTolerance`)
   the gap fades at about 1/s; beyond, the excess closes at 10/s (fighters 14/s); over 500 units, or after a
-  detected teleport (`jumped`: more than `150 + 0.3 × speeds` off the dead-reckoned place), it snaps. Velocity is
-  blended at 25/s. Facing: `1.5 + 0.05 w` degrees. Modules are left to their ship.
+  detected jump (see **Fast movement**), it snaps. Velocity is blended at 25/s. Facing: `1.5 + 0.05 w` degrees.
+  Modules are left to their ship.
+- **Fast movement** (`wingman.net.Motion`, `Movers`; one handler for every system and script, vanilla or a mod's,
+  on the joiner's own ship and every other): each new host state of a ship is checked (`noteMotion`).
+  - A **jump**: further from the last state than the average of the two speeds over the host time between them
+    explains, beyond `100 + ½ |Δv| dt` units (`Motion.jumped`). (Before: `150 + 0.3 ×` the sum of the speeds, which
+    missed a Phase Skimmer on any ship going over ~400.) The copy is put straight there (`jumped`, `markJump`),
+    with the teleport trail if its system teleports.
+  - A **burst**: faster than `1.2 ×` the hull's own top speed (as modified, plus the zero-flux boost) + 20, or
+    speed changing faster than `3 ×` its engines' acceleration (or deceleration) + 150 units/s² (`Motion.burst`):
+    a burn drive, plasma jets, a phase ship, a mod's dash, a collision's knock. Held 0.4 s (`Motion.Watch`).
+  - A ship is *surging* while in a burst, phased, or while its system runs and `Movers.moves` it. A system that
+    doesn't move its ship (a shield, a damper) no longer makes its ship surge: being held closer only shook it.
+  - **Which systems move their ship** (`Movers`): from the description first, the same for every mod: JUMP if the
+    spec type contains `DISPLACER` or `TELEPORTER` or it is the game's teleporter class; BURST if tagged
+    `movement`, if its `aiHints` give a speed increase or burst movement, or its type has `BURN` or `JETS`. Then
+    learned: a jump or a burst seen within 1.5 s of the host's system starting (not while phased), twice, makes
+    it a JUMP or BURST system; kept in `saves/common/wingman_movers` (`id=jump|burst`; delete it to forget) and
+    logged once. A learned teleporter is no longer run on copies.
+  - The joiner's own ship: *fast* (`ownFast`) while the host's figures show a burst, our copy is in a burst by
+    speed, or a moving system is in its IN or OUT stage on either side; then, and 0.4 s after, the wider slack
+    (`40 + 0.15 v`). Jumps of our own copy: `OwnJumps` (7.5).
 - **Lateness:** each update is stamped with how late it arrived compared with the quickest of the last 8 (at most
   0.1 s), so fast things are carried exactly as far as they should be.
 - The above is the **plain** mode. Two joiner settings change it (`Smoother`; measured in 5.3):
@@ -842,8 +862,8 @@ firing bit clears.
   (it winds down and starts its real cooldown), `forceState` only after 0.3 s more. A forced COOLDOWN is given the
   system's full cooldown if it came with none, so it doesn't read as idle at once (UAF's Isenoria ends its fighter
   hand-over when Rafflesya Control is neither on nor cooling down).
-- **Teleporters on other ships** (spec type containing `DISPLACER` or `TELEPORTER`, e.g. Phase Skimmer, or the
-  game's teleporter class) are never run on the copy. Their look is drawn instead (`teleportLook`,
+- **Teleporters on other ships** (`Movers.jumps`: described or learned, see **Fast movement**) are never run on
+  the copy. Their look is drawn instead (`teleportLook`,
   `teleportTrail`): the spec's jitter (colour, copies, range; defaults if none) while the host's stage is IN, ACTIVE
   or OUT, its use sound when that starts, and when the copy snaps on a detected jump (over 100 units) an afterimage
   where it stood (0.5 s fade; the sound too if the stages were missed).
@@ -1437,7 +1457,8 @@ Adding a setting: a row in `ITEMS` and the field, `fromFile`, `get` and `set` in
 
 **Files in `saves/common`** (the game adds `.data`): `wingman_settings` (in-game changes), `wingman_join` (address,
 name, password), `wingman_seen` (how-to shown), `wingman_ship` (last ship), `wingman_systems` (system and objective
-safety list), `wingman_compat` (report evidence). Passwords are stored as plain text.
+safety list), `wingman_compat` (report evidence), `wingman_movers` (ship systems learned to jump or burst),
+`wingman_ui_state` (panels minimized or not). Passwords are stored as plain text.
 
 **Diagnostics** (detailed log on): `NetStats` (bytes per message type, before and after compression, every 30 s),
 `Prof` (time per part of the frame, host and joiner), and the `Wingman` lines named throughout this document.
@@ -1506,6 +1527,8 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
     smoothness (distance from the host's positions one delay ago, and jitter) on a simulated battle through the
     real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,
     `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
+  - `MotionTest`: bursts and jumps told from ordinary flying (top speed, a nav bonus, engines' acceleration, a
+    skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between).
   - `wingman.JumpTest` (in `test/wingman`): the own ship's jump handling against a simulated Phase Skimmer: the
     same moment, a frame apart, 150 ms apart, a jump the host's update doesn't show as one, a jump on one side only.
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name

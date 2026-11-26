@@ -144,7 +144,7 @@ public class InternalsCheck {
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatEngine", "doEndOfCombatProcessing", "void");
         hasMethod("straightOut", "com.fs.starfarer.combat.CombatState", "goToState", "void", "java.lang.String");
         hasField("straightOut", "com.fs.starfarer.title.TitleScreenState", "STATE_ID", "java.lang.String", true);
-        // teleporting systems (WingmanClientPlugin.teleporters), Backdrop, GroupFire, FighterUnlock
+        // teleporting systems (Movers.teleporterClass), Backdrop, GroupFire, FighterUnlock
         hasClass("teleporter system", "com.fs.starfarer.combat.systems.J");
         hasField("Backdrop light", "com.fs.starfarer.combat.entities.terrain.Planet", "lightColorOverride", "java.awt.Color", false);
         hasMethod("GroupFire", "com.fs.starfarer.combat.systems.WeaponGroup", "setCurrentActive", "void", "int");

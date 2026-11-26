@@ -97,6 +97,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean[] counted;      // per weapon: the host has sent a shot count for it at least once
         float[] lastCooldown, lastShotAt, aheadSince;
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
+        final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts and jumps, as the host's figures show them
+        float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
         /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
         boolean hostOverloaded, overloadKnown;
@@ -592,6 +594,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
             ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0;
+            if (fastBursts + fastJumps > 0 || Movers.learnedThisSession() > 0) {
+                Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts and " + fastJumps + " jumps seen in the host's figures; "
+                        + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt)");
+                fastBursts = 0; fastJumps = 0;
+            }
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
             if (bufferedFrames > 0) Dbg.info(WingmanClientPlugin.class, "Wingman jitter buffer: other ships shown " + Math.round(1000f * bufferClock.delay)
@@ -800,22 +807,80 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private float ownBurstUntil = -100f;
 
     /** Is the ship in our hands in a burst of speed from its system (or right-click system), here or on the host? */
-    private static boolean ownBurst(ShipAPI ship, Snapshot.ShipState t) {
+    /**
+     * Is the ship in our hands moving fast (see Motion), here or on the host? A burst in the host's figures lately,
+     * ours going faster than the hull can by itself, or a system that moves its ship (see Movers) starting or ending
+     * on either side, where a few milliseconds between the two is tens of units apart.
+     */
+    private boolean ownFast(Puppet pp, ShipAPI ship, Snapshot.ShipState t) {
         try {
-            ShipSystemAPI sys = ship.getSystem(), cloak = ship.getPhaseCloak();
-            boolean here = sys != null && sys.isActive() || cloak != null && cloak.isActive();
-            boolean there = t.system >= 1 && t.system <= 3 || t.cloak >= 1 && t.cloak <= 3;
-            if (!here && !there) return false;
-            // only if it really is moving faster than the ship normally can
-            // (measured against the ship's own top speed before anything is added to it: the system's boost is in
-            // the ship's current top speed)
-            float top = ship.getMutableStats().getMaxSpeed().getBaseValue();
-            float v = (float) Math.sqrt(ship.getVelocity().x * ship.getVelocity().x + ship.getVelocity().y * ship.getVelocity().y), hv = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
-            return Math.max(v, hv) > top * 1.25f + 20f;
+            if (pp.motion.surging(clock)) return true;
+            Vector2f v = ship.getVelocity();
+            if (wingman.net.Motion.burst(v.x, v.y, 0f, 0f, normalTop(ship), 0f)) return true;
+            ShipSystemAPI sys = ship.getSystem();
+            if (sys == null || !Movers.moves(sys)) return false;
+            ShipSystemAPI.SystemState here = sys.getState();
+            return t.system == 1 || t.system == 3 || here == ShipSystemAPI.SystemState.IN || here == ShipSystemAPI.SystemState.OUT;
         } catch (Throwable th) {
             return false;
         }
     }
+
+    /** The ship's top speed by its own means (as modified, with the zero-flux boost); very high if it can't be read. */
+    private static float normalTop(ShipAPI s) {
+        try {
+            MutableShipStatsAPI m = s.getMutableStats();
+            return m.getMaxSpeed().getModifiedValue() + Math.max(0f, m.getZeroFluxSpeedBoost().getModifiedValue());
+        } catch (Throwable t) {
+            return 100000f;
+        }
+    }
+
+    /** How sharply its engines change its speed (acceleration or deceleration, the more); very high if unknown. */
+    private static float engineAcc(ShipAPI s) {
+        try {
+            MutableShipStatsAPI m = s.getMutableStats();
+            return Math.max(m.getAcceleration().getModifiedValue(), m.getDeceleration().getModifiedValue());
+        } catch (Throwable t) {
+            return 100000f;
+        }
+    }
+
+    private int fastBursts, fastJumps;
+
+    /**
+     * A new state from the host for one ship: did it jump since the one before, or is it in a burst (see Motion)?
+     * Either, soon after its system started on the host, is put down to that system, which is then learned (see
+     * Movers): a teleporter is no longer run on copies, and a moving system holds its copies close from the start.
+     */
+    private void noteMotion(Puppet pp, Snapshot.ShipState st, float hostTime, float now) {
+        try {
+            Snapshot.ShipState was = pp.target;
+            boolean running = st.system >= 1 && st.system <= 3;
+            boolean ranBefore = was != null && was.system >= 1 && was.system <= 3;
+            if (running && !ranBefore) pp.sysStartedAt = now;
+            boolean phased = st.cloak >= 1 && st.cloak <= 3;
+            // put down to its system only soon after the system started, and not while phased (phase speed is the cloak's)
+            boolean byItsSystem = (running || ranBefore) && now - pp.sysStartedAt < 1.5f && !phased;
+            if (was != null) {
+                float dt = pp.track.empty() ? 0f : hostTime - pp.track.newestTime();
+                if (dt <= 0f || dt > 1f) dt = Math.max(0f, Math.min(1f, now - pp.targetAt));
+                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, st.x, st.y, st.vx, st.vy, dt)) {
+                    pp.jumped = true;
+                    pp.track.markJump(hostTime);
+                    pp.motion.jump(now);
+                    fastJumps++;
+                    if (byItsSystem && !pp.module) Movers.sawJump(pp.ship.getSystem());
+                }
+            }
+            if (!pp.module && wingman.net.Motion.burst(st.vx, st.vy, st.ax, st.ay, normalTop(pp.ship), engineAcc(pp.ship))) {
+                if (!pp.motion.surging(now)) fastBursts++;
+                pp.motion.burst(now);
+                if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
+            }
+        } catch (Throwable th) { /* this ship is moved as before */ }
+    }
+
     private int fighterBounces;
 
     private void watchPlayerShip(Conn conn) {
@@ -1707,14 +1772,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         if (wreck != null) { wreck.target = st; wreck.targetAt = now; }
                         continue;
                     }
-                    if (pp.target != null) {
-                        // Is this where the ship could have flown to since the last update, or has it jumped?
-                        float since = Math.max(0f, Math.min(1f, now - pp.targetAt));
-                        float jx = st.x - (pp.target.x + pp.target.vx * since), jy = st.y - (pp.target.y + pp.target.vy * since);
-                        float pace2 = Math.abs(st.vx) + Math.abs(st.vy) + Math.abs(pp.target.vx) + Math.abs(pp.target.vy);
-                        float reach = 150f + pace2 * 0.3f;
-                        if (jx * jx + jy * jy > reach * reach) { pp.jumped = true; pp.track.markJump(snap.hostTime); }
-                    }
+                    noteMotion(pp, st, snap.hostTime, now);
                     pp.target = st;
                     pp.targetAt = now;
                     pp.track.push(snap.hostTime, st.x, st.y, st.vx, st.vy, clampAcc(st.ax, st.vx, st.vy), clampAcc(st.ay, st.vx, st.vy),
@@ -4430,43 +4488,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private long statFixedMask;
     private int scriptEndsSeen, scriptEndsLocal, scriptEndsPlain, tendedTold;
     private final Set<String> plainEndWarned = new HashSet<String>();
-    /** Classes of ship system that teleport the ship: learned from the game's own teleporters as they are met. */
-    private final Set<String> teleporters = new HashSet<String>(java.util.Collections.singleton(teleporterClass()));
-
-    /** The game's teleporter system class in this build (the name differs build by build; others are learned as met). */
-    private static String teleporterClass() {
-        String v = Mods.gameVersion();
-        if (v.contains("RC9")) return "com.fs.starfarer.combat.systems.J";
-        if (v.contains("RC8")) { StringBuilder n = new StringBuilder("com.fs.starfarer.combat.systems.O0o"); for (int i = 0; i < 253; i++) n.append('O'); return n.toString(); }
-        if (v.contains("RC7")) return "com.fs.starfarer.combat.systems.I";
-        if (v.contains("RC6")) return "com.fs.starfarer.combat.systems.int";
-        return "com.fs.starfarer.combat.systems.null"; // RC5
-    }
-
     /**
-     * Does this system move the ship by teleporting it? Such a system works out where it is going at the
-     * moment it is really switched on, so it must never be pushed into a stage (the game fails if it is).
-     * Told from the system's own description (its "type"), with the game's class for it as a second opinion.
+     * Does this system move the ship by teleporting it? Such a system works out where it is going at the moment it
+     * is really switched on, so it must never be pushed into a stage (the game fails if it is), and is never run on
+     * a copy of someone else's ship. Told from its description and learned by watching: see Movers.
      */
     private boolean teleports(ShipSystemAPI sys) {
-        try {
-            String id = sys.getId();
-            Boolean known = id == null ? null : teleportsById.get(id);
-            if (known != null) return known;
-            boolean yes = teleporters.contains(sys.getClass().getName());
-            try {
-                // The game's own kinds are PHASE_DISPLACER (Phase Skimmer) and PHASE_TELEPORTER; mods may use those or others.
-                String type = sys.getSpecAPI().getSpecJson().optString("type", "").toUpperCase(java.util.Locale.ROOT);
-                if (type.contains("DISPLACER") || type.contains("TELEPORTER")) yes = true;
-            } catch (Throwable th) { /* the class name decides */ }
-            if (yes) teleporters.add(sys.getClass().getName());
-            if (id != null) teleportsById.put(id, yes);
-            return yes;
-        } catch (Throwable th) {
-            return true; // can't tell: treat it as the kind that must not be pushed
-        }
+        return Movers.jumps(sys);
     }
-    private final Map<String, Boolean> teleportsById = new HashMap<String, Boolean>();
     /**
      * How fast the host's battle is really running compared with ours, 1 = the same. A host whose frame rate is
      * low runs its battle slower than the clock (the game slows down rather than skip ahead); if ours kept
@@ -4741,7 +4770,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // second at most; beyond that in a straight line.
         // While a system runs on it (a speed burst, a dash) its speed changes too sharply to be carried on along
         // a curve: straight on from the host's latest figures, and it is held close (see below).
-        boolean surging = t.system >= 1 && t.system <= 3 || t.cloak >= 1 && t.cloak <= 3;
+        // Whatever moves it so (see Motion and Movers): a burst seen in the host's figures lately, a phase cloak, or a
+        // system known to move its ship sharply running on the host. A system that doesn't (a shield, a damper) no
+        // longer counts: holding its ship closer only made it shake.
+        boolean surging = pp.motion.surging(clock) || t.cloak >= 1 && t.cloak <= 3
+                || t.system >= 1 && t.system <= 3 && Movers.moves(ship.getSystem());
         float aa = surging ? 0f : Math.min(age, ACC_REACH);
         // (and never more than a sensible change of speed, whatever the figures say)
         float ax = clampAcc(t.ax, t.vx, t.vy), ay = clampAcc(t.ay, t.vx, t.vy);
@@ -4766,7 +4799,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             // between the two ships' timing is tens of units apart: pulling on that mid-burst feels like rubber.
             // So the gap is left alone then unless it is large, and closed smoothly once the burst is over.
             if (pp.jumped) { pp.jumped = false; ownJumps.hostJumped(clock); } // the real ship jumped (its system, or a script)
-            boolean bursting = ownBurst(ship, t) || ownJumps.within(clock, 0.3f);
+            boolean bursting = ownFast(pp, ship, t) || ownJumps.within(clock, 0.3f);
             if (bursting) ownBurstUntil = clock + 0.4f;
             boolean easing = bursting || clock < ownBurstUntil;
             if (reconcile(pp, t)) {
