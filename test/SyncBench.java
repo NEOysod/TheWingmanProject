@@ -42,7 +42,8 @@ public class SyncBench {
         boolean shield, guided;
         long firing;
         int weapons;
-        byte[] angles, totals;
+        short[] angles;
+        byte[] totals;
         float tx, ty; // a missile's target point
         // what the joiner shows
         Snapshot.ShipState st;
@@ -80,7 +81,7 @@ public class SyncBench {
             b.maxSpeed = range(220, 360); b.accel = range(300, 500); b.turn = range(90, 160); b.turnAccel = b.turn * 4f;
             b.maxFlux = range(200, 600); b.weapons = 1 + rnd.nextInt(3);
         }
-        b.angles = new byte[b.weapons];
+        b.angles = new short[b.weapons];
         b.totals = new byte[b.weapons];
         return b;
     }
@@ -138,7 +139,7 @@ public class SyncBench {
             for (int i = 0; i < b.weapons && i < 64; i++) {
                 if (rnd.nextFloat() < 0.01f) b.firing ^= 1L << i;
                 if ((b.firing & (1L << i)) != 0 && rnd.nextFloat() < 0.05f) b.totals[i]++;
-                if (rnd.nextFloat() < 0.05f) b.angles[i] += (byte) (rnd.nextBoolean() ? 1 : -1);
+                if (rnd.nextFloat() < 0.05f) b.angles[i] += (short) (rnd.nextBoolean() ? 256 : -256); // (a 256th of a turn, as before)
             }
             if (rnd.nextFloat() < 0.003f) b.hull = Math.max(0.05f, b.hull - 0.01f);
         }

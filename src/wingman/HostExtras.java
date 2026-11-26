@@ -23,7 +23,7 @@ import wingman.net.Msg;
 
 /**
  * Host side of the three general-purpose channels: ship stats, the simple values scripts keep, and damage as
- * it happens. Each is checked a few times a second and only what changed is sent. Each can fail by itself
+ * it happens. Each is checked several times a second (see HURTS_MS, STATS_MS, NOTES_MS) and only what changed is sent. Each can fail by itself
  * without taking the others or the rest of co-op with it.
  */
 final class HostExtras implements DamageTakenModifier {
@@ -31,6 +31,19 @@ final class HostExtras implements DamageTakenModifier {
     private final WingmanConfig cfg;
     private boolean statsBroken, notesBroken, hurtsBroken, listening;
     private long lastStats, lastNotes, lastHurts;
+    /**
+     * How often each goes (ms). Until 0.9.4, to save bandwidth: damage reports and stats 4 a second, script values 2
+     * (each ship every other pass). Now: damage reports with every update; stats with every update for a ship whose
+     * stats are changing (a system running, a state changing, flown, or changed within the last second), the rest
+     * once a second in turns; script values 15 a second, every ship each pass.
+     */
+    static final long HURTS_MS = 33, STATS_MS = 33, NOTES_MS = 66;
+    /** Stats passes between two looks at a ship with nothing going on (once a second at STATS_MS). */
+    static final int STATS_IDLE_EVERY = 30;
+    /** A script value changing at every look for this many looks running is a timer, left alone (6 s at NOTES_MS). */
+    static final int RESTLESS_LOOKS = 90;
+    /** Ships whose stats changed lately, and until when they count as changing (System.currentTimeMillis()). */
+    private final Map<Integer, Long> statsChanging = new HashMap<Integer, Long>();
     private final Map<Integer, float[]> sentStats = new HashMap<Integer, float[]>();
     private final Map<Integer, Map<String, String>> sentNotes = new HashMap<Integer, Map<String, String>>();
     /** Damage gathered since the last report, by ship hit. */
@@ -79,13 +92,13 @@ final class HostExtras implements DamageTakenModifier {
         }
         if (cfg.damageReports && !hurtsBroken) {
             try {
-                if (now - lastHurts >= 250) { lastHurts = now; sendHurts(session); }
+                if (now - lastHurts >= HURTS_MS) { lastHurts = now; sendHurts(session); }
             } catch (Throwable t) {
                 hurtsBroken = true;
                 Global.getLogger(HostExtras.class).error("Wingman: reporting damage failed; damage reports are off for this battle", t);
             }
         }
-        if (cfg.syncStats && !statsBroken && now - lastStats >= 250) {
+        if (cfg.syncStats && !statsBroken && now - lastStats >= STATS_MS) {
             lastStats = now;
             try {
                 sendStats(session, byId);
@@ -94,7 +107,7 @@ final class HostExtras implements DamageTakenModifier {
                 Global.getLogger(HostExtras.class).error("Wingman: sending ship stats failed; stats are not kept alike for this battle", t);
             }
         }
-        if (cfg.syncScriptMemory && !notesBroken && now - lastNotes >= 500) {
+        if (cfg.syncScriptMemory && !notesBroken && now - lastNotes >= NOTES_MS) {
             lastNotes = now;
             try {
                 sendNotes(engine, session, byId);
@@ -115,10 +128,13 @@ final class HostExtras implements DamageTakenModifier {
             ShipAPI s = e.getValue();
             if (s.isFighter() && !officered.contains(e.getKey())) continue; // fighters come and go by the dozen; theirs are left to each game
             float[] last = sentStats.get(e.getKey());
-            // Stats move when something happens to a ship: a system running, a state changing. Those ships,
-            // and the ones players fly, are read every pass (4 a second); a ship with nothing going on takes
-            // its turn once a second.
-            if (last != null && !touched.contains(e.getKey()) && !flown.contains(e.getKey()) && ((e.getKey() + statRound) & 3) != 0 && !busy(s)) {
+            // Stats move when something happens to a ship: a system running, a state changing. Those ships, the ones
+            // players fly, and any whose stats changed in the last second are read every pass (as often as updates
+            // go); a ship with nothing going on takes its turn once a second.
+            Long changingUntil = statsChanging.get(e.getKey());
+            boolean changing = changingUntil != null && changingUntil > System.currentTimeMillis();
+            if (last != null && !changing && !touched.contains(e.getKey()) && !flown.contains(e.getKey())
+                    && ((e.getKey() + statRound) % STATS_IDLE_EVERY) != 0 && !busy(s)) {
                 statSkips++;
                 continue;
             }
@@ -133,6 +149,7 @@ final class HostExtras implements DamageTakenModifier {
                 changed++;
             }
             if (changed == 0) continue;
+            statsChanging.put(e.getKey(), System.currentTimeMillis() + 1000L);
             if (last == null) { last = new float[ShipStats.COUNT]; java.util.Arrays.fill(last, Float.NaN); sentStats.put(e.getKey(), last); }
             Extras.Stats st = new Extras.Stats();
             st.ship = e.getKey();
@@ -150,6 +167,7 @@ final class HostExtras implements DamageTakenModifier {
         if (!out.isEmpty()) session.broadcast(Msg.STATS, Extras.encodeStats(out));
         touched.clear();
         if (sentStats.size() > byId.size() + 50) sentStats.keySet().retainAll(byId.keySet());
+        if (statsChanging.size() > byId.size() + 50) statsChanging.keySet().retainAll(byId.keySet());
     }
 
     /** True while one of the ship's systems is doing something. */
@@ -170,7 +188,6 @@ final class HostExtras implements DamageTakenModifier {
         for (Map.Entry<Integer, ShipAPI> e : byId.entrySet()) {
             ShipAPI s = e.getValue();
             if (s.isFighter() && !officered.contains(e.getKey())) continue;
-            if (((e.getKey() + noteRound) & 1) != 0) continue; // half the ships each pass: every ship once a second
             gather(e.getKey(), s.getCustomData(), out);
             if (out.size() >= 150) { session.broadcast(Msg.NOTES, Extras.encodeNotes(out)); notesSent += out.size(); out = new ArrayList<Extras.Note>(); }
         }
@@ -204,7 +221,7 @@ final class HostExtras implements DamageTakenModifier {
                 if (restless.contains(sk)) continue;
                 int[] run = streaks.get(sk);
                 if (run == null) { run = new int[1]; streaks.put(sk, run); }
-                if (++run[0] >= 6) { restless.add(sk); streaks.remove(sk); continue; }
+                if (++run[0] >= RESTLESS_LOOKS) { restless.add(sk); streaks.remove(sk); continue; }
                 out.add(n);
             }
         }

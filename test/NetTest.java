@@ -33,7 +33,7 @@ public class NetTest {
             Snapshot.ShipState st = new Snapshot.ShipState();
             st.netId = i * 3 + 1; st.x = cr.nextFloat() * 20000 - 10000; st.y = cr.nextFloat() * 20000 - 10000; st.vx = 80; st.vy = -40; st.facing = 359.9f; st.angVel = -12f;
             st.hull = 0.5f; st.cr = 0.7f; st.flux = 900.4f; st.hardFlux = 300f; st.flags = Snapshot.F_DEFENSE; st.shieldFacing = 123f; st.firing = 0x8000000000000001L;
-            st.weaponAngles = new byte[i == 0 ? 80 : 12]; cr.nextBytes(st.weaponAngles); st.system = 2; st.cloak = 4; st.systemLevel = 0.5f;
+            st.weaponAngles = new short[i == 0 ? 80 : 12]; for (int wi = 0; wi < st.weaponAngles.length; wi++) st.weaponAngles[wi] = (short) cr.nextInt(65536); st.system = 2; st.cloak = 4; st.systemLevel = 0.5f;
             cs.ships.add(st);
         }
         for (int i = 0; i < missiles; i++) {
@@ -94,7 +94,7 @@ public class NetTest {
                     && Math.abs(x.flux - y.flux) <= fluxBand && (x.flux > 0f) == (y.flux > 0f)
                     && (x.firing | y.firing) == y.firing && Arrays.equals(x.weaponAngles, y.weaponAngles)
                     && x.flags == y.flags && x.system == y.system && x.cloak == y.cloak && Math.abs(x.hull - y.hull) < 0.0001f && Math.abs(x.vx - y.vx) < 0.57f
-                    && turnApart(x.shieldFacing, y.shieldFacing) < 3f && Math.abs(x.angVel - y.angVel) < 0.36f;
+                    && turnApart(x.shieldFacing, y.shieldFacing) < 0.1f && Math.abs(x.angVel - y.angVel) < 0.36f;
             if (ok && x.exact) ok = Math.abs(x.x - y.x) <= 0.032f;
             if (!ok && System.getProperty("why") != null) System.out.println("ship " + x.netId + " host x" + x.x + " y" + x.y + " f" + x.facing + " vx" + x.vx + " w" + x.angVel + " flux" + x.flux + " firing" + x.firing + " flags" + x.flags
                     + " | joiner x" + y.x + " y" + y.y + " f" + y.facing + " vx" + y.vx + " w" + y.angVel + " flux" + y.flux + " firing" + y.firing + " flags" + y.flags + " angles " + Arrays.equals(x.weaponAngles, y.weaponAngles));
@@ -234,7 +234,7 @@ public class NetTest {
             Snapshot.ShipState st = new Snapshot.ShipState();
             st.netId = i; st.x = r.nextFloat() * 9000; st.y = -r.nextFloat() * 9000; st.vx = 12.5f; st.facing = 359.5f;
             st.hull = 0.37f; st.cr = 0.615f; st.flux = 1234f; st.flags = Snapshot.F_DEFENSE | Snapshot.F_VENTING; st.firing = 0x8000000000000001L;
-            st.weaponAngles = new byte[20]; st.weaponAngles[19] = Snapshot.packAngle(-90f);
+            st.weaponAngles = new short[20]; st.weaponAngles[19] = Snapshot.packTurret(-90f);
             snap.ships.add(st);
         }
         for (int i = 0; i < 150; i++) {
@@ -440,10 +440,12 @@ public class NetTest {
                 && "armed".equals(notesBack.get(5).value(false)) && notesBack.get(6).value(false) == null && notesBack.get(6).kind == 0);
         check("script values that are not simple are left alone", Extras.noteOf(1, "list", new ArrayList<String>()) == null && Extras.noteOf(1, "k", new float[2]) == null);
         check("snapshot round trip", s2.timeMult == 0.3333f && s2.piloted.length == 2 && s2.piloted[1] == 9 && s2.tick == 42 && s2.paused && s2.ships.size() == 60 && Math.abs(l.hull - 0.37f) < 0.0001f && Math.abs(l.vx - 12.5f) < 0.001f && Math.abs(l.facing - 359.5f) < 0.01f && l.flux == 1234f && Math.abs(l.cr - 0.615f) < 0.003f && l.firing == 0x8000000000000001L
-                && Math.abs(Snapshot.unpackAngle(l.weaponAngles[19]) - 270f) < 1.5f && s2.missiles.size() == 150
+                && Math.abs(Snapshot.unpackTurret(l.weaponAngles[19]) - 270f) < 0.01f && s2.missiles.size() == 150
                 && s2.missiles.get(149).id == 1149 && s2.missiles.get(149).flags == Snapshot.M_FIZZLING && s2.missiles.get(3).vx == 300f
                 && Math.abs(s2.missiles.get(0).facing - 181f) < 1.5f && Math.abs(s2.missiles.get(0).angVel + 212.3f) < 0.06f && l.flags == (Snapshot.F_DEFENSE | Snapshot.F_VENTING));
         check("angle 359.9 wraps to 0", Snapshot.unpackAngle(Snapshot.packAngle(359.9f)) == 0f);
+        check("turret angle 359.999 wraps to 0, and steps are 0.0055°", Snapshot.unpackTurret(Snapshot.packTurret(359.999f)) == 0f
+                && Math.abs(Snapshot.unpackTurret(Snapshot.packTurret(123.456f)) - 123.456f) < 0.003f);
 
         // a quiet fighter: only the parts that are not at rest are sent, and absent parts read back as "at rest"
         Snapshot fs = new Snapshot(); fs.tick = 100000; fs.hostFlagship = -1;

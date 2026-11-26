@@ -430,7 +430,7 @@ public class AttackTest {
         Map<String, byte[]> samples = new LinkedHashMap<String, byte[]>();
         final Map<String, Dec> decs = new LinkedHashMap<String, Dec>();
         Snapshot snap = new Snapshot(); snap.tick = 5; snap.piloted = new int[] {1}; snap.pilotedSeq = new int[] {1}; snap.pilotedAge = new float[] {0.1f}; snap.pilotedSysAmmo = new int[] {1};
-        for (int i = 0; i < 8; i++) { Snapshot.ShipState s = new Snapshot.ShipState(); s.netId = i; s.x = i * 100; s.weaponAngles = new byte[6]; s.firing = 3; s.shots = new byte[] {0, 1}; snap.ships.add(s); }
+        for (int i = 0; i < 8; i++) { Snapshot.ShipState s = new Snapshot.ShipState(); s.netId = i; s.x = i * 100; s.weaponAngles = new short[6]; s.firing = 3; s.shots = new byte[] {0, 1}; snap.ships.add(s); }
         for (int i = 0; i < 8; i++) { Snapshot.MissileState m = new Snapshot.MissileState(); m.id = 100 + i; m.x = i; snap.missiles.add(m); }
         samples.put("Snapshot", snap.encode()); decs.put("Snapshot", new Dec() { public void run(byte[] b) throws Exception { Snapshot.decode(b); } });
         Roster ro = new Roster(); ro.hostName = "H"; Roster.Player rp = new Roster.Player(); rp.name = "Ann"; ro.players.add(rp);

@@ -80,7 +80,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         WeaponAPI[] weapons = new WeaponAPI[0]; // indexed by the host's weapon order
         Snapshot.ShipState target;
         float targetAt;          // battle time when that state arrived
-        byte[] angles;           // each weapon's angle relative to the hull, as last sent by the host
+        short[] angles;          // each weapon's angle relative to the hull, as last sent by the host (65536 steps a turn)
+        float[] turretRate;      // how fast each was turning relative to the hull (degrees/s, from the last two updates)
         float systemOff, cloakOff, phaseOff;
         float goneAt;            // when the host said it was gone (kept a little longer as the launcher of its last missiles) // how long our copy's systems have been in a different stage from the host's
         int transferState = -1; // -1 unknown, 0 allowed, 1 blocked
@@ -100,6 +101,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts and jumps, as the host's figures show them
         float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
         float shieldRate;           // how fast the host's shield on it was turning (degrees/s, from its last two updates)
+        float anglesAt = -100f;     // the host time of the turret angles held
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
         /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
         boolean hostOverloaded, overloadKnown;
@@ -934,6 +936,26 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             catchUpBroken = true;
             catching.clear();
             Global.getLogger(WingmanClientPlugin.class).warn("Wingman: making others' shots catch up with the host's failed; they fire as before for this battle", t);
+        }
+    }
+
+    /**
+     * The host's turret angles for a ship have arrived (made at host time hostTime): how fast each was turning
+     * since the last ones, so it is carried on between updates as a shield is. The same list again (nothing new):
+     * standing still.
+     */
+    private void noteTurrets(Puppet pp, short[] now, float hostTime) {
+        try {
+            short[] was = pp.angles;
+            float dt = hostTime - pp.anglesAt;
+            if (pp.turretRate == null || pp.turretRate.length != now.length) pp.turretRate = new float[now.length];
+            boolean usable = was != null && was != now && was.length == now.length && dt > 0.001f && dt < 0.5f;
+            for (int i = 0; i < now.length; i++) {
+                pp.turretRate[i] = usable ? Math.max(-720f, Math.min(720f, shortestTurn(Snapshot.unpackTurret(was[i]), Snapshot.unpackTurret(now[i])) / dt)) : 0f;
+            }
+            if (was != now) pp.anglesAt = hostTime;
+        } catch (Throwable th) {
+            pp.turretRate = null;
         }
     }
 
@@ -1897,7 +1919,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     pp.targetAt = now;
                     pp.track.push(snap.hostTime, st.x, st.y, st.vx, st.vy, clampAcc(st.ax, st.vx, st.vy), clampAcc(st.ay, st.vx, st.vy),
                             st.facing, st.angVel, st.angAcc);
-                    if (st.weaponAngles != null) pp.angles = st.weaponAngles;
+                    if (st.weaponAngles != null) {
+                        noteTurrets(pp, st.weaponAngles, snap.hostTime);
+                        pp.angles = st.weaponAngles;
+                    }
                     if (st.shots != null) {
                         if (pp.ahead == null) {
                             int n = Math.min(64, pp.weapons.length);
@@ -5142,13 +5167,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanClientPlugin.class).error("Wingman: following the host's ship systems failed; systems are not mirrored for the rest of this battle", th);
             }
         }
-        byte[] angles = pp.angles;
+        short[] angles = pp.angles;
+        float[] rates = pp.turretRate;
+        float turretAhead = Math.min(age, 0.06f); // carried on at the rate it was turning, for a little more than an update
         float hull = ship.getFacing();
         for (int i = 0; i < pp.weapons.length; i++) {
             WeaponAPI w = pp.weapons[i];
             if (w == null || (inHand != null && inHand.contains(w))) continue;
             if (angles != null && i < angles.length) {
-                float angle = hull + Snapshot.unpackAngle(angles[i]);
+                float angle = hull + Snapshot.unpackTurret(angles[i]) + (rates != null && i < rates.length ? rates[i] * turretAhead : 0f);
                 w.setCurrAngle(pdAims.isEmpty() ? angle : aimAt(pp, i, w, angle));
             }
             boolean firing = i < 64 && ((t.firing >>> i) & 1L) != 0;

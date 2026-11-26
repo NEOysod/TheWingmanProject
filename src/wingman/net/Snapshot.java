@@ -77,8 +77,8 @@ public final class Snapshot {
             system = cloak = 0;
             systemLevel = cloakLevel = 0f;
         }
-        /** Each weapon's angle relative to the hull, 256 steps per turn. Null: unchanged since the last time sent. */
-        public byte[] weaponAngles;
+        /** Each weapon's angle relative to the hull, 65536 steps per turn (256 until protocol 64). Null: unchanged since the last time sent. */
+        public short[] weaponAngles;
     }
 
     public static final int M_FIZZLING = 1;
@@ -178,6 +178,11 @@ public final class Snapshot {
 
     public static float unpackFacing(int v) { return (v & 0xFFFF) * 360f / 65536f; }
 
+    /** A turret's angle from its hull, in 65536 steps per turn (as a heading). */
+    public static short packTurret(float deg) { return (short) packFacing(deg); }
+
+    public static float unpackTurret(short v) { return unpackFacing(v); }
+
     /** Speeds travel in eighths of a unit per second (or tenths of a degree per second for turning). */
     public static int packSpeed(float v, float scale) {
         if (v != v) return 0;
@@ -227,11 +232,11 @@ public final class Snapshot {
                 w.out.writeShort(packFacing(s.facing));
                 if ((parts & P_MOVING) != 0) { w.out.writeShort(vx); w.out.writeShort(vy); w.out.writeShort(av); }
                 if ((parts & P_FLUX) != 0) { w.out.writeFloat(s.flux); w.out.writeFloat(s.hardFlux); }
-                if ((parts & P_SHIELD) != 0) w.out.writeByte(packAngle(s.shieldFacing));
+                if ((parts & P_SHIELD) != 0) w.out.writeShort(packFacing(s.shieldFacing));
                 if ((parts & P_WEAPONS) != 0) {
                     int n = Math.min(s.weaponAngles.length, 255);
                     w.out.writeByte(n);
-                    for (int i = 0; i < n; i++) w.out.writeByte(s.weaponAngles[i]);
+                    for (int i = 0; i < n; i++) w.out.writeShort(s.weaponAngles[i]);
                 }
                 if ((parts & P_FIRING) != 0) w.out.writeVarLong(s.firing);
                 if (counted) {
@@ -257,7 +262,7 @@ public final class Snapshot {
                 w.out.writeFloat(m.y);
                 w.out.writeShort(packSpeed(m.vx, SPEED));
                 w.out.writeShort(packSpeed(m.vy, SPEED));
-                w.out.writeByte(packAngle(m.facing));
+                w.out.writeShort(packFacing(m.facing));
                 if (av != 0) w.out.writeShort(av);
                 w.out.writeShort(Math.round(clamp(m.flightTime, 0f, 1300f) * 50f));
             }
@@ -298,10 +303,10 @@ public final class Snapshot {
             s.facing = unpackFacing(in.readShort());
             if ((parts & P_MOVING) != 0) { s.vx = in.readShort() / SPEED; s.vy = in.readShort() / SPEED; s.angVel = in.readShort() / TURN; }
             if ((parts & P_FLUX) != 0) { s.flux = in.readFloat(); s.hardFlux = in.readFloat(); }
-            if ((parts & P_SHIELD) != 0) s.shieldFacing = unpackAngle(in.readByte());
+            if ((parts & P_SHIELD) != 0) s.shieldFacing = unpackFacing(in.readShort());
             if ((parts & P_WEAPONS) != 0) {
-                s.weaponAngles = new byte[in.readByte() & 0xFF];
-                in.readFully(s.weaponAngles);
+                s.weaponAngles = new short[in.readByte() & 0xFF];
+                for (int wi = 0; wi < s.weaponAngles.length; wi++) s.weaponAngles[wi] = in.readShort();
             }
             if ((parts & P_FIRING) != 0) s.firing = in.readVarLong();
             if ((rawFlags & F_SHOTS) != 0) {
@@ -335,7 +340,7 @@ public final class Snapshot {
             m.y = in.readFloat();
             m.vx = in.readShort() / SPEED;
             m.vy = in.readShort() / SPEED;
-            m.facing = unpackAngle(in.readByte());
+            m.facing = unpackFacing(in.readShort());
             if ((flags & MP_TURNING) != 0) m.angVel = in.readShort() / TURN;
             m.flightTime = (in.readShort() & 0xFFFF) / 50f;
             if (bad(m.x) || bad(m.y)) continue;

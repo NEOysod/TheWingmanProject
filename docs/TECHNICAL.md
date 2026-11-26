@@ -180,7 +180,8 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 63 (`Msg.PROTOCOL_VERSION`); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 64 (`Msg.PROTOCOL_VERSION`; 64 since turret angles, shield facing and missile headings went to
+65536 steps a turn); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -286,7 +287,8 @@ there on every PC.
 
 Per ship (`ShipState`): id, position, velocity, facing, turn rate, hull (0-1), CR, flux and hard flux, flags
 (shield, overload, venting, system on, phased), shield facing, firing bits (64 weapons), system and cloak stage
-(0 idle … 4 cooldown) and level, turret angles (1 byte each), and shot totals. Host-only: `exact` (flown by a
+(0 idle … 4 cooldown) and level, turret angles (2 bytes each, 65536 steps a turn; 1 byte until protocol 64), and
+shot totals. Shield facing and missile heading are in 65536 steps too (256 until protocol 64). Host-only: `exact` (flown by a
 player), `fluxStep` (how far flux may sit off before it is sent again: 0 since 0.9.4, flux goes exactly for every
 ship; it was 1% of capacity, at least 5, which `SyncBench -Dbench.fluxBand=true` still measures: about 10% less
 upload in a big battle).
@@ -300,10 +302,11 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
 - **Unseen enemies** (`trimUnseen`): an enemy no one on side 0 can see (shared fog of war, cached 250 ms) is sent
   about once a second unless it fired or was hit; unseen missiles every 2 s. In full again the moment it is seen.
 - **With `sendEverything` off,** the host keeps a `Sent` record per entity and dead-reckons where the joiner thinks
-  it is; a ship goes in only if it strayed (1.5 units or 1°), changed hull, CR, flags, flux (`fluxStep`, or
-  across zero), shield (3°) or system, fired, turned a turret, is flown, or wasn't refreshed for about half a
-  second. Fighters go in every other update unless firing or hit. Missiles: when they stray (3 units, 4°, 0.25 s
-  of flight), at least every two refresh intervals.
+  it is; a ship goes in only if it strayed (1.5 units or 1°), changed hull, CR, flags, flux (any change), shield
+  (0.1°) or system, fired, turned a turret (0.09°), is flown, or wasn't refreshed for about half a second.
+  Fighters too, in every update (until 0.9.4 every other one unless firing or hit). Missiles: when they stray (3
+  units, 0.5°, 0.25 s of flight), at least every two refresh intervals. (Until 0.9.4, to save bandwidth: flux 1%
+  of the bar, shield 3°, turrets 2.8°, missile heading 4°.)
 - **Wrecks** are sent when knocked off course (3 units, 2°) or every ~4 s.
 - **Rate** (`snapshotRate`, default 30/s; measured with `SyncBench`, 30 is as smooth as 60 and smoother over an
   uneven link, at about two thirds of the bytes): the rate stays put when one player's link backs up. That player
@@ -331,7 +334,8 @@ Per missile: id, position, velocity, facing, turn rate, flags (fizzling), flight
   ends: half the old value plus half of (speed − previous speed) / dt, clamped; zero for a new entity or a longer
   gap. Decoded states expose it as `ax`, `ay`, `angAcc` for the joiner's motion (7.4).
 - **Bands** (encoder only): a field within its band of the guess (position 8 steps = ½ unit, facing 16 steps,
-  speeds 4 (½ unit/s), turn rate 3, shield 1, missile flight 2, flux `fluxStep` never across zero) is not sent, and
+  speeds 4 (½ unit/s), turn rate 3, shield and missile heading 16 (0.09°, in 65536ths since protocol 64), missile
+  flight 2, flux `fluxStep` never across zero) is not sent, and
   the guess is recorded as what the joiner holds, so errors never add up. `exact` ships have no bands.
 - **Left out when guessed right.** A ship or missile held by the player whose every field is within its band of
   the guess (and turret angles and shot totals unchanged; never an `exact` ship) is not written at all. Both ends
@@ -572,7 +576,7 @@ expected count.
 | Class | Sends | How |
 | --- | --- | --- |
 | `HostDamage` | `DAMAGE`: armor grid (cells 0-255), disabled weapons and engines, flame-out, ammo | A ship hit, touched (ammo), flown or never sent: read every 33 ms (as often as updates go; 4×/s until 0.9.4); the rest on a 1-in-8 rotation 4×/s; everything again every 10 s; at most 40 ships per message. Armor as whole grid, changed cells, or nothing (whole grid when a third or more changed). |
-| `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** 4×/s: the 57 `ShipStats` of ships touched, flown, busy or on a 1-in-4 rotation; changes over 0.5% only. **Notes** 2×/s, half the ships each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed six checks running is a timer and stops being sent. **Hurts** every 250 ms: damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
+| `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** every 33 ms for a ship touched, flown, busy, or whose stats changed in the last second; the rest once a second in turns (`STATS_IDLE_EVERY`); changes over 0.5% only. **Notes** 15×/s (`NOTES_MS` 66), every ship each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed at 90 looks running (6 s) is a timer and stops being sent. **Hurts** every 33 ms (`HURTS_MS`; until 0.9.4 stats and hurts went 4×/s, notes 2×/s, half the ships each pass): damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
 | `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the planets behind the battle (read from the engine, with each one's look; `Backdrop`), the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
 | `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
 | `ShipStats` | (used by both) | 57 stats: 31 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil, beam flux cost, shield upkeep, soft-flux conversion, range cap and past it, reload rates…) and 26 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen/flux cost, peak CR, phase speed/cooldown/upkeep/activation, weapon flux costs…). Damage-only stats are left out; so is the fighter refit time, which the joiner sets itself (`BayQuiet`). |

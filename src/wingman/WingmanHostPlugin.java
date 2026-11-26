@@ -119,7 +119,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         int tick, hull, cr, flags, anglesTick, systems;
         float flux, hardFlux, shieldFacing, flight;
         boolean fired, hidden;
-        byte[] angles;
+        short[] angles;
     }
     private final Map<Integer, Sent> sentShips = new HashMap<Integer, Sent>();
     private final Map<Integer, Sent> sentMissiles = new HashMap<Integer, Sent>();
@@ -533,7 +533,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 Dbg.info(WingmanHostPlugin.class, "Wingman traffic (host, " + session.getPlayers().size() + " joined, " + ships
                         + " ships, " + fighters + " fighters, " + missilesById.size() + " missiles, " + cfg.snapshotRate + " updates/s, "
                         + (possibleStates == 0 ? 100 : Math.round(100f * sentStates / possibleStates)) + "% of ship/missile states needed sending, "
-                        + trimmed + " held back as out of sight, " + halved + " fighter states left for the next update, " + scriptEnds + " missiles ended by a script so far; "
+                        + trimmed + " held back as out of sight, " + scriptEnds + " missiles ended by a script so far; "
                         + (extras == null ? "" : extras.statsSent + " stat values, " + extras.notesSent + " script values and " + extras.hurtsSent + " damage reports sent so far (" + extras.ordinary + " ordinary weapon hits not reported)")
                         + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
                         + session.packerCounts()[2] + " ship/missile states left out as guessed right"
@@ -542,7 +542,6 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + "; hits on joiners' ships given back to their shields: " + ShieldGrace.givenBack + " of " + ShieldGrace.judged
                         + "; armor/ammo read for " + damage.looked + " ships and passed over for " + damage.passedOver
                         + (extras == null ? "" : "; stats read for " + extras.statLooks + " and passed over for " + extras.statSkips) + "): " + traffic);
-                halved = 0;
                 Dbg.info(WingmanHostPlugin.class, "Wingman time (host): " + prof.report());
                 trimmed = 0;
                 sentStates = 0;
@@ -966,7 +965,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     /** Reused every frame for "which of the ones we know are still on the field?", instead of a new set each time. */
     private final Set<Object> present = java.util.Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
     private long lastIdleNanos;
-    private final byte[] angleScratch = new byte[255];
+    private final short[] angleScratch = new short[255];
     private Snapshot.ShipState spare = new Snapshot.ShipState();
 
     /** The campaign fleets in this battle, by the number joiners know them by, and their descriptions. */
@@ -1524,7 +1523,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     }
 
     private boolean fogBroken;
-    private int trimmed, halved, scriptEnds;
+    private int trimmed, scriptEnds;
 
     /** True if nobody on the players' side can see it: it is in the fog of war, so on nobody's radar. */
     private boolean unseen(com.fs.starfarer.api.combat.CombatEntityAPI e, Sent last) {
@@ -1621,11 +1620,11 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             int n = Math.min(weapons.size(), 255);
             // Angles are measured from the hull, so a fixed gun on a turning ship counts as "not moved".
             // Worked out into a shared scratch buffer; a copy is only made for a ship whose angles get sent.
-            byte[] angles = angleScratch;
+            short[] angles = angleScratch;
             FireTrack ft = fireTracks.get(id);
             for (int i = 0; i < n; i++) {
                 WeaponAPI w = weapons.get(i);
-                angles[i] = Snapshot.packAngle(w.getCurrAngle() - st.facing);
+                angles[i] = Snapshot.packTurret(w.getCurrAngle() - st.facing);
                 if (i < 64 && (ft != null ? (ft.wants & (1L << i)) != 0 : w.isFiring())) st.firing |= 1L << i;
             }
             if (ft != null) {
@@ -1664,32 +1663,27 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 trimmed++;
                 continue;
             }
-            // Fighters are the bulk of what is on the field, and a joiner eases each one along between updates
-            // anyway: they go out in every other update (half of them in each, so the load is even). One that
-            // fires or is hit is not made to wait. Their weapon angles are tracked exactly as for ships.
-            if (!full && !cfg.sendEverything && last != null && s.isFighter() && ((tick + id) & 1) == 1 && st.firing == 0L && !last.fired && hull == last.hull) {
-                halved++;
-                continue;
-            }
+            // (Fighters went out in every other update until 0.9.4, to save bandwidth; now in every one, as ships.)
             boolean aimed = last == null || last.angles == null || last.angles.length != n || tick - last.anglesTick >= refresh * 4
                     || (last.hidden && !hidden);
+            // A turret that has turned by more than 0.09° (16 of 65536 steps; until 0.9.4, two steps of 256: 2.8°)
             for (int i = 0; !aimed && i < n; i++) {
-                int d = (angles[i] - last.angles[i]) & 0xFF;
-                if (d > 1 && d < 255) aimed = true;
+                int d = (angles[i] - last.angles[i]) & 0xFFFF;
+                if (d > 16 && d < 65536 - 16) aimed = true;
             }
             boolean send = full || cfg.sendEverything || last == null || aimed || flown.contains(id) || tick - last.tick >= refresh
                     || st.firing != 0L || last.fired || hull != last.hull || cr != last.cr || st.flags != last.flags || systems != last.systems
                     || strayed(last, st.x, st.y, st.facing, 1.5f, 1f);
             if (!send) {
-                float step = Math.max(5f, s.getMaxFlux() * 0.01f); // a flux bar moving by a hundredth is worth showing
-                send = Math.abs(st.flux - last.flux) > step || Math.abs(st.hardFlux - last.hardFlux) > step
+                // Any change of flux (until 0.9.4, only a hundredth of the bar), and a shield turned by 0.1° (was 3°).
+                send = Math.abs(st.flux - last.flux) >= 0.5f || Math.abs(st.hardFlux - last.hardFlux) >= 0.5f
                         || (st.flux <= 0f) != (last.flux <= 0f)
-                        || (defense && shield != null && Math.abs(turn(last.shieldFacing, st.shieldFacing)) > 3f);
+                        || (defense && shield != null && Math.abs(turn(last.shieldFacing, st.shieldFacing)) > 0.1f);
             }
             if (!send) continue;
             if (last == null) { last = new Sent(); sentShips.put(id, last); }
             if (aimed || full) {
-                byte[] copy = new byte[n];
+                short[] copy = new short[n];
                 System.arraycopy(angles, 0, copy, 0, n);
                 st.weaponAngles = copy; last.angles = copy; last.anglesTick = tick;
             }
@@ -1744,7 +1738,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             boolean revealed = last != null && last.hidden && !hidden;
             // A rocket flying straight needs no updates at all; one that is steering gets them as it turns.
             if (!full && !cfg.sendEverything && !revealed && last != null && tick - last.tick < refresh * 2 && ms.flags == last.flags
-                    && !strayed(last, ms.x, ms.y, ms.facing, 3f, 4f)
+                    && !strayed(last, ms.x, ms.y, ms.facing, 3f, 0.5f) // heading: 0.5° (was 4°)
                     // its flight clock normally just runs on; a script that winds it back or forward is news
                     && Math.abs(last.flight + (gameClock - last.time) - ms.flightTime) < 0.25f) continue;
             if (last == null) { last = new Sent(); sentMissiles.put(id, last); }

@@ -2,6 +2,8 @@
 
 ## Next (on the test branch)
 
+Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
+
 - **One handler for fast ship systems and teleports, vanilla or any mod's.** Fast movement is now told from how a
   ship moves, not from which system it has: a *burst* (faster, or changing speed faster, than its own engines
   can: burn drive, plasma jets, a phase ship, a mod's dash, a knock) or a *jump* (Phase Skimmer, Phase Teleporter,
@@ -17,8 +19,7 @@
     jumped somewhere else first).
   - Ships whose system doesn't move them (shields, dampers) are no longer held tighter while it runs, which made
     them shake a little.
-  This one is the joiner's alone: a joiner with this build can play with a host on 0.9.4-beta.
-- **Smoother turning, missiles, shields and shots** (the joiner's alone, like the fast-movement handler):
+- **Smoother turning, missiles, shields and shots:**
   - **Spins**: a ship turning faster than it can by itself (maneuvering jets, a mod's spin, knocked round by a
     hit) is turned straight on from the host's turn rate and held close, instead of along a curve that
     overshot as the spin started and stopped.
@@ -32,16 +33,29 @@
     hit flashed after the damage had already shown. Each shot now leaves the barrel as before and makes up that
     distance (at most 60 ms of flight) over its first tenth of a second, so it hits when the host's does.
 - **Flux, armor and hull as exact as the host's.** Now that bandwidth isn't the worry:
-  - every ship's flux and hard flux go exactly (before, only once the bar had moved by a hundredth): about 10%
-    more upload in a big battle;
+  - every ship's flux and hard flux go exactly (before, only once the bar had moved by a hundredth; the first try
+    at this left a second filter in place that still held a ship back for that, now gone too): about 10% more
+    upload in a big battle;
   - armor, disabled weapons and engines, and ammo go as often as updates do for a ship that was just hit (before:
     four times a second);
   - your own flux bar is held to the host's within a quarter of a percent (before: a whole percent, closed
     slowly), and put right at once if a vent or a shot made it a tenth apart. Comparisons right at a shot are left
     out, so it doesn't jiggle while you fire;
   - hull already went exactly (65,536 steps).
-  The flux and armor changes are the host's; the flux bar of the ship you fly is the joiner's. Builds still mix:
-  each side's part works whatever the other runs.
+- **Everything the host held back to save bandwidth, now sent:**
+  - turret angles in 65,536 steps a turn (were 256: 1.4°, and only sent again after 2.8°), so a copy's long-range
+    shots and beams point where the host's do; each turret keeps turning between updates at the rate it was;
+  - shield direction and missile headings in 65,536 steps too (were 256), a shield sent again after 0.1° (was 3°)
+    and a missile after 0.5° (was 4°);
+  - fighters in every update (were every other one unless firing or hit);
+  - damage from explosions, mines and scripts with every update (was 4 a second), so its hits and sounds aren't
+    up to a quarter of a second late;
+  - ship stats with every update for a ship whose stats are changing (was 4 a second), so a copy's speed and
+    turning follow a system the moment it starts;
+  - other mods' script values 15 times a second, every ship (was twice a second, half the ships each time).
+  In a big simulated battle (40 ships, 80 fighters, 200 missiles) the updates now cost about 16% more than
+  0.9.4-beta's (48 to 56 KB/s per joiner); fighters in every update and the quicker stats, damage and script
+  values add some on top. All of it stays far under the host's 6 MB/s limit.
 
 ## 0.9.4-beta
 
