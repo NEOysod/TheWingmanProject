@@ -180,7 +180,7 @@ final class Screens {
     static void refit(boolean changed) { refit(changed, true); }
 
     static String searchFor = "";
-    static boolean whole, loadouts, groupsShot;
+    static boolean whole, loadouts, groupsShot, builtInShot;
     /** Players in the game for the big-game shots (0: the usual four). */
     static int big;
     static final String[] BIG_NAMES = { "Vex", "Halcyon", "Brightwater", "Okonkwo", "Rook", "Tamsin", "Juniper", "Faraday", "Quill", "Marlowe", "Sable", "Ivo",
@@ -234,6 +234,28 @@ final class Screens {
             q.groups = new ArrayList<wingman.net.RefitData.Group>();
             wingman.net.RefitData.Group g1 = new wingman.net.RefitData.Group(); g1.slots.addAll(v.refitData.fitSlots.subList(0, Math.min(2, v.refitData.fitSlots.size())));
             q.groups.add(g1);
+            try {
+                java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
+                List<?> rs = (List<?>) rows.invoke(l.refit);
+                for (int i = 0; i < rs.size(); i++) if ((Integer) get(rs.get(i), "kind") == 8) { set(l.refit, "rowAt", i); break; }
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
+        if (builtInShot) { // UAF's Super Nakiha as the host has it: two HVARs built into BUILT_IN slots, in group 1
+            wingman.net.RefitData d = v.refitData;
+            d.hullId = "uaf_super_nakiha_prototype"; d.hullSize = "DESTROYER";
+            d.fitSlots.clear(); d.fitWeapons.clear();
+            String[][] fit = { {"WS0001", "Medlav 254 Rapid"}, {"WS0005", "Minibreve Pod (M)"}, {"WS0006", "Minibreve Pod (M)"}, {"WS0002", "Claris 50 Cannon"}, {"WS0003", "Merupaka I/20 EPD"}, {"WS0004", "Merupaka I/20 EPD"} };
+            for (String[] w : fit) { d.fitSlots.add(w[0]); d.fitWeapons.add(w[1]); }
+            d.fixedWeapons.clear(); // (as an older host sent them: none; the hull's own list is enough here)
+            d.groups = new ArrayList<wingman.net.RefitData.Group>();
+            String[][] gs = { { "WS0007", "WS0008" }, { "WS0005", "WS0006" }, { "WS0001" }, { "WS0002" }, { "WS0003", "WS0004" } };
+            for (int i = 0; i < gs.length; i++) {
+                wingman.net.RefitData.Group g = new wingman.net.RefitData.Group();
+                g.slots.addAll(Arrays.asList(gs[i])); g.alternating = i == 1; g.autofire = i >= 2;
+                d.groups.add(g);
+            }
+            d.liveGroups = true;
+            l.refit.setData(d);
             try {
                 java.lang.reflect.Method rows = RefitScreen.class.getDeclaredMethod("rows"); rows.setAccessible(true);
                 List<?> rs = (List<?>) rows.invoke(l.refit);
@@ -382,6 +404,7 @@ final class Screens {
         out.add(new Shot("refit-whole", 1920, 1080, -1, -1, new Runnable() { public void run() { whole = true; refit(false); whole = false; } }));
         out.add(new Shot("refit-tip", 1920, 1080, 1600, 770, new Runnable() { public void run() { refit(false); try { Thread.sleep(300); } catch (Exception e) { } refit(false); } }));
         out.add(new Shot("refit-groups", 1920, 1080, -1, -1, new Runnable() { public void run() { groupsShot = true; refit(false); groupsShot = false; } }));
+        out.add(new Shot("refit-builtin", 2560, 1440, -1, -1, new Runnable() { public void run() { builtInShot = true; refit(false); builtInShot = false; } }));
         out.add(new Shot("refit-loadout", 1920, 1080, -1, -1, new Runnable() { public void run() { loadouts = true; refit(false); loadouts = false; } }));
         out.add(new Shot("refit-planning", 1920, 1080, -1, -1, new Runnable() { public void run() { refit(true, false); } }));
         out.add(new Shot("friend-refit-host", 1920, 1080, -1, -1, new Runnable() { public void run() { try { friendRefit(); } catch (Exception e) { throw new RuntimeException(e); } } }));

@@ -622,7 +622,9 @@ changes in the host's campaign until the host accepts a refit.
 - **What is sent** (`FriendRefit.build`): OP with the host's skills (`getOrdnancePoints(stats)`,
   `computeOPCost(stats)`), vents and capacitors and their maxima (`SkillsChangeRemoveVentsCapsEffect`), the
   maximum S-mods (`Misc.getMaxPermanentMods`); weapons by slot (built-in, decorative, system, hidden and module
-  slots left out); wings by bay (`getNumFlightDecks`); fitted hull mods, S-mods (including S-modded built-ins) and
+  slots left out; built-in ones the joiner may still group go apart, as `fixedWeapons`: `FriendRefit.groupable`, any
+  slot but decorative, system and module ones, counting `isBuiltIn()` slots too since the game's `isWeaponSlot()`
+  names only the mountable types, as the game's own `autoGenerateWeaponGroups` does); wings by bay (`getNumFlightDecks`); fitted hull mods, S-mods (including S-modded built-ins) and
   other permanent mods. Credits, story points, the fleet's cargo, storage if the host has access
   (`Misc.playerHasStorageAccess`). Each submarket except storage, local resources, hidden ones, ones not shown in
   the cargo screen, and free-transfer ones: its tariff, whether it is open to the host (`isEnabled` with a

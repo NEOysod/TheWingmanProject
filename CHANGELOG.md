@@ -75,6 +75,11 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
     game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
     their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- Fixed: built-in weapons still missing from the refit page's weapon groups on most hulls that have them (UAF's
+  Super Nakiha's two HVARs, say), so their group looked empty. 0.9.4-beta's fix only covered guns built into an
+  ordinary slot by a hull mod or the variant: the game doesn't count a slot of type BUILT_IN (where hulls keep
+  theirs) as a weapon slot, and Wingman asked it. Those now show as "(built in)" and can be grouped, the host
+  sends them, and the host keeps them in the group you put them in (they were left out and placed by the game).
 - Fixed: Burn Drive and Maneuvering Jets could be learned as teleports ("moves its ship by jumping" in the log),
   after which copies of ships using them snapped about instead of flying. When the bandwidth limit leaves a ship
   out of a few updates, the joiner carries it on by its old speed, and the update after a burn drive lit looked

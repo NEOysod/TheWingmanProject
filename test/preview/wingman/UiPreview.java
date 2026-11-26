@@ -38,6 +38,75 @@ public class UiPreview {
         return (T) Proxy.newProxyInstance(UiPreview.class.getClassLoader(), new Class<?>[] { type }, h);
     }
 
+    /**
+     * A hull read from its .ship file (-Dpreview.hulls=dir holding {id}.ship): its weapon slots answer as the game's
+     * own slot class does (isWeaponSlot only for the mountable types), its built-in weapons and mods are listed.
+     * Null for any other hull, as before.
+     */
+    static com.fs.starfarer.api.combat.ShipHullSpecAPI hullSpec(final String id) {
+        String dir = System.getProperty("preview.hulls");
+        java.io.File f = dir == null || id == null ? null : new java.io.File(dir, id + ".ship");
+        if (f == null || !f.isFile()) return null;
+        try {
+            final org.json.JSONObject j = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(f.toPath()), "UTF-8"));
+            final java.util.Map<String, com.fs.starfarer.api.loading.WeaponSlotAPI> slots = new java.util.LinkedHashMap<String, com.fs.starfarer.api.loading.WeaponSlotAPI>();
+            org.json.JSONArray arr = j.getJSONArray("weaponSlots");
+            for (int i = 0; i < arr.length(); i++) {
+                final org.json.JSONObject o = arr.getJSONObject(i);
+                final String type = o.optString("type"), mount = o.optString("mount"), size = o.optString("size");
+                slots.put(o.getString("id"), proxy(com.fs.starfarer.api.loading.WeaponSlotAPI.class, new InvocationHandler() {
+                    public Object invoke(Object p, Method m, Object[] x) {
+                        String n = m.getName();
+                        if (n.equals("getId")) return o.optString("id");
+                        if (n.equals("isWeaponSlot")) return java.util.Arrays.asList("BALLISTIC", "ENERGY", "UNIVERSAL", "HYBRID", "SYNERGY", "COMPOSITE", "MISSILE").contains(type);
+                        if (n.equals("isBuiltIn")) return type.equals("BUILT_IN");
+                        if (n.equals("isDecorative")) return type.equals("DECORATIVE");
+                        if (n.equals("isSystemSlot")) return type.equals("SYSTEM");
+                        if (n.equals("isStationModule")) return type.equals("STATION_MODULE");
+                        if (n.equals("isHidden")) return mount.equals("HIDDEN");
+                        if (n.equals("isHardpoint")) return mount.equals("HARDPOINT");
+                        if (n.equals("isTurret")) return mount.equals("TURRET");
+                        if (n.equals("getSlotSize")) return com.fs.starfarer.api.combat.WeaponAPI.WeaponSize.valueOf(size);
+                        if (n.equals("getWeaponType")) { try { return com.fs.starfarer.api.combat.WeaponAPI.WeaponType.valueOf(type); } catch (Exception e) { return null; } }
+                        if (n.equals("getArc")) return (float) o.optDouble("arc", 0);
+                        if (n.equals("getAngle")) return (float) o.optDouble("angle", 0);
+                        if (n.equals("getLocation")) { org.json.JSONArray l = o.optJSONArray("locations"); return new org.lwjgl.util.vector.Vector2f(l == null ? 0f : (float) l.optDouble(0), l == null ? 0f : (float) l.optDouble(1)); }
+                        if (n.equals("hashCode")) return System.identityHashCode(p);
+                        if (n.equals("equals")) return p == x[0];
+                        return zero(m.getReturnType());
+                    }
+                }));
+            }
+            final java.util.Map<String, String> builtIn = new java.util.LinkedHashMap<String, String>();
+            org.json.JSONObject bw = j.optJSONObject("builtInWeapons");
+            if (bw != null) for (java.util.Iterator<?> it = bw.keys(); it.hasNext();) { String k = (String) it.next(); builtIn.put(k, bw.getString(k)); }
+            final java.util.List<String> mods = new java.util.ArrayList<String>();
+            org.json.JSONArray bm = j.optJSONArray("builtInMods");
+            for (int i = 0; bm != null && i < bm.length(); i++) mods.add(bm.getString(i));
+            return proxy(com.fs.starfarer.api.combat.ShipHullSpecAPI.class, new InvocationHandler() {
+                public Object invoke(Object p, Method m, Object[] x) {
+                    String n = m.getName();
+                    if (n.equals("getHullId") || n.equals("getBaseHullId")) return id;
+                    if (n.equals("getHullName")) return j.optString("hullName");
+                    if (n.equals("getSpriteName")) return j.optString("spriteName");
+                    if (n.equals("getAllWeaponSlotsCopy")) return new java.util.ArrayList<com.fs.starfarer.api.loading.WeaponSlotAPI>(slots.values());
+                    if (n.equals("getWeaponSlotAPI")) return slots.get((String) x[0]);
+                    if (n.equals("getBuiltInWeapons")) return new java.util.HashMap<String, String>(builtIn);
+                    if (n.equals("getBuiltInMods")) return new java.util.ArrayList<String>(mods);
+                    if (n.equals("getBuiltInWings")) return new java.util.ArrayList<String>();
+                    if (n.equals("isBuiltInMod")) return mods.contains((String) x[0]);
+                    if (n.equals("getHullSize")) return com.fs.starfarer.api.combat.ShipAPI.HullSize.valueOf(j.optString("hullSize", "DESTROYER"));
+                    if (n.equals("hashCode")) return System.identityHashCode(p);
+                    if (n.equals("equals")) return p == x[0];
+                    return zero(m.getReturnType());
+                }
+            });
+        } catch (Exception e) {
+            System.out.println("preview: hull " + id + " not read: " + e);
+            return null;
+        }
+    }
+
     static Object zero(Class<?> r) {
         if (r == boolean.class) return false;
         if (r == int.class) return 0;
@@ -277,6 +346,7 @@ public class UiPreview {
                 if (n.equals("getSprite") && a != null && a.length == 1) return sprite((String) a[0]);
                 if (n.equals("loadTexture")) return null;
                 if (n.equals("getWeaponSpec")) return fakeWeapon((String) a[0]);
+                if (n.equals("getHullSpec")) return hullSpec((String) a[0]);
                 if (n.equals("getSkillSpec")) {
                     final String id = (String) a[0];
                     return proxy(com.fs.starfarer.api.characters.SkillSpecAPI.class, new InvocationHandler() {

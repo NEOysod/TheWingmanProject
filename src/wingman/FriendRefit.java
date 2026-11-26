@@ -436,7 +436,10 @@ final class FriendRefit {
 
     /** A slot whose weapon can be put in a weapon group: a weapon slot (built in or not), not decorative or the system's. */
     static boolean groupable(WeaponSlotAPI s) {
-        return s != null && s.isWeaponSlot() && !s.isDecorative() && !s.isSystemSlot() && !s.isStationModule();
+        // The game's isWeaponSlot() is false for a slot of type BUILT_IN (it names the mountable types only), and
+        // that is where most hulls keep their built-in guns (UAF's Super Nakiha its two HVARs): so those count
+        // too. The game itself groups every weapon a ship has but decorative ones (autoGenerateWeaponGroups).
+        return s != null && (s.isWeaponSlot() || s.isBuiltIn()) && !s.isDecorative() && !s.isSystemSlot() && !s.isStationModule();
     }
 
     /** The joiner's weapon groups put on a variant: each weapon once, in a slot that has one; the rest the game places. */
