@@ -794,6 +794,15 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   the hull's base top speed + 20, and 0.4 s after: `40 + 0.15 v` instead). Beyond `3 + 0.02 v` units it is pulled at `4 + min(8, over/25)`/s, the
   history shifted too; velocity blended over 60; over 700 the ship jumps. Without a usable ack, the speed-based
   slack is used.
+- **Jumps** (`OwnJumps`): a Phase Skimmer (300 units at the end of its 0.25 s charge-up), a Phase Teleporter, a
+  mod's blink or a script moves the ship further in a frame than it can fly (`100 + 3 v dt`). The comparison is
+  then worthless around it: a frame's difference in timing is the whole jump, and a moment between two records is
+  half of it; pulling on that dragged the ship back and forth after every skim. So a comparison for a moment within
+  0.15 s of one of our jumps is left out (`reconX/Y` held at 0); after our jump, comparisons wait until the host's
+  ship is seen to jump (`Puppet.jumped`), or the two are within 75 units again a moment after ours, or the round
+  trip + 0.5 s has passed; and for 1 s after a jump on either side a difference over `max(120, 2 × slack)` is put
+  right at once (one side jumped and the other didn't), rather than slid across. 0.3 s after a jump counts as a
+  burst (the wider slack). `test/wingman/JumpTest` replays a skim against all this.
 - **Controls** (`captureInput`): movement keys, fire (not in the command screen or paused), shield/phase, system
   uses (a running count; `noteSystemUse`), vent, fighter pull-back, retreat, mouse, target, autofire mask, selected
   group (`Groups`), heading. Looked at up to 60/s. A key or button change (anything but the mouse and the
@@ -1497,6 +1506,8 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
     smoothness (distance from the host's positions one delay ago, and jitter) on a simulated battle through the
     real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,
     `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
+  - `wingman.JumpTest` (in `test/wingman`): the own ship's jump handling against a simulated Phase Skimmer: the
+    same moment, a frame apart, 150 ms apart, a jump the host's update doesn't show as one, a jump on one side only.
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name
     spoofing, password guessing, connection and message floods, UDP junk, 30,000 mangled inputs for each of 13
     decoders, impossible numbers; an honest player must stay served throughout.

@@ -587,8 +587,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + " units from the real one on the host once the delay is taken out, at most " + Math.round(ownWorst) + ", put straight back "
                     + ownSnaps + " times; compared " + reconChecks + " times, " + reconMisses + " could not be compared; ship system used "
                     + sysUsesTotal + " times so far (" + sysConfirmed + " seen to happen on the host, " + sysResent + " sent a second time, "
-                    + sysUnconfirmed + " never happened there); flux bar pulled toward the host's " + fluxFixes + " frames");
+                    + sysUnconfirmed + " never happened there); flux bar pulled toward the host's " + fluxFixes + " frames; jumps (a teleporting system or a script) "
+                    + ownJumps.jumpsHere + " here, " + ownJumps.jumpsThere + " on the host, " + ownJumps.skipped + " comparisons left out around them, "
+                    + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
+            ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0;
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
             if (bufferedFrames > 0) Dbg.info(WingmanClientPlugin.class, "Wingman jitter buffer: other ships shown " + Math.round(1000f * bufferClock.delay)
@@ -4526,6 +4529,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private float reconX, reconY;
     private Puppet reconShip;
     private int reconChecks, reconMisses;
+    /** Jumps of the ship in our hands (a Phase Skimmer, a blink), here and on the host: see OwnJumps. */
+    private final OwnJumps ownJumps = new OwnJumps();
+    private int jumpSnaps;
     /** Our round trip to the host (seconds, smoothed; -1 until measured): from our controls' number coming back. */
     private float roundTrip = -1f;
 
@@ -4601,8 +4607,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * Returns false if there is nothing to compare yet.
      */
     private boolean reconcile(Puppet pp, Snapshot.ShipState t) {
-        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; }
+        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; ownJumps.reset(); }
         Vector2f loc = pp.ship.getLocation();
+        if (pastCount > 0) { // did our copy jump since the last record (its system, or a script)? (our own corrections move the record with it)
+            int prev = (pastNext - 1) & 255;
+            Vector2f v = pp.ship.getVelocity();
+            ownJumps.noteMove(pastT[prev], pastX[prev], pastY[prev], clock, loc.x, loc.y, (float) Math.sqrt(v.x * v.x + v.y * v.y));
+        }
         pastT[pastNext] = clock; pastX[pastNext] = loc.x; pastY[pastNext] = loc.y;
         FluxTrackerAPI ft = pp.ship.getFluxTracker();
         pastFlux[pastNext] = ft.getCurrFlux(); pastHard[pastNext] = ft.getHardFlux();
@@ -4628,8 +4639,11 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             hf = pastHard[a] + (pastHard[b] - pastHard[a]) * f;
             break;
         }
-        reconX = t.x - x;
-        reconY = t.y - y;
+        // Around a jump (ours or the host's still to come) the positions can't be compared: held still meanwhile.
+        float ex = t.x - x, ey = t.y - y;
+        boolean comparable = ownJumps.comparable(when, clock, roundTrip, (float) Math.sqrt(ex * ex + ey * ey));
+        reconX = comparable ? ex : 0f;
+        reconY = comparable ? ey : 0f;
         reconFlux = t.flux - fl;
         reconHard = t.hardFlux - hf;
         reconFluxReady = true;
@@ -4751,7 +4765,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             // During a burst of speed from a system (here or on the host) and a moment after, a few milliseconds
             // between the two ships' timing is tens of units apart: pulling on that mid-burst feels like rubber.
             // So the gap is left alone then unless it is large, and closed smoothly once the burst is over.
-            boolean bursting = ownBurst(ship, t);
+            if (pp.jumped) { pp.jumped = false; ownJumps.hostJumped(clock); } // the real ship jumped (its system, or a script)
+            boolean bursting = ownBurst(ship, t) || ownJumps.within(clock, 0.3f);
             if (bursting) ownBurstUntil = clock + 0.4f;
             boolean easing = bursting || clock < ownBurstUntil;
             if (reconcile(pp, t)) {
@@ -4760,11 +4775,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 err = (float) Math.sqrt(dx * dx + dy * dy);
                 slack = (3f + hostSpeed * 0.02f) * this.slack;
                 if (easing) slack = Math.max(slack, 40f + hostSpeed * 0.15f);
-                if (err > 700f) {
+                // Just after a jump on either side, a large difference means one of the two jumped and the other
+                // didn't (or not as far): put right at once, which looks like part of the jump, rather than slid.
+                boolean jumpGap = err <= 700f && ownJumps.recent(clock) && err > Math.max(120f, slack * 2f);
+                if (err > 700f || jumpGap) {
                     loc.set(loc.x + dx, loc.y + dy);
                     vel.set(t.vx, t.vy);
                     shiftPast(dx, dy);
                     ownSnaps++;
+                    if (jumpGap) jumpSnaps++;
                 } else if (amount > 0f && err > slack) {
                     float over = err - slack;
                     float pull = Math.min(1f, amount * (4f + Math.min(8f, over / 25f))) * (over / err);

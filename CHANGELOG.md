@@ -1,5 +1,15 @@
 # Changelog
 
+## Next (on the test branch)
+
+- **Phase Skimmer (and other jumps) on the ship you fly as a joiner no longer jitter.** Your ship runs on your PC a
+  moment ahead of the real one on the host and is kept with it by comparing the two at the same moment. Around a
+  jump that comparison was off by up to the whole jump (300 units for a Phase Skimmer, from a single frame's
+  difference in timing), and the ship was pulled back toward where it jumped from, then forward again. Now the
+  comparisons around a jump are left out, the real ship's jump is waited for, and if only one side jumped (no
+  charge left on the other) the ship is put straight where the real one is instead of sliding there. Only the
+  joiner's PC changes: a joiner with this build can play with a host on 0.9.4-beta.
+
 ## 0.9.4-beta
 
 For Starsector 0.98.5a-RC9. Everyone in a game needs the same game build and this version (protocol 63: 0.9.3
