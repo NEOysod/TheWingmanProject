@@ -102,6 +102,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
         float shieldRate;           // how fast the host's shield on it was turning (degrees/s, from its last two updates)
         float anglesAt = -100f;     // the host time of the turret angles held
+        float setX, setY, setVx, setVy, setAt = -100f; // where and how fast we left it last frame (see Motion.shoved)
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
         /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
         boolean hostOverloaded, overloadKnown;
@@ -601,12 +602,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
             ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0; fluxSnaps = 0; fluxSteps.skipped = 0;
-            if (fastBursts + fastJumps + fastSpins + missileBursts + missileJumps + shotsCaughtUp > 0 || Movers.learnedThisSession() > 0) {
+            if (fastBursts + fastJumps + fastSpins + missileBursts + missileJumps + shotsCaughtUp + localShoves + ownKnocks > 0 || Movers.learnedThisSession() > 0) {
                 Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts, " + fastJumps + " jumps and " + fastSpins
                         + " spins of ships seen in the host's figures, " + missileBursts + " bursts and " + missileJumps + " jumps of missiles; "
                         + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt); "
-                        + shotsCaughtUp + " shots of others' guns caught up with the host's (by " + Math.round(1000f * wingman.net.ShotLead.lead(lastLate, updateGap)) + " ms now)");
-                fastBursts = 0; fastJumps = 0; fastSpins = 0; missileBursts = 0; missileJumps = 0; shotsCaughtUp = 0;
+                        + shotsCaughtUp + " shots of others' guns caught up with the host's (by " + Math.round(1000f * wingman.net.ShotLead.lead(lastLate, updateGap)) + " ms now); "
+                        + localShoves + " pushes of copies by this game's own collisions taken back; our ship knocked here " + ownKnocks + " times");
+                fastBursts = 0; fastJumps = 0; fastSpins = 0; missileBursts = 0; missileJumps = 0; shotsCaughtUp = 0; localShoves = 0; ownKnocks = 0;
             }
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
@@ -823,6 +825,14 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      */
     private boolean ownFast(Puppet pp, ShipAPI ship, Snapshot.ShipState t) {
         try {
+            // knocked here (a collision, an explosion): speed changed since last frame more than the engines can
+            Vector2f v0 = ship.getVelocity();
+            float kdt = clock - ownLeftAt;
+            if (kdt > 0f && kdt < 0.1f && wingman.net.Motion.knocked(v0.x - ownLeftVx, v0.y - ownLeftVy, kdt, engineAcc(ship))) {
+                if (clock - ownKnockAt >= wingman.net.Motion.HOLD) ownKnocks++;
+                ownKnockAt = clock;
+            }
+            if (clock - ownKnockAt < wingman.net.Motion.HOLD) return true;
             if (pp.motion.surging(clock)) return true;
             Vector2f v = ship.getVelocity();
             if (wingman.net.Motion.burst(v.x, v.y, 0f, 0f, normalTop(ship), 0f)) return true;
@@ -969,7 +979,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         try { return s.getMutableStats().getTurnAcceleration().getModifiedValue(); } catch (Throwable t) { return 100000f; }
     }
 
-    private int fastBursts, fastJumps, fastSpins, missileBursts, missileJumps, shotsCaughtUp;
+    private int fastBursts, fastJumps, fastSpins, missileBursts, missileJumps, shotsCaughtUp, localShoves, ownKnocks;
+    /** Our own ship's speed as we left it last frame, and when; and when it was last knocked here (see ownFast). */
+    private float ownLeftVx, ownLeftVy, ownLeftAt = -100f, ownKnockAt = -100f;
 
     /**
      * A new state from the host for one ship: did it jump since the one before, or is it in a burst (see Motion)?
@@ -4946,6 +4958,16 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         float ax = clampAcc(t.ax, t.vx, t.vy), ay = clampAcc(t.ay, t.vx, t.vy);
         float tx = t.x + (t.vx + 0.5f * ax * aa) * age, ty = t.y + (t.vy + 0.5f * ay * aa) * age;
         Vector2f loc = ship.getLocation();
+        // Pushed by this game since last frame (a collision with another copy, our ship or an asteroid, an
+        // explosion here, its speed clamped here)? Taken back: the host's collisions decide where the real ship
+        // goes, and arrive with the updates; one made here only fought them, and ships touching shook.
+        if (!own && !pp.module && amount > 0f && clock - pp.setAt < 0.1f
+                && wingman.net.Motion.shoved(pp.setX, pp.setY, pp.setVx, pp.setVy, clock - pp.setAt, loc.x, loc.y, engineAcc(ship))) {
+            float since = clock - pp.setAt;
+            loc.set(pp.setX + pp.setVx * since, pp.setY + pp.setVy * since);
+            ship.getVelocity().set(pp.setVx, pp.setVy);
+            localShoves++;
+        }
         float dx = tx - loc.x, dy = ty - loc.y;
         float k = Math.min(1f, amount * (pp.fighter ? 30f : 12f));
         boolean smoothed = false;
@@ -5010,6 +5032,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (err > ownWorst) ownWorst = err;
             ownErrSum += err;
             ownErrN++;
+            ownLeftVx = vel.x; ownLeftVy = vel.y; ownLeftAt = clock;
         } else if (smoothing() && !pp.track.empty()) {
             // Smooth corrections (and the jitter buffer): shown = the model of the host's ship + an offset that
             // fades (see Smoother). The game moves it at the model's speed in between.
@@ -5046,6 +5069,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float vb = amount <= 0f ? 1f : Math.min(1f, amount * (surging ? 60f : 25f)); // speed changes are taken up over a few frames
             float wvx = t.vx + ax * aa, wvy = t.vy + ay * aa;
             vel.set(vel.x + (wvx - vel.x) * vb, vel.y + (wvy - vel.y) * vb);
+        }
+        if (!own && !pp.module) { // as we leave it: what this game does to it before next frame is its own doing
+            Vector2f lv = ship.getVelocity();
+            pp.setX = loc.x; pp.setY = loc.y; pp.setVx = lv.x; pp.setVy = lv.y; pp.setAt = clock;
         }
         float tf = t.facing + (t.angVel + 0.5f * t.angAcc * ta) * age;
         if (pp.module) {

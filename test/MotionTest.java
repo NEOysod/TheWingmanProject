@@ -93,6 +93,15 @@ public class MotionTest {
             check(Math.abs(moved - 30f) < 1e-3f, "over uneven frames the whole distance is made up, no more (" + moved + " of 30)");
         }
 
+        // collisions: a copy pushed by this game, our own ship knocked
+        float fr = 1f / 60f;
+        check(!Motion.shoved(0f, 0f, 120f, 0f, fr, 2f, 0f, 60f), "a copy flying on as it was left: not pushed");
+        check(!Motion.shoved(0f, 0f, 300f, 0f, fr, 5f + 0.1f, 0f, 600f), "a fighter's own engines adding a hair: not pushed");
+        check(Motion.shoved(0f, 0f, 120f, 0f, fr, 2f, 4f, 60f), "moved sideways 4 units in a frame (touching another ship): pushed");
+        check(Motion.shoved(0f, 0f, 600f, 0f, fr, 10f - 6.7f, 0f, 60f), "slowed to a third in a frame (this game clamping a burst's speed): pushed");
+        check(!Motion.knocked(1f, 0.5f, fr, 60f), "our ship speeding up by its engines: not knocked");
+        check(Motion.knocked(-80f, 30f, fr, 60f), "our ship's speed changed by 85 in a frame (a ram): knocked");
+
         System.out.println(failed == 0 ? "MOTION PASSED (" + checks + " checks)" : "MOTION FAILED (" + failed + " of " + checks + ")");
         if (failed > 0) System.exit(1);
     }

@@ -42,6 +42,13 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     slowly), and put right at once if a vent or a shot made it a tenth apart. Comparisons right at a shot are left
     out, so it doesn't jiggle while you fire;
   - hull already went exactly (65,536 steps).
+- **Collisions:**
+  - ships touching on a joiner's screen (ramming, a ship nosed into a station, a crowd) no longer shake. This
+    game's own collisions pushed the copies apart while the host's updates pulled them back where the real ships
+    are; now a push made only on this PC (a collision, a local explosion's knock, its speed clamped here) is taken
+    back, and the host's collisions, which decide where ships really go, are followed;
+  - your own ship still bounces at once when you ram something, and for a moment after, small differences from
+    the host's (whose bump comes a moment later and may not be quite the same) are left alone until both agree.
 - **Everything the host held back to save bandwidth, now sent:**
   - turret angles in 65,536 steps a turn (were 256: 1.4°, and only sent again after 2.8°), so a copy's long-range
     shots and beams point where the host's do; each turret keeps turning between updates at the rate it was;

@@ -78,6 +78,34 @@ public final class Motion {
         return ex * ex + ey * ey > reach * reach;
     }
 
+    /** A copy moved by this game's own physics beyond this (units), plus what its engines could add, was pushed. */
+    public static final float SHOVE = 1.5f;
+
+    /**
+     * A copy of someone else's ship was put at (setX, setY) going (setVx, setVy) dt seconds ago, and is now at
+     * (x, y): did this game push it there (a collision with another copy, our ship or an asteroid, the knock of
+     * an explosion here, its speed clamped by this game)? Those happen on the host too, where they decide where the
+     * real ship goes, and that arrives with the next update; one made here only fights it, so ships touching shook.
+     * Its engines can account for a hair (engineAcc dt²).
+     */
+    public static boolean shoved(float setX, float setY, float setVx, float setVy, float dt, float x, float y, float engineAcc) {
+        if (!(dt > 0f)) return false;
+        float ex = x - (setX + setVx * dt), ey = y - (setY + setVy * dt);
+        float tol = SHOVE + Math.max(0f, engineAcc) * dt * dt;
+        return ex * ex + ey * ey > tol * tol;
+    }
+
+    /**
+     * Our own ship's speed changed by (dvx, dvy) in dt seconds by this game's doing: more than its engines can,
+     * i.e. it was knocked (a collision, an explosion here)? Then the host's knock comes a moment later, and maybe
+     * not quite the same: like a burst, small differences are left alone until both agree.
+     */
+    public static boolean knocked(float dvx, float dvy, float dt, float engineAcc) {
+        if (!(dt > 0f)) return false;
+        float cap = (Math.max(0f, engineAcc) * SHARP + SHARP_PLUS) * dt;
+        return dvx * dvx + dvy * dvy > cap * cap;
+    }
+
     /** One ship's recent fast movement: when a burst and a jump were last seen. */
     public static final class Watch {
         private float burstSeen = -100f, jumpSeen = -100f, spinSeen = -100f;

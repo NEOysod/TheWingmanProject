@@ -781,6 +781,14 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
     snaps (smooth mode too, via `markJump`); a burst counts only the change of speed *along* the flight
     (`Motion.burstAlong`: a homing missile's turn bends its path without being one), i.e. a split's kick or a dash:
     then no acceleration carried on, held within `4 + 0.02 v`, closed at 25/s; a spin as for ships.
+  - **Collisions here** (`Motion.shoved`): where each copy (not ours, not a module) was left at the end of the
+    frame, and how fast, is kept (`Puppet.setX…setAt`). At the next, if it is more than `1.5 + engineAcc dt²`
+    units from where that speed takes it, this game pushed it (touching another copy, our ship or an asteroid,
+    a local explosion's knock, its speed clamped here): put back where it would have been, at the speed it had.
+    The host's collisions decide where the real ships go and arrive with the updates; one made here only fought
+    them, so copies in contact shook. Our own ship keeps its bounce (it answers at once), and a speed change since
+    last frame beyond `3 × engineAcc + 150` units/s² (`Motion.knocked`) counts as fast (`ownFast`) for 0.4 s: the
+    wider slack while the host's knock, a moment later and maybe not the same, comes in.
   - A ship is *surging* while in a burst, phased, or while its system runs and `Movers.moves` it. A system that
     doesn't move its ship (a shield, a damper) no longer makes its ship surge: being held closer only shook it.
   - **Which systems move their ship** (`Movers`): from the description first, the same for every mod: JUMP if the
@@ -1555,8 +1563,8 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
     `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
   - `MotionTest`: bursts and jumps told from ordinary flying (top speed, a nav bonus, engines' acceleration, a
     skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between), spins, missile
-    bursts along the flight (not a homing turn), `Steps`, and `ShotLead` (the lead, and catching up exactly over
-    uneven frames).
+    bursts along the flight (not a homing turn), `Steps`, `ShotLead` (the lead, and catching up exactly over
+    uneven frames), and pushes and knocks (`shoved`, `knocked`).
   - `wingman.JumpTest` (in `test/wingman`): the own ship's jump handling against a simulated Phase Skimmer: the
     same moment, a frame apart, 150 ms apart, a jump the host's update doesn't show as one, a jump on one side only.
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name
