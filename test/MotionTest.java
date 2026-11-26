@@ -62,6 +62,37 @@ public class MotionTest {
         for (int i = 0; i < 8; i++) st.note(10f + i);
         check(!st.near(3.0f, 0.06f), "only the last few steps are kept");
 
+        // spins: a cruiser, top turn 15°/s, turn acceleration 20°/s²
+        check(!Motion.spin(15f, 10f, 15f, 20f), "turning at its top turn rate: no spin");
+        check(Motion.spin(60f, 0f, 15f, 20f), "four times that (maneuvering jets, a mod's spin): a spin");
+        check(Motion.spin(10f, 400f, 15f, 20f), "its turn rate changing far faster than it can: a spin (knocked round by a hit)");
+        Motion.Watch sw = new Motion.Watch();
+        sw.spin(5f);
+        check(sw.spinning(5.3f) && !sw.spinning(5.5f) && sw.spins == 1, "a spin is held for " + Motion.HOLD + " s, counted once");
+
+        // missiles: a burst is a change of speed along its way, not a homing turn
+        float mTop = 500f, mAcc = 400f;
+        check(!Motion.burstAlong(500f, 0f, 0f, 1700f, mTop, mAcc), "a homing missile turning hard at full speed: no burst");
+        check(!Motion.burstAlong(300f, 0f, 400f, 0f, mTop, mAcc), "speeding up as its engine does: no burst");
+        check(Motion.burstAlong(300f, 0f, 3000f, 0f, mTop, mAcc), "a dash (far faster than its engine): a burst");
+        check(Motion.burstAlong(900f, 0f, 0f, 0f, mTop, mAcc), "beyond its top speed (a split's kick): a burst");
+        check(Motion.burst(500f, 0f, 0f, 1700f, mTop, mAcc), "(counting the turn too would have called that turn a burst)");
+
+        // others' shots: how far behind they start, and that they catch up exactly
+        check(Math.abs(wingman.net.ShotLead.lead(0f, 1f / 30f) - 1f / 60f) < 1e-4f, "on time, 30 updates a second: half an update behind (17 ms)");
+        check(Math.abs(wingman.net.ShotLead.lead(0.02f, 1f / 30f) - (0.02f + 1f / 60f)) < 1e-4f, "an update 20 ms late: that much more");
+        check(wingman.net.ShotLead.lead(0.1f, 0.5f) == wingman.net.ShotLead.MAX, "never more than " + Math.round(1000 * wingman.net.ShotLead.MAX) + " ms of flight");
+        {
+            float left = 30f, time = wingman.net.ShotLead.OVER, moved = 0f;
+            float[] frames = { 1 / 60f, 1 / 45f, 1 / 120f, 1 / 30f, 1 / 60f, 1 / 60f, 1 / 50f, 1 / 60f };
+            for (int i = 0; i < 40 && time > 0f; i++) {
+                float amount = frames[i % frames.length];
+                float f = wingman.net.ShotLead.share(time, amount);
+                moved += left * f; left -= left * f; time -= amount;
+            }
+            check(Math.abs(moved - 30f) < 1e-3f, "over uneven frames the whole distance is made up, no more (" + moved + " of 30)");
+        }
+
         System.out.println(failed == 0 ? "MOTION PASSED (" + checks + " checks)" : "MOTION FAILED (" + failed + " of " + checks + ")");
         if (failed > 0) System.exit(1);
     }

@@ -768,6 +768,15 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
   - A **burst**: faster than `1.2 ×` the hull's own top speed (as modified, plus the zero-flux boost) + 20, or
     speed changing faster than `3 ×` its engines' acceleration (or deceleration) + 150 units/s² (`Motion.burst`):
     a burn drive, plasma jets, a phase ship, a mod's dash, a collision's knock. Held 0.4 s (`Motion.Watch`).
+  - A **spin**: turning faster than `1.2 ×` its top turn rate + 10°/s, or its turn rate changing faster than `3 ×`
+    its turn acceleration + 60°/s² (`Motion.spin`): maneuvering jets, a mod's spin, a ship knocked round. While a
+    ship spins (or surges), its facing is carried on straight from the host's turn rate (no turn acceleration;
+    `Smoother.sample(..., noTurnAcc)`), held within `1 + 0.02 w` degrees and closed at 25/s (plain mode), or its
+    heading offset faded at 25% a frame instead of 12% (`Track.quickTurn`).
+  - **Missiles** the same (`noteMissileMotion`), against their own top speed, acceleration and turning: a jump
+    snaps (smooth mode too, via `markJump`); a burst counts only the change of speed *along* the flight
+    (`Motion.burstAlong`: a homing missile's turn bends its path without being one), i.e. a split's kick or a dash:
+    then no acceleration carried on, held within `4 + 0.02 v`, closed at 25/s; a spin as for ships.
   - A ship is *surging* while in a burst, phased, or while its system runs and `Movers.moves` it. A system that
     doesn't move its ship (a shield, a damper) no longer makes its ship surge: being held closer only shook it.
   - **Which systems move their ship** (`Movers`): from the description first, the same for every mod: JUMP if the
@@ -867,6 +876,14 @@ firing bit clears.
   (it winds down and starts its real cooldown), `forceState` only after 0.3 s more. A forced COOLDOWN is given the
   system's full cooldown if it came with none, so it doesn't read as idle at once (UAF's Isenoria ends its fighter
   hand-over when Rafflesya Control is neither on nor cooling down).
+- **Others' shields** are carried on between updates at the turn rate the last two updates show (clamped to
+  720°/s, for at most 0.06 s), instead of standing at the last figure until the next one.
+- **Others' shots catch up** (`catchUpShots`, `ShotLead`): a copy's gun starts firing when the update saying so
+  arrives; copies are shown at the moment of the freshest update, so a new shot is behind the host's by how late
+  that update was plus half the time between updates (at most 60 ms of flight), and its hit flashed after the
+  host's damage had arrived. Each new projectile from a copy (not our ship, not missiles, not shots placed where
+  the host's struck) leaves the barrel as before and makes up that distance over its first 0.1 s, a share each
+  frame (`ShotLead.share`: the whole of it whatever the frame times), dropped if it hits or fades first.
 - **Teleporters on other ships** (`Movers.jumps`: described or learned, see **Fast movement**) are never run on
   the copy. Their look is drawn instead (`teleportLook`,
   `teleportTrail`): the spec's jitter (colour, copies, range; defaults if none) while the host's stage is IN, ACTIVE
@@ -1533,7 +1550,9 @@ keep overriding every ship's AI; ship types created at runtime from the campaign
     real codec and a model of the joiner's motion. Arguments: `rate`, `seconds`, `delayMs`, `jitterMs`, `ships`,
     `fighters`, `missiles`, `seed`, `accel` (0: joiner extrapolates in a straight line, as before 0.6).
   - `MotionTest`: bursts and jumps told from ordinary flying (top speed, a nav bonus, engines' acceleration, a
-    skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between), and `Steps`.
+    skim on a slow and a fast ship, a bounce, a hard turn or acceleration with no update between), spins, missile
+    bursts along the flight (not a homing turn), `Steps`, and `ShotLead` (the lead, and catching up exactly over
+    uneven frames).
   - `wingman.JumpTest` (in `test/wingman`): the own ship's jump handling against a simulated Phase Skimmer: the
     same moment, a frame apart, 150 ms apart, a jump the host's update doesn't show as one, a jump on one side only.
   - `AttackTest` (`-Xmx512m`): junk, oversized and half-sent frames, compression bombs, hello fuzzing, name

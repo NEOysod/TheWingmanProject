@@ -18,6 +18,19 @@
   - Ships whose system doesn't move them (shields, dampers) are no longer held tighter while it runs, which made
     them shake a little.
   This one is the joiner's alone: a joiner with this build can play with a host on 0.9.4-beta.
+- **Smoother turning, missiles, shields and shots** (the joiner's alone, like the fast-movement handler):
+  - **Spins**: a ship turning faster than it can by itself (maneuvering jets, a mod's spin, knocked round by a
+    hit) is turned straight on from the host's turn rate and held close, instead of along a curve that
+    overshot as the spin started and stopped.
+  - **Missiles** get the same handler: one that jumps (a script) is put straight there; one that bursts (a MIRV
+    or a Sabot splitting, a mod's dashing missile) is carried straight and held close. A homing missile's turn
+    isn't taken for a burst.
+  - **Shields** of other ships keep turning between updates at the rate they were, instead of moving in small
+    steps 30 times a second.
+  - **Shots from other ships' guns catch up with the host's.** A copy's gun starts firing when the news arrives,
+    a little behind the host's shot (half the time between updates, plus however late that update was), so its
+    hit flashed after the damage had already shown. Each shot now leaves the barrel as before and makes up that
+    distance (at most 60 ms of flight) over its first tenth of a second, so it hits when the host's does.
 - **Flux, armor and hull as exact as the host's.** Now that bandwidth isn't the worry:
   - every ship's flux and hard flux go exactly (before, only once the bar had moved by a hundredth): about 10%
     more upload in a big battle;

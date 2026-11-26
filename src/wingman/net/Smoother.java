@@ -78,6 +78,11 @@ public final class Smoother {
          * most {@code accReach} seconds, not at all if {@code noAcc}.
          */
         public void sample(float r, boolean interpolate, float maxAge, float accReach, boolean noAcc) {
+            sample(r, interpolate, maxAge, accReach, noAcc, noAcc);
+        }
+
+        /** As above, with the turn acceleration left out on its own ({@code noTurnAcc}: a spin, see Motion). */
+        public void sample(float r, boolean interpolate, float maxAge, float accReach, boolean noAcc, boolean noTurnAcc) {
             between = false;
             if (count == 0) return;
             int n = head;
@@ -92,16 +97,19 @@ public final class Smoother {
             if (jumpedNow) jumpAt = Float.NaN;
             float age = Math.max(interpolate ? -maxAge : 0f, Math.min(maxAge, r - t[n]));
             float aa = noAcc || age < 0f ? 0f : Math.min(age, accReach);
+            float ta = noTurnAcc || age < 0f ? 0f : Math.min(age, accReach);
             mx = x[n] + (vx[n] + 0.5f * ax[n] * aa) * age;
             my = y[n] + (vy[n] + 0.5f * ay[n] * aa) * age;
             mvx = vx[n] + ax[n] * aa;
             mvy = vy[n] + ay[n] * aa;
-            mf = f[n] + (w[n] + 0.5f * wa[n] * aa) * age;
-            mw = w[n] + wa[n] * aa;
+            mf = f[n] + (w[n] + 0.5f * wa[n] * ta) * age;
+            mw = w[n] + wa[n] * ta;
         }
 
         /** Where to show the copy this frame, after follow(). */
         public float sx, sy, sf;
+        /** Close a heading offset faster (in a spin, see Motion: the model is the host's straight on, held close). */
+        public boolean quickTurn;
 
         /**
          * Given where the copy is now (moved since last frame by the game, at the model's speed, and by anything
@@ -128,7 +136,7 @@ public final class Smoother {
             float k = (float) Math.pow(perFrame, amount * 60f);
             ox *= k; oy *= k;
             if (e * k < 0.05f) { ox = 0f; oy = 0f; }
-            of *= (float) Math.pow(0.88f, amount * 60f);
+            of *= (float) Math.pow(quickTurn ? 0.75f : 0.88f, amount * 60f);
             if (Math.abs(of) < 0.01f) of = 0f;
         }
     }

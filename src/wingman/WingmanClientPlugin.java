@@ -99,6 +99,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean jumped;         // the host's ship has just moved in a way no engine could (a teleport): go straight there
         final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts and jumps, as the host's figures show them
         float sysStartedAt = -100f; // when the host's system on it last started (a burst or jump soon after is put down to it)
+        float shieldRate;           // how fast the host's shield on it was turning (degrees/s, from its last two updates)
         boolean blinking;       // the host's teleporter system on this ship is running (its look is drawn here: see teleportLook)
         /** Whether the host's ship was overloaded in the update before, once one has been seen (a new overload is heard). */
         boolean hostOverloaded, overloadKnown;
@@ -128,6 +129,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean endWatched;      // the host's script ended it: we are watching whether ours does the same
         float releaseBy = -1f;   // the host's copy has released its next stage: ours gets this long to do the same
         int wantTarget = -2;     // ship the host says it is aimed at, still to be passed to its script (-2: nothing to pass)
+        final wingman.net.Motion.Watch motion = new wingman.net.Motion.Watch(); // its bursts, jumps and spins (see Motion)
+        boolean jumped;          // the host's missile has just moved in a way no engine could: go straight there
         final wingman.net.Smoother.Track track = new wingman.net.Smoother.Track(); // for smooth corrections
     }
 
@@ -526,6 +529,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (asked != null && asked.ship == engine.getPlayerShip()) handsOn = asked;
         }
         for (Puppet pp : puppets.values()) apply(pp, pp == handsOn, amount);
+        catchUpShots(handsOn, amount);
         prof.mark(2);
         for (MissilePuppet mp : missiles.values()) applyMissile(mp, amount);
         reviveMissiles(amount);
@@ -595,10 +599,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
             ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0; fluxSnaps = 0; fluxSteps.skipped = 0;
-            if (fastBursts + fastJumps > 0 || Movers.learnedThisSession() > 0) {
-                Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts and " + fastJumps + " jumps seen in the host's figures; "
-                        + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt)");
-                fastBursts = 0; fastJumps = 0;
+            if (fastBursts + fastJumps + fastSpins + missileBursts + missileJumps + shotsCaughtUp > 0 || Movers.learnedThisSession() > 0) {
+                Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts, " + fastJumps + " jumps and " + fastSpins
+                        + " spins of ships seen in the host's figures, " + missileBursts + " bursts and " + missileJumps + " jumps of missiles; "
+                        + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt); "
+                        + shotsCaughtUp + " shots of others' guns caught up with the host's (by " + Math.round(1000f * wingman.net.ShotLead.lead(lastLate, updateGap)) + " ms now)");
+                fastBursts = 0; fastJumps = 0; fastSpins = 0; missileBursts = 0; missileJumps = 0; shotsCaughtUp = 0;
             }
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
@@ -847,7 +853,101 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
     }
 
-    private int fastBursts, fastJumps;
+    /**
+     * A new state from the host for a missile: a jump (a script moving it), a burst along its way (a split, a
+     * dash: faster than its engine, or beyond its top speed) or a spin (see Motion)? A homing missile's turn
+     * bends its path without counting: only the change of speed along its flight does.
+     */
+    private void noteMissileMotion(MissilePuppet mp, Snapshot.MissileState ms, float hostTime, float now) {
+        try {
+            Snapshot.MissileState was = mp.target;
+            MissileAPI m = mp.missile;
+            if (was != null) {
+                float dt = mp.track.empty() ? 0f : hostTime - mp.track.newestTime();
+                if (dt <= 0f || dt > 1f) dt = Math.max(0f, Math.min(1f, now - mp.targetAt));
+                if (wingman.net.Motion.jumped(was.x, was.y, was.vx, was.vy, ms.x, ms.y, ms.vx, ms.vy, dt)) {
+                    mp.jumped = true;
+                    mp.track.markJump(hostTime);
+                    mp.motion.jump(now);
+                    missileJumps++;
+                }
+            }
+            if (m == null) return;
+            if (wingman.net.Motion.burstAlong(ms.vx, ms.vy, ms.ax, ms.ay, m.getMaxSpeed(), m.getAcceleration())) {
+                if (!mp.motion.surging(now)) missileBursts++;
+                mp.motion.burst(now);
+            }
+            if (wingman.net.Motion.spin(ms.angVel, ms.angAcc, m.getMaxTurnRate(), m.getTurnAcceleration())) mp.motion.spin(now);
+        } catch (Throwable th) { /* this missile is moved as before */ }
+    }
+
+    /** Other ships' shots still catching up with the host's: {distance x, distance y, time left} (see ShotLead). */
+    private final IdentityHashMap<com.fs.starfarer.api.combat.DamagingProjectileAPI, float[]> catching =
+            new IdentityHashMap<com.fs.starfarer.api.combat.DamagingProjectileAPI, float[]>();
+    /** Shots already looked at. */
+    private final IdentityHashMap<com.fs.starfarer.api.combat.DamagingProjectileAPI, Boolean> shotsSeen =
+            new IdentityHashMap<com.fs.starfarer.api.combat.DamagingProjectileAPI, Boolean>();
+    private float lastLate, updateGap = 1f / 30f, lastSnapHostTime = -1f;
+    private boolean catchUpBroken;
+
+    /**
+     * Shots fired here by copies of others' guns start a little behind the host's (see ShotLead): each new one
+     * leaves the barrel as before and makes up the distance over its first tenth of a second, so it hits when
+     * the host's does. Not our own ship's (those fire here at once), not missiles (built from the host's own
+     * description, already where it is), not shots placed where the host's struck.
+     */
+    private void catchUpShots(Puppet handsOn, float amount) {
+        if (catchUpBroken) return;
+        try {
+            List<com.fs.starfarer.api.combat.DamagingProjectileAPI> all = engine.getProjectiles();
+            float lead = wingman.net.ShotLead.lead(lastLate, updateGap);
+            for (com.fs.starfarer.api.combat.DamagingProjectileAPI p : all) {
+                if (shotsSeen.put(p, Boolean.TRUE) != null) continue;
+                if (p instanceof MissileAPI || lead < 0.002f || p.getElapsed() > 0.1f) continue;
+                ShipAPI src = p.getSource();
+                Puppet pp = src == null ? null : byShip.get(src);
+                if (pp == null || pp == handsOn || pp.probing) continue;
+                Vector2f v = p.getVelocity();
+                catching.put(p, new float[] { v.x * lead, v.y * lead, wingman.net.ShotLead.OVER });
+                shotsCaughtUp++;
+            }
+            if (amount > 0f) {
+                Iterator<Map.Entry<com.fs.starfarer.api.combat.DamagingProjectileAPI, float[]>> it = catching.entrySet().iterator();
+                while (it.hasNext()) {
+                    Map.Entry<com.fs.starfarer.api.combat.DamagingProjectileAPI, float[]> e = it.next();
+                    com.fs.starfarer.api.combat.DamagingProjectileAPI p = e.getKey();
+                    float[] c = e.getValue();
+                    if (c[2] <= 0f || p.isExpired() || p.didDamage() || p.isFading() || !engine.isEntityInPlay(p)) { it.remove(); continue; }
+                    float f = wingman.net.ShotLead.share(c[2], amount);
+                    float mx = c[0] * f, my = c[1] * f;
+                    Vector2f loc = p.getLocation();
+                    loc.set(loc.x + mx, loc.y + my);
+                    c[0] -= mx; c[1] -= my; c[2] -= amount;
+                }
+            }
+            if (shotsSeen.size() > all.size() * 2 + 500) { // forget shots no longer in play
+                java.util.Set<Object> live = java.util.Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
+                live.addAll(all);
+                shotsSeen.keySet().retainAll(live);
+            }
+        } catch (Throwable t) {
+            catchUpBroken = true;
+            catching.clear();
+            Global.getLogger(WingmanClientPlugin.class).warn("Wingman: making others' shots catch up with the host's failed; they fire as before for this battle", t);
+        }
+    }
+
+    /** The ship's top turn rate by its own means (degrees/s); very high if it can't be read. */
+    private static float maxTurn(ShipAPI s) {
+        try { return s.getMutableStats().getMaxTurnRate().getModifiedValue(); } catch (Throwable t) { return 100000f; }
+    }
+
+    /** How sharply it can change its turn rate (degrees/s²); very high if unknown. */
+    private static float turnAcc(ShipAPI s) {
+        try { return s.getMutableStats().getTurnAcceleration().getModifiedValue(); } catch (Throwable t) { return 100000f; }
+    }
+
+    private int fastBursts, fastJumps, fastSpins, missileBursts, missileJumps, shotsCaughtUp;
 
     /**
      * A new state from the host for one ship: did it jump since the one before, or is it in a burst (see Motion)?
@@ -878,6 +978,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 if (!pp.motion.surging(now)) fastBursts++;
                 pp.motion.burst(now);
                 if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
+            }
+            if (!pp.module && wingman.net.Motion.spin(st.angVel, st.angAcc, maxTurn(pp.ship), turnAcc(pp.ship))) {
+                if (!pp.motion.spinning(now)) fastSpins++;
+                pp.motion.spin(now);
+                if (byItsSystem) Movers.sawBurst(pp.ship.getSystem());
+            }
+            // The shield's turn rate, so it can be carried on between updates instead of standing still in steps.
+            boolean shieldNow = (st.flags & Snapshot.F_DEFENSE) != 0, shieldBefore = was != null && (was.flags & Snapshot.F_DEFENSE) != 0;
+            float sdt = pp.track.empty() ? 0f : hostTime - pp.track.newestTime();
+            if (shieldNow && shieldBefore && sdt > 0.001f && sdt < 0.5f) {
+                pp.shieldRate = Math.max(-720f, Math.min(720f, shortestTurn(was.shieldFacing, st.shieldFacing) / sdt));
+            } else {
+                pp.shieldRate = 0f;
             }
         } catch (Throwable th) { /* this ship is moved as before */ }
     }
@@ -1398,6 +1511,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 splitSeeds.clear();
                 cutChains.clear();
                 replays.clear();
+                catching.clear();
+                shotsSeen.clear();
                 replayShots.clear();
                 ghostShots.clear();
                 ownHits.clear();
@@ -1745,6 +1860,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 float late = Math.max(0f, Math.min(0.1f, gap - gapMin));
                 lateSum += late;
                 lateN++;
+                lastLate = late;
+                if (lastSnapHostTime >= 0f && snap.hostTime > lastSnapHostTime)
+                    updateGap += (Math.min(0.5f, snap.hostTime - lastSnapHostTime) - updateGap) * 0.1f;
+                if (snap.hostTime > lastSnapHostTime || snap.hostTime < lastSnapHostTime - 1f) lastSnapHostTime = snap.hostTime;
                 float now = clock - late;
                 for (int pi = 0; pi < snap.piloted.length; pi++) {
                     if (snap.piloted[pi] != ownId || snap.pilotedAge[pi] >= 2.5f) continue;
@@ -1798,6 +1917,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 for (Snapshot.MissileState ms : snap.missiles) {
                     MissilePuppet mp = missiles.get(ms.id);
                     if (mp == null) continue;
+                    noteMissileMotion(mp, ms, snap.hostTime, now);
                     mp.target = ms;
                     mp.targetAt = now;
                     mp.track.push(snap.hostTime, ms.x, ms.y, ms.vx, ms.vy, ms.ax, ms.ay, ms.facing, ms.angVel, ms.angAcc);
@@ -3509,6 +3629,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         Replay r = new Replay();
         r.shot = (com.fs.starfarer.api.combat.DamagingProjectileAPI) e;
+        shotsSeen.put(r.shot, Boolean.TRUE); // placed where the host's struck: nothing to catch up
         Puppet target = puppets.get(targetId);
         r.target = target == null ? null : target.ship;
         r.x = x; r.y = y; r.onShield = onShield; r.kind = kind;
@@ -4792,6 +4913,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean surging = pp.motion.surging(clock) || t.cloak >= 1 && t.cloak <= 3
                 || t.system >= 1 && t.system <= 3 && Movers.moves(ship.getSystem());
         float aa = surging ? 0f : Math.min(age, ACC_REACH);
+        // Turning the same way (see Motion): in a spin (turning faster than the hull can by itself: maneuvering
+        // jets, a mod's spin, a hit), its turn rate changes too sharply to carry on along a curve: straight on, close.
+        boolean spinning = surging || pp.motion.spinning(clock);
+        float ta = spinning ? 0f : Math.min(age, ACC_REACH);
         // (and never more than a sensible change of speed, whatever the figures say)
         float ax = clampAcc(t.ax, t.vx, t.vy), ay = clampAcc(t.ay, t.vx, t.vy);
         float tx = t.x + (t.vx + 0.5f * ax * aa) * age, ty = t.y + (t.vy + 0.5f * ay * aa) * age;
@@ -4865,8 +4990,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             // fades (see Smoother). The game moves it at the model's speed in between.
             boolean buffered = cfg.jitterBuffer;
             Smoother.Track tr = pp.track;
-            tr.sample(buffered ? bufferClock.showing(clock) : clock - gapMin, buffered, 1f, ACC_REACH, surging);
+            tr.sample(buffered ? bufferClock.showing(clock) : clock - gapMin, buffered, 1f, ACC_REACH, surging, spinning);
             float fromX = loc.x, fromY = loc.y;
+            tr.quickTurn = spinning;
             boolean leapt = tr.follow(loc.x, loc.y, ship.getFacing(), amount, tr.jumpedNow);
             pp.jumped = false;
             loc.set(tr.sx, tr.sy);
@@ -4896,7 +5022,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float wvx = t.vx + ax * aa, wvy = t.vy + ay * aa;
             vel.set(vel.x + (wvx - vel.x) * vb, vel.y + (wvy - vel.y) * vb);
         }
-        float tf = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
+        float tf = t.facing + (t.angVel + 0.5f * t.angAcc * ta) * age;
         if (pp.module) {
             // turns with its ship
         } else if (smoothed) {
@@ -4905,9 +5031,10 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         } else if (!own) {
             float turn = shortestTurn(ship.getFacing(), tf);
             float turnTol = (1.5f + Math.abs(t.angVel) * 0.05f) * slack;
-            float tk = closing(Math.abs(turn), turnTol, amount, pp.fighter ? 20f : 12f);
+            if (spinning) turnTol = Math.min(turnTol, 1f + Math.abs(t.angVel) * 0.02f);
+            float tk = closing(Math.abs(turn), turnTol, amount, spinning ? 25f : pp.fighter ? 20f : 12f);
             if (tk > 0f) ship.setFacing(ship.getFacing() + turn * tk);
-            ship.setAngularVelocity(t.angVel + t.angAcc * aa);
+            ship.setAngularVelocity(t.angVel + t.angAcc * ta);
         } else {
             // Our own ship turns under our own hands and the host follows (see RemotePilotAI.steerToHeading).
             // Only if the two drift far apart, because the real ship can't turn right now (overloaded, engines
@@ -4993,7 +5120,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             boolean want = (t.flags & Snapshot.F_DEFENSE) != 0;
             if (want && !shield.isOn()) shield.toggleOn();
             else if (!want && shield.isOn()) shield.toggleOff();
-            if (want) shield.forceFacing(t.shieldFacing);
+            // carried on at the rate it was turning, for at most a little more than the time between two updates
+            if (want) shield.forceFacing(t.shieldFacing + pp.shieldRate * Math.min(age, 0.06f));
         }
         // The ship system and the right-click system (phase cloak, damper field and the like) are switched on
         // and off on this copy when the host's are. Their own scripts, vanilla or a mod's, then run here as
@@ -5067,15 +5195,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         MissileAPI m = mp.missile;
         // A missile flying straight is not repeated by the host for up to a second: carry it on from where it was.
         float age = Math.max(0f, Math.min(2f, clock - mp.targetAt));
-        float aa = Math.min(age, ACC_REACH); // along its acceleration for a moment, as for ships
+        // Along its acceleration for a moment, as for ships; straight on from the host's figures, and held close, in
+        // a burst (a split, a dash) or a spin, which bend it too sharply for a curve (see Motion).
+        boolean surging = mp.motion.surging(clock), spinning = surging || mp.motion.spinning(clock);
+        float aa = surging ? 0f : Math.min(age, ACC_REACH);
+        float ta = spinning ? 0f : Math.min(age, ACC_REACH);
         float tx = t.x + (t.vx + 0.5f * t.ax * aa) * age, ty = t.y + (t.vy + 0.5f * t.ay * aa) * age;
         Vector2f loc = m.getLocation();
         if (smoothing() && !mp.track.empty()) {
             // Smooth corrections (see Smoother). Never the jitter buffer: a missile's end is the host's hit, which
             // is not delayed, so a delayed missile would vanish short of its target.
             Smoother.Track tr = mp.track;
-            tr.sample(clock - gapMin, false, 2f, ACC_REACH, false);
-            tr.follow(loc.x, loc.y, m.getFacing(), amount, false);
+            tr.sample(clock - gapMin, false, 2f, ACC_REACH, surging, spinning);
+            tr.quickTurn = spinning;
+            tr.follow(loc.x, loc.y, m.getFacing(), amount, tr.jumpedNow);
+            mp.jumped = false;
             loc.set(tr.sx, tr.sy);
             m.getVelocity().set(tr.mvx, tr.mvy);
             m.setFacing(tr.sf);
@@ -5085,16 +5219,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             // Carried by its own flight at the host's speed; position corrected only beyond a tolerance, as for ships.
             float err = (float) Math.sqrt(dx * dx + dy * dy);
             float speed = (float) Math.sqrt(t.vx * t.vx + t.vy * t.vy);
-            float k = err > 300f ? 1f : closing(err, (6f + speed * 0.06f) * slack, amount, 12f);
+            float tol = (6f + speed * 0.06f) * slack;
+            if (surging) tol = Math.min(tol, 4f + speed * 0.02f);
+            float k = err > 300f || mp.jumped ? 1f : closing(err, tol, amount, surging ? 25f : 12f);
+            mp.jumped = false;
             if (k > 0f) loc.set(loc.x + dx * k, loc.y + dy * k);
             m.getVelocity().set(t.vx + t.ax * aa, t.vy + t.ay * aa);
             // Heading: where the host had it, turned on by its turn rate for the time since. Then let it keep turning
             // at that rate until the next update, instead of jumping from one heading to the next.
-            float heading = t.facing + (t.angVel + 0.5f * t.angAcc * aa) * age;
+            float heading = t.facing + (t.angVel + 0.5f * t.angAcc * ta) * age;
             float swing = shortestTurn(m.getFacing(), heading);
-            float sk = closing(Math.abs(swing), (3f + Math.abs(t.angVel) * 0.05f) * slack, amount, 30f);
+            float sk = closing(Math.abs(swing), (spinning ? 1.5f + Math.abs(t.angVel) * 0.02f : 3f + Math.abs(t.angVel) * 0.05f) * slack, amount, spinning ? 45f : 30f);
             if (sk > 0f) m.setFacing(m.getFacing() + swing * sk);
-            m.setAngularVelocity(t.angVel + t.angAcc * aa);
+            m.setAngularVelocity(t.angVel + t.angAcc * ta);
         }
         m.setHitpoints(100000f); // only the host decides when point defense kills it
         boolean hostOut = (t.flags & Snapshot.M_FIZZLING) != 0;
