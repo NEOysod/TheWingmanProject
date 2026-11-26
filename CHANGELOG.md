@@ -75,6 +75,12 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
     game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
     their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- Fixed: a flameout (or engines knocked out) stopped the ship you fly dead instead of letting it drift. The
+  host's top speed, acceleration and turn rate were copied as the game had them, with its engine-damage
+  penalty in (nothing left in a flameout); that "top speed 0" could arrive while your copy's engines were still
+  running, and the game slows a ship that is over its top speed, to a halt. Those stats are now compared with
+  the engines' state left out on both sides: your copy puts its own penalty (and zero-flux boost) on top, from
+  the engine damage and flux it is told of, as the game does on the host.
 - Fixed: players thrown out of their ships for no reason they could see. Behind it: when a drone the size of a
   fighter was destroyed (Domain Explorarium's PD drones, say), each joiner kept a wreck of it that the host
   doesn't keep, so the counts of wrecks stopped agreeing and every joiner refreshed the whole battle a few

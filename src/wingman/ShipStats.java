@@ -87,11 +87,44 @@ final class ShipStats {
         }
     }
 
-    /** The stat's final value as it stands (host side). NaN if it can't be read. */
+    /**
+     * What the game puts on a ship's engine stats (top speed, acceleration, deceleration, turn rate, turn
+     * acceleration: 0 to 4) from the state of its engines and its flux: the engine-damage penalty (the share of
+     * engines out; nothing left of the stats in a flameout) and the zero-flux boost. A joiner's copy works both out
+     * by itself, from the engines and flux it is told of (DamageState, the flux in each update), so they are left
+     * out of the comparison on both sides. Until 0.9.4 they were copied as well, and the two arrived at different
+     * moments: the copy was told "top speed 0" by the stats while its own engines still ran, and the game slowed
+     * a ship over its top speed to that, so a flameout stopped the ship you fly dead instead of letting it drift.
+     */
+    static final String ENGINE_PENALTY = "engine_damage_penalty", ZERO_FLUX = "zero_flux_boost";
+
+    static boolean engineStat(int i) { return i >= 0 && i <= 4; }
+
+    /** The product of the stat's multipliers but the engine-damage penalty (and our own correction, if asked). */
+    static float multWithoutEngines(MutableStat m, boolean withOurs) {
+        float mult = 1f;
+        java.util.Map<String, MutableStat.StatMod> mods = m.getMultMods();
+        if (mods != null) for (java.util.Map.Entry<String, MutableStat.StatMod> e : mods.entrySet()) {
+            if (ENGINE_PENALTY.equals(e.getKey()) || (!withOurs && KEY.equals(e.getKey()))) continue;
+            mult *= e.getValue().getValue();
+        }
+        return mult;
+    }
+
+    /** The stat's value as the game works it out, with the engines' state taken out (see ENGINE_PENALTY). */
+    static float withoutEngines(MutableStat m) {
+        float base = m.getBaseValue(), flat = 0f, pct = 0f;
+        java.util.Map<String, MutableStat.StatMod> fl = m.getFlatMods(), pc = m.getPercentMods();
+        if (fl != null) for (java.util.Map.Entry<String, MutableStat.StatMod> e : fl.entrySet()) if (!ZERO_FLUX.equals(e.getKey())) flat += e.getValue().getValue();
+        if (pc != null) for (MutableStat.StatMod sm : pc.values()) pct += sm.getValue();
+        return (base + base * pct / 100f + flat) * multWithoutEngines(m, true);
+    }
+
+    /** The stat's final value as it stands (host side), engine stats without the engines' state. NaN if it can't be read. */
     static float read(MutableShipStatsAPI s, int i) {
         try {
             MutableStat m = plain(s, i);
-            if (m != null) return m.getModifiedValue();
+            if (m != null) return engineStat(i) ? withoutEngines(m) : m.getModifiedValue();
             StatBonus b = bonus(s, i);
             return b == null ? Float.NaN : b.computeEffective(BASE);
         } catch (Throwable t) {
@@ -113,6 +146,20 @@ final class ShipStats {
         if (host != host || Math.abs(host) > 1.0e7f) return false; // unknown, or nonsense
         try {
             MutableStat m = plain(s, i);
+            if (m != null && engineStat(i)) {
+                // Compared and corrected with the engines' state left out on both sides; this copy's own engines
+                // and flux then put their penalty and boost on top, as the host's do there.
+                m.unmodify(KEY);
+                float local = withoutEngines(m);
+                if (same(local, host)) return false;
+                if (Math.abs(local) > 0.0001f && host / local > 0f) m.modifyMult(KEY, host / local);
+                else {
+                    float mult = multWithoutEngines(m, false);
+                    if (Math.abs(mult) < 0.0001f) return false;
+                    m.modifyFlat(KEY, (host - local) / mult);
+                }
+                return true;
+            }
             if (m != null) {
                 m.unmodify(KEY);
                 float local = m.getModifiedValue();
