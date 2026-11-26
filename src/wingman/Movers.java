@@ -30,6 +30,13 @@ final class Movers {
 
     static final int STILL = 0, BURST = 1, JUMP = 2;
     private static final String FILE = "wingman_movers.txt";
+    /**
+     * Marks a file written since jumps were only read from real updates (Motion.guessSlack). Test builds before
+     * that misread updates the bandwidth limit had left out as jumps, and learned Burn Drive, Maneuvering Jets and
+     * Plasma Burn as teleports: their copies then glowed with the teleport shimmer and snapped about. A jump in an
+     * older file is read as a burst (held close, its system still run), and learned again if it really is one.
+     */
+    private static final String VERSION = "(v2)";
     /** Sightings before a system that isn't described as one is taken for one. */
     static final int SIGHTINGS = 2;
 
@@ -144,11 +151,13 @@ final class Movers {
         try {
             if (Global.getSettings().fileExistsInCommon(FILE)) {
                 String text = Global.getSettings().readTextFileFromCommon(FILE);
+                // Written by an older build (no VERSION mark): its jumps may be misreadings, so read as bursts.
+                boolean trusted = text != null && text.contains(VERSION);
                 if (text != null) for (String line : text.split("\n")) {
                     int eq = line.indexOf('=');
                     if (eq <= 0 || eq > 200) continue;
                     String v = line.substring(eq + 1).trim();
-                    int k = "jump".equals(v) ? JUMP : "burst".equals(v) ? BURST : -1;
+                    int k = "jump".equals(v) ? (trusted ? JUMP : BURST) : "burst".equals(v) ? BURST : -1;
                     if (k > 0) learned.put(line.substring(0, eq).trim(), k);
                 }
             }
@@ -158,7 +167,7 @@ final class Movers {
 
     private static void save() {
         try {
-            StringBuilder sb = new StringBuilder("# Ship systems Wingman has seen move their ship sharply (jump or burst). Delete this file to forget them.\n");
+            StringBuilder sb = new StringBuilder("# Ship systems Wingman has seen move their ship sharply (jump or burst). Delete this file to forget them. " + VERSION + "\n");
             for (Map.Entry<String, Integer> e : learned().entrySet()) {
                 if (e.getValue() == JUMP && engineOnly.contains(e.getKey())) e.setValue(BURST); // put right
                 sb.append(e.getKey()).append('=').append(e.getValue() == JUMP ? "jump" : "burst").append('\n');

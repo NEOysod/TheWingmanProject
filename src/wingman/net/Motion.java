@@ -131,6 +131,49 @@ public final class Motion {
         return dvx * dvx + dvy * dvy > cap * cap;
     }
 
+    /** A difference between the host's speed and ours beyond this, plus KNOCK_ACC times the engines' acceleration, is a knock (units/s). */
+    public static final float KNOCK_GATE = 60f, KNOCK_ACC = 0.15f;
+
+    /**
+     * The ship in our hands, knocked on one side only. Its speed on the host, compared with ours at the same moment
+     * (the link's delay taken out, see WingmanClientPlugin.reconcile), differs by more than a few frames of thrust
+     * would explain: something changed the real ship's speed that didn't happen here (a mod's pull or blast, a
+     * collision that went differently), or the reverse. Our ship is drawn toward the real one by position only,
+     * slowly, so it hung back from such a pull and was dragged after it. Taken up as a change of speed instead,
+     * once two comparisons in a row agree on it (one alone may be the two sides meeting the same collision a frame
+     * apart), and never while a system that moves its ship runs on either side ('busy'): that's two sides speeding
+     * up a few milliseconds apart, not a knock. Plain arithmetic: test/MotionTest.
+     */
+    public static final class Knocks {
+        private float lastX, lastY;
+        private boolean pending;
+        /** The change to make to our speed, after check() said so. */
+        public float dx, dy;
+        /** How many were taken up (for the log). */
+        public int taken;
+
+        /** dv: the host's speed minus ours at the same moment. True if ours should change by (dx, dy) now. */
+        public boolean check(float dvx, float dvy, float engineAcc, boolean busy) {
+            float gate = KNOCK_GATE + KNOCK_ACC * Math.max(0f, engineAcc);
+            float d2 = dvx * dvx + dvy * dvy;
+            if (busy || d2 <= gate * gate) { pending = false; return false; }
+            if (pending) {
+                float l2 = lastX * lastX + lastY * lastY;
+                float dot = dvx * lastX + dvy * lastY;
+                if (dot > 0.5f * (float) Math.sqrt(d2 * l2)) {
+                    pending = false;
+                    dx = dvx; dy = dvy;
+                    taken++;
+                    return true;
+                }
+            }
+            pending = true; lastX = dvx; lastY = dvy;
+            return false;
+        }
+
+        public void reset() { pending = false; }
+    }
+
     /** One ship's recent fast movement: when a burst and a jump were last seen. */
     public static final class Watch {
         private float burstSeen = -100f, jumpSeen = -100f, spinSeen = -100f;

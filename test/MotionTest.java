@@ -117,6 +117,21 @@ public class MotionTest {
         check(!Motion.knocked(1f, 0.5f, fr, 60f), "our ship speeding up by its engines: not knocked");
         check(Motion.knocked(-80f, 30f, fr, 60f), "our ship's speed changed by 85 in a frame (a ram): knocked");
 
+        // our ship knocked on the host only: its speed there, against ours at the same moment
+        {
+            Motion.Knocks k = new Motion.Knocks();
+            float eng = 300f; // a destroyer's engines
+            check(!k.check(20f, -10f, eng, false), "a few frames of thrust apart: nothing to take up");
+            check(!k.check(280f, 0f, eng, false), "pulled 280 units/s toward a Lion's Roar blast on the host: once is not enough");
+            check(k.check(270f, 10f, eng, false) && Math.abs(k.dx - 270f) < 1e-3f, "seen again: taken up at once (270 units/s)");
+            check(!k.check(250f, 0f, eng, false), "a collision the two sides met a frame apart, seen once: left alone");
+            check(!k.check(-240f, 0f, eng, false) && k.check(-250f, 0f, eng, false),
+                    "a knock the other way (ours, the host had none): taken back once two comparisons agree");
+            k.check(300f, 0f, eng, false);
+            check(!k.check(300f, 0f, eng, true), "a burn drive running on either side: never taken for a knock");
+            check(k.taken == 2, "and each one taken up counted");
+        }
+
         System.out.println(failed == 0 ? "MOTION PASSED (" + checks + " checks)" : "MOTION FAILED (" + failed + " of " + checks + ")");
         if (failed > 0) System.exit(1);
     }

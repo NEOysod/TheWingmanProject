@@ -605,13 +605,13 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + jumpSnaps + " times put straight to the real one after one");
             fluxFixes = 0;
             ownJumps.jumpsHere = 0; ownJumps.jumpsThere = 0; ownJumps.skipped = 0; jumpSnaps = 0; fluxSnaps = 0; fluxSteps.skipped = 0;
-            if (fastBursts + fastJumps + fastSpins + missileBursts + missileJumps + shotsCaughtUp + localShoves + ownKnocks > 0 || Movers.learnedThisSession() > 0) {
+            if (fastBursts + fastJumps + fastSpins + missileBursts + missileJumps + shotsCaughtUp + localShoves + ownKnocks + ownHostKnocks.taken > 0 || Movers.learnedThisSession() > 0) {
                 Dbg.info(WingmanClientPlugin.class, "Wingman fast movement: " + fastBursts + " bursts, " + fastJumps + " jumps and " + fastSpins
                         + " spins of ships seen in the host's figures, " + missileBursts + " bursts and " + missileJumps + " jumps of missiles; "
                         + Movers.learnedThisSession() + " ship systems learned this session to move their ship (see wingman_movers.txt); "
                         + shotsCaughtUp + " shots of others' guns caught up with the host's (by " + Math.round(1000f * wingman.net.ShotLead.lead(lastLate, updateGap)) + " ms now); "
-                        + localShoves + " pushes of copies by this game's own collisions taken back; our ship knocked here " + ownKnocks + " times");
-                fastBursts = 0; fastJumps = 0; fastSpins = 0; missileBursts = 0; missileJumps = 0; shotsCaughtUp = 0; localShoves = 0; ownKnocks = 0;
+                        + localShoves + " pushes of copies by this game's own collisions taken back; our ship knocked here " + ownKnocks + " times, its speed put to the host's after a knock there " + ownHostKnocks.taken + " times");
+                fastBursts = 0; fastJumps = 0; fastSpins = 0; missileBursts = 0; missileJumps = 0; shotsCaughtUp = 0; localShoves = 0; ownKnocks = 0; ownHostKnocks.taken = 0;
             }
             if (lateN > 0) Dbg.info(WingmanClientPlugin.class, "Wingman timing: updates arrived on average " + Math.round(1000f * lateSum / lateN)
                     + " ms later than the promptest ones (over " + lateN + " updates)");
@@ -826,6 +826,21 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * ours going faster than the hull can by itself, or a system that moves its ship (see Movers) starting or ending
      * on either side, where a few milliseconds between the two is tens of units apart.
      */
+    private float ownSystemUntil = -100f;
+
+    /** A system that moves its ship (see Movers) running on our ship, here or on the host: both sides speed up, a few milliseconds apart. */
+    private boolean ownSystemMoving(ShipAPI ship, Snapshot.ShipState t) {
+        try {
+            ShipSystemAPI sys = ship.getSystem();
+            if (sys == null || !Movers.moves(sys)) return false;
+            ShipSystemAPI.SystemState here = sys.getState();
+            return t.system >= 1 && t.system <= 3 || here == ShipSystemAPI.SystemState.IN || here == ShipSystemAPI.SystemState.ACTIVE
+                    || here == ShipSystemAPI.SystemState.OUT;
+        } catch (Throwable th) {
+            return true;
+        }
+    }
+
     private boolean ownFast(Puppet pp, ShipAPI ship, Snapshot.ShipState t) {
         try {
             // knocked here (a collision, an explosion): speed changed since last frame more than the engines can
@@ -4748,6 +4763,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private final float[] seqClock = new float[256];
     private final int[] seqNumber = new int[256];
     private final float[] pastT = new float[256], pastX = new float[256], pastY = new float[256];
+    /** Our copy's speed at each record (see reconcile: the host's speed is compared with ours at the same moment). */
+    private final float[] pastVx = new float[256], pastVy = new float[256];
+    /** The host's ship's speed minus ours at the moment of the latest comparison; fresh until used. */
+    private float reconVx, reconVy;
+    private boolean reconVelFresh;
+    private final wingman.net.Motion.Knocks ownHostKnocks = new wingman.net.Motion.Knocks();
     /** Our ship's flux and hard flux each frame, beside its position, for hiding the delay on the flux bar (see ownFlux). */
     private final float[] pastFlux = new float[256], pastHard = new float[256];
     /** The host's flux and hard flux minus ours at the same moment (delay taken out), when reconReady. */
@@ -4838,7 +4859,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
      * Returns false if there is nothing to compare yet.
      */
     private boolean reconcile(Puppet pp, Snapshot.ShipState t) {
-        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; ownJumps.reset(); fluxSteps.reset(); }
+        if (pp != reconShip) { reconShip = pp; pastCount = 0; pastNext = 0; reconReady = false; reconFluxReady = false; ackFresh = false; ownJumps.reset(); fluxSteps.reset(); reconVelFresh = false; ownHostKnocks.reset(); }
         Vector2f loc = pp.ship.getLocation();
         if (pastCount > 0) { // did our copy jump since the last record (its system, or a script)? (our own corrections move the record with it)
             int prev = (pastNext - 1) & 255;
@@ -4846,6 +4867,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             ownJumps.noteMove(pastT[prev], pastX[prev], pastY[prev], clock, loc.x, loc.y, (float) Math.sqrt(v.x * v.x + v.y * v.y));
         }
         pastT[pastNext] = clock; pastX[pastNext] = loc.x; pastY[pastNext] = loc.y;
+        { Vector2f v = pp.ship.getVelocity(); pastVx[pastNext] = v.x; pastVy[pastNext] = v.y; }
         FluxTrackerAPI ft = pp.ship.getFluxTracker();
         if (pastCount > 0) { // a step in our flux since the last record? (our own corrections move the record with it)
             int prev = (pastNext - 1) & 255;
@@ -4865,6 +4887,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         int newest = (pastNext - 1) & 255, oldest = (pastNext - pastCount) & 255;
         if (when < pastT[oldest]) { reconMisses++; return reconReady; }
         float x = pastX[newest], y = pastY[newest], fl = pastFlux[newest], hf = pastHard[newest];
+        float vx = pastVx[newest], vy = pastVy[newest];
         for (int n = 0; n < pastCount - 1; n++) {
             int b = (newest - n) & 255, a = (b - 1) & 255;
             if (when > pastT[b]) break;       // later than the newest record: use the newest
@@ -4872,6 +4895,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             float span = pastT[b] - pastT[a], f = span <= 0f ? 1f : (when - pastT[a]) / span;
             x = pastX[a] + (pastX[b] - pastX[a]) * f;
             y = pastY[a] + (pastY[b] - pastY[a]) * f;
+            vx = pastVx[a] + (pastVx[b] - pastVx[a]) * f;
+            vy = pastVy[a] + (pastVy[b] - pastVy[a]) * f;
             fl = pastFlux[a] + (pastFlux[b] - pastFlux[a]) * f;
             hf = pastHard[a] + (pastHard[b] - pastHard[a]) * f;
             break;
@@ -4881,6 +4906,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean comparable = ownJumps.comparable(when, clock, roundTrip, (float) Math.sqrt(ex * ex + ey * ey));
         reconX = comparable ? ex : 0f;
         reconY = comparable ? ey : 0f;
+        reconVx = t.vx - vx; reconVy = t.vy - vy;
+        reconVelFresh = comparable;
         // Flux the same way: right by a step (a shot, a vent ending) a frame's timing is the whole step, so left out.
         boolean fluxComparable = !fluxSteps.near(when, 0.06f);
         reconFlux = fluxComparable ? t.flux - fl : 0f;
@@ -5031,6 +5058,19 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (bursting) ownBurstUntil = clock + 0.4f;
             boolean easing = bursting || clock < ownBurstUntil;
             if (reconcile(pp, t)) {
+                // Knocked on the host but not here (a mod's pull or blast, UAF's Lion's Roar; a collision that went
+                // differently): taken up at once, so our ship flies as the real one does from now on, a round trip
+                // late, instead of being drawn after it slowly; and one here the host didn't have is taken back.
+                if (reconVelFresh) {
+                    reconVelFresh = false;
+                    boolean ownSystem = ownSystemMoving(ship, t) || clock < ownSystemUntil;
+                    if (ownSystem) ownSystemUntil = Math.max(ownSystemUntil, clock + 0.5f);
+                    boolean busy = ownSystem || t.cloak != 0 || ship.isPhased() || ownJumps.within(clock, 0.5f);
+                    if (ownHostKnocks.check(reconVx, reconVy, engineAcc(ship), busy)) {
+                        vel.set(vel.x + ownHostKnocks.dx, vel.y + ownHostKnocks.dy);
+                        for (int i = 0; i < 256; i++) { pastVx[i] += ownHostKnocks.dx; pastVy[i] += ownHostKnocks.dy; }
+                    }
+                }
                 // The true difference is known: follow that, and only that.
                 dx = reconX; dy = reconY;
                 err = (float) Math.sqrt(dx * dx + dy * dy);

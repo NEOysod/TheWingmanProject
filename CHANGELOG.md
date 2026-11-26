@@ -75,6 +75,18 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     hullmod's, a ship system's, a weapon's, an on-hit script) is caught and logged once instead of stopping the
     game. The host's game, where it runs for real, still decides what it does. Battle scripts (plugins) keep
     their own guard, which switches a failing one off. On the host and in single player nothing changes.
+- Fixed: the ship you fly hung back from pulls and blasts that happen on the host (UAF's Lion's Roar sucking
+  ships in, then flinging them; a mod's tractor beam; a collision that went differently there). Your ship moves
+  by your controls at once and was only drawn toward the real one's position, slowly and with slack, so it
+  resisted the pull and was dragged after it. Now the real ship's speed is compared with yours at the same
+  moment (the link's delay taken out): a difference no engine explains, seen twice in a row, is taken up at once
+  as a change of speed, so your ship is pulled and flung as the real one is, a round trip late. One that only
+  happened here is taken back the same way. Not while a system that moves the ship (burn drive, jets, a
+  teleport) or phase runs on either side.
+- Fixed (with the Burn Drive fix below): ships glowing bright while their Burn Drive, Maneuvering Jets or
+  Plasma Burn ran. Wingman had learned those as teleports, and draws a teleporter's shimmer on copies of ships
+  using one. What older test builds learned as teleports in saves/common/wingman_movers.txt is now read as
+  bursts, and learned again only if it really is one.
 - Fixed: built-in weapons still missing from the refit page's weapon groups on most hulls that have them (UAF's
   Super Nakiha's two HVARs, say), so their group looked empty. 0.9.4-beta's fix only covered guns built into an
   ordinary slot by a hull mod or the variant: the game doesn't count a slot of type BUILT_IN (where hulls keep

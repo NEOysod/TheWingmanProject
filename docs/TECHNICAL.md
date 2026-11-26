@@ -771,6 +771,15 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
     explains, beyond `100 + ½ |Δv| dt` units (`Motion.jumped`). (Before: `150 + 0.3 ×` the sum of the speeds, which
     missed a Phase Skimmer on any ship going over ~400.) The copy is put straight there (`jumped`, `markJump`),
     with the teleport trail if its system teleports.
+  - **Our own ship knocked on one side only** (`Motion.Knocks`, from the own-ship path in `apply`): `reconcile`
+    also keeps our speed in its record (`pastVx`, `pastVy`) and compares the host's speed with ours at the same
+    moment (`reconVx`, `reconVy`). Beyond `60 + 0.15 ×` the engines' acceleration, in about the same direction in
+    two comparisons in a row, the difference is added to our speed at once (and to the record, so it isn't added
+    twice): a pull or blast only the host had (UAF's Lion's Roar: a 5000-mass missile of class SHIP that shoves
+    ships aside, then `uaf_mapField`'s nuke pulls everything within 650 in with `CombatUtils.applyForce` and
+    later flings it out) is taken up a round trip late instead of being closed by position with slack; one only we
+    had is taken back. Skipped while a system that moves the ship (`Movers.moves`) runs on either side (and 0.5 s
+    after), in phase, or near a jump (`OwnJumps`). Counted in the fast-movement log line.
   - **Guessed states** (`ShipState.carried`, `MissileState.carried`, set by the unpacker for things an update
     said nothing of): not judged (no jump, burst or spin read from them). When the state before was one, the jump
     test allows for its drift, `|v − v_real| × (t − t_real)` against the last state an update did speak of
@@ -805,7 +814,8 @@ sends `SYNC_REQ` and `CLAIM -1` (or opens the join form if not connected). Then 
     learned: a jump or a burst seen within 1.5 s of the host's system starting (not while phased), twice, makes
     it a JUMP or BURST system (a jump only between two real states at most `Motion.LEARN_GAP` = 0.1 s apart; never
     JUMP for type `ENGINE_MOD`, which only changes the engines: a learned one is read as BURST and put right on the
-    next save); kept in `saves/common/wingman_movers` (`id=jump|burst`; delete it to forget) and
+    next save; a file without the `(v2)` mark, written before jumps were read from real updates only, has its
+    jumps read as bursts); kept in `saves/common/wingman_movers` (`id=jump|burst`; delete it to forget) and
     logged once. A learned teleporter is no longer run on copies.
   - The joiner's own ship: *fast* (`ownFast`) while the host's figures show a burst, our copy is in a burst by
     speed, or a moving system is in its IN or OUT stage on either side; then, and 0.4 s after, the wider slack
