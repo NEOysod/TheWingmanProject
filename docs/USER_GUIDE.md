@@ -83,8 +83,10 @@ and in a campaign friends can connect as soon as you load your save, while you a
    map; pick the friend (tabs along the top, or Tab / Shift+Tab) and one of your officers (click a card, or the arrows), and click
    **LINK** (or press **Enter**). That officer then captains whichever ship the friend picks
    (the officer already on it swaps over). When it can level up, the friend picks its skill in their lobby: click a
-   skill card and CONFIRM (or press its number twice). Setting "Friends' officers level like a player" lets a linked officer reach a player's max
-   level. Enter again (or Delete) unlinks it and puts its level cap back. Saves load fine without Wingman.
+   skill card and CONFIRM (or press its number twice). Setting "Friends' officers learn every combat skill" lets a linked officer
+   level until it knows all of them (level 14 in vanilla, more if a mod adds officer skills), and you can make every one elite
+   in your officer screen (a story point each, as usual). Enter again (or Delete) unlinks it and puts its caps back.
+   Saves load fine without Wingman.
 5. **Start a battle.** Deploy the ships your friends picked if you want them to have them. After you deploy,
    the battle waits while everyone **chooses a ship** and then on the **ready check**. Your panel shows each
    player as loading, choosing a ship, or flying one and ready or not. Press **Enter** (or click it on the panel)

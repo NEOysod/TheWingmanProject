@@ -44,7 +44,7 @@ public final class WingmanConfig {
     /** Host: friends may refit the ship they picked while the host is docked at a market (the host accepts each refit). */
     public boolean friendRefit = true;
     /** Host: after a friend's refit accepted under the refit screen is done, that screen opens again on the ship. */
-    /** An officer the host links to a friend may level as far as a player character (the game's own per-officer cap). */
+    /** An officer the host links to a friend may learn every combat skill, all elite (the game's own per-officer caps). */
     public boolean linkedOfficerLevelCap = true;
     public boolean friendRefitReopen = false; // off: accepting a friend's refit leaves the host where they were
     /** Host: if something moves the host's controls into an enemy ship, put them back in their own (not in dev mode). */

@@ -56,8 +56,8 @@ final class Settings {
                 "On: as soon as a save is loaded, friends can connect, see your fleet and pick their ships before the battle. Off: only once a battle starts."));
         ITEMS.add(new Item(0, "friendRefit", "Friends can refit their ships", HOST, true, YES_NO,
                 "On: while you are docked at a market, friends get a Refit button for the ship they picked. You accept or deny each refit they send."));
-        ITEMS.add(new Item(0, "linkedOfficerLevelCap", "Friends' officers level like a player", HOST, true, YES_NO,
-                "An officer you link to a friend (Ctrl+Shift+L on the campaign map) may level as far as your own character. Uses the game's own per-officer cap, so saves stay fine without Wingman."));
+        ITEMS.add(new Item(0, "linkedOfficerLevelCap", "Friends' officers learn every combat skill", HOST, true, YES_NO,
+                "An officer you link to a friend (Ctrl+Shift+L on the map) may level until it knows every combat skill (level 14 in vanilla), and each may be made elite in your officer screen (a story point each)."));
         ITEMS.add(new Item(0, "friendRefitReopen", "Reopen the refit screen after a friend's refit", HOST, true, YES_NO,
                 "A friend's refit accepted in the refit screen is done when that screen closes. On: it then opens again on that ship, so you see the result."));
         ITEMS.add(new Item(0, "modCheck", "Mod list check", HOST, false, new String[] { "content", "all", "off" },

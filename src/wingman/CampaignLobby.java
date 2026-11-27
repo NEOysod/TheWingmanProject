@@ -72,7 +72,7 @@ final class CampaignLobby implements EveryFrameScript {
             if (s.getPlayers().isEmpty()) return;
             if (now - lastBuilt < 1000) return; // the fleet is looked at once a second, not every frame
             lastBuilt = now;
-            String levelled = OfficerLinks.levelUps(s); // friends' linked officers: level-ups offered, picks applied
+            String levelled = OfficerLinks.levelUps(s, cfg.linkedOfficerLevelCap); // friends' linked officers: level-ups offered, picks applied
             if (levelled != null) say("Co-op: " + levelled);
             Roster r = build(s, cfg, 0);
             String key = signature(r);

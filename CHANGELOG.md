@@ -97,6 +97,13 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
   - Your ship system is switched back to the host's state only after a round trip and a little (at least
     0.8 s as before): on a slow link it was switched off before the host had even started it.
   - A ship drifting after a flameout no longer counts as being in a burst.
+- **Friends' officers learn every combat skill, all elite** (host setting, on; was "level like a player"). A
+  linked officer now levels until it knows every combat skill the game's officer level-up can teach: 14 in
+  vanilla, one per level, so level 14 (officer skills from mods are counted). Every one may be made elite in the
+  host's officer screen, a story point each as the game does it (normally 1 elite). It was capped at a player's
+  max level, 15, one more level than there are skills: an officer that knew them all was still offered a level
+  with nothing to pick. Officers raised by older builds are brought to the new cap; still the game's own
+  per-officer caps, put back on unlinking, so saves load fine without Wingman.
 - Fixed: a flameout (or engines knocked out) stopped the ship you fly dead instead of letting it drift. The
   host's top speed, acceleration and turn rate were copied as the game had them, with its engine-damage
   penalty in (nothing left in a flameout); that "top speed 0" could arrive while your copy's engines were still
