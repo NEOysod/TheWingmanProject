@@ -158,6 +158,25 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     /** Named stats for ships not built here yet, by the host's ship number. */
     private final Map<Integer, Map<Integer, Float>> pendingMore = new HashMap<Integer, Map<Integer, Float>>();
     private int moreFixes;
+    /** What became of the host's ordinary shots (SHOT_FATES). */
+    private final JoinerShots shotFates = new JoinerShots(new JoinerShots.World() {
+        public ShipAPI ship(int netId) {
+            Puppet pp = puppets.get(netId);
+            return pp == null || pp.ship == null || engine == null || !engine.isEntityInPlay(pp.ship) ? null : pp.ship;
+        }
+        public CombatEngineAPI engine() { return engine; }
+        public float hostNow() { return gapCount > 0 ? clock - gapMin : Float.NaN; }
+        public int ownId() { return ownId; }
+        public float roundTrip() { return Math.max(0f, Math.min(1f, roundTrip)); }
+    });
+    /** Effects the host's mods drew in ship AIs and damage listeners (VISUALS). */
+    private final JoinerVisuals visuals = new JoinerVisuals(new JoinerVisuals.World() {
+        public ShipAPI ship(int netId) {
+            Puppet pp = puppets.get(netId);
+            return pp == null || pp.ship == null || engine == null || !engine.isEntityInPlay(pp.ship) ? null : pp.ship;
+        }
+        public CombatEngineAPI engine() { return engine; }
+    });
     /** Ships' targets, bodies and missiles' owners from the host (TARGETS, BODY, MISSILE_WHO). */
     private final JoinerState shipState = new JoinerState(new JoinerState.World() {
         public ShipAPI ship(int netId) {
@@ -563,6 +582,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         }
         for (Puppet pp : puppets.values()) apply(pp, pp == handsOn, amount);
         shipState.tick(amount);
+        shotFates.tick(amount);
+        visuals.tick(amount);
         retryRefs();
         catchUpShots(handsOn, amount);
         AgentGate.reportCaught();
@@ -1557,6 +1578,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.MISSILE_WHO:
                 if (cfg != null && cfg.syncStats) shipState.onMissileWho(p.data);
                 break;
+            case Msg.CLOCKS:
+                if (cfg != null && cfg.syncStats) shipState.onClocks(p.data);
+                break;
+            case Msg.VISUALS:
+                if (cfg != null && cfg.damageReports) visuals.onVisuals(p.data);
+                break;
+            case Msg.SHOT_FATES:
+                if (cfg != null && cfg.shotCounts) shotFates.onFates(p.data);
+                break;
             case Msg.NOTES:
                 if (cfg == null || !cfg.syncScriptMemory) break;
                 for (wingman.net.Extras.Note n : wingman.net.Extras.decodeNotes(p.data)) {
@@ -1638,6 +1668,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                 hostPaused = false;
                 pdAims.clear();
                 shipState.reset();
+                shotFates.reset();
+                visuals.reset();
                 refsWaiting.clear();
                 refsWaitingSince.clear();
                 hostStatNames.clear(); // they come again with the battle
@@ -2600,7 +2632,9 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage), other stats " + moreFixes + " times (" + hostStatNames.size() + " named); ships given the host's id " + ShipIds.given + ", targets put on " + shipState.aimsApplied + ", bodies " + shipState.bodiesApplied + " (ours taken " + shipState.ownBodiesTaken + "), missiles changed sides " + shipState.whoApplied + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage), other stats " + moreFixes + " times (" + hostStatNames.size() + " named); ships given the host's id " + ShipIds.given + ", targets put on " + shipState.aimsApplied + ", bodies " + shipState.bodiesApplied + " (ours taken " + shipState.ownBodiesTaken + "), missiles changed sides " + shipState.whoApplied + ", peak times and carrier rates " + shipState.clocksApplied
+                    + "; host's shots found here " + shotFates.matched + " (not found " + shotFates.unmatched + "): struck by themselves " + shotFates.struckByThemselves
+                    + ", finished with a flash " + shotFates.flashed + ", taken off " + shotFates.removed + ", turned " + shotFates.turned + "; host's AI and damage-listener effects drawn " + visuals.drawn + " (" + visuals.matched + " were ours already)" + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "

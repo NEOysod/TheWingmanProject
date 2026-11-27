@@ -133,7 +133,12 @@ public final class Patcher {
         // Walk the class: fields, then methods (where they are, and which ones a frame rule wraps).
         boolean illegal = false;
         int at = p.end + 6;
-        int interfaces = p.u2(at); at += 2 + 2 * interfaces;
+        int interfaces = p.u2(at);
+        java.util.Set<String> named = new java.util.HashSet<String>();
+        for (int k = 0; k < interfaces; k++) {
+            try { named.add(p.className(p.u2(at + 2 + 2 * k))); } catch (RuntimeException e) { /* not one we look for */ }
+        }
+        at += 2 + 2 * interfaces;
         int fields = p.u2(at); at += 2;
         for (int i = 0; i < fields; i++) {
             if (badName(p.utf(p.u2(at + 2)), false)) illegal = true;
@@ -167,7 +172,7 @@ public final class Patcher {
             if (!isInterface && hasCode && (mAccess & 0x0008) == 0) { // instance methods with code, in classes
                 for (int f = 0; f < frames.size(); f++) {
                     Frame fr = frames.get(f);
-                    if (fr.name.equals(name) && fr.desc.equals(desc)) { wraps.add(new int[] { mStart, f }); wrapNames.add(name); break; }
+                    if (fr.name.equals(name) && fr.desc.equals(desc) && (fr.iface == null || named.contains(fr.iface))) { wraps.add(new int[] { mStart, f }); wrapNames.add(name); break; }
                 }
             }
         }
@@ -430,14 +435,23 @@ public final class Patcher {
         final String name, desc, label;
         /** Which parameter gives the ship (-1: this, for plugins), and how (Hooks.enterFrame's kind). */
         final int arg, kind;
+        /** If set, only in a class that names this interface itself (internal name): for a name and descriptor too common alone. */
+        final String iface;
         int hits;
 
-        Frame(String label, String name, String desc, int arg, int kind) {
-            this.label = label; this.name = name; this.desc = desc; this.arg = arg; this.kind = kind;
+        Frame(String label, String name, String desc, int arg, int kind) { this(label, name, desc, arg, kind, null); }
+
+        Frame(String label, String name, String desc, int arg, int kind, String iface) {
+            this.label = label; this.name = name; this.desc = desc; this.arg = arg; this.kind = kind; this.iface = iface;
         }
     }
 
-    static final int SHIP = 0, STATS = 1, WEAPON = 2, BEAM = 3, PLUGIN = 4, PROJECTILE = 5;
+    /**
+     * AI: code that runs only where a ship's AI runs (the host: a joiner's copies have an AI that does nothing).
+     * DAMAGE: a damage listener (on a joiner's copy, which takes no damage there, it hears of next to none). Effects
+     * these draw are sent to joiners (Hooks.empArc and the rest; Wingman's HostVisuals).
+     */
+    static final int SHIP = 0, STATS = 1, WEAPON = 2, BEAM = 3, PLUGIN = 4, PROJECTILE = 5, AI = 6, DAMAGE = 7;
 
     public static List<Frame> frameRules() {
         String C = "Lcom/fs/starfarer/api/combat/";
@@ -451,6 +465,9 @@ public final class Patcher {
                 + C + "listeners/ApplyDamageResultAPI;" + C + "CombatEngineAPI;)V", 0, PROJECTILE));
         f.add(new Frame("beam frame", "advance", "(F" + C + "CombatEngineAPI;" + C + "BeamAPI;)V", 2, BEAM));
         f.add(new Frame("plugin frame", "advance", "(FLjava/util/List;)V", -1, PLUGIN));
+        f.add(new Frame("ship AI frame", "advance", "(F)V", -1, AI, "com/fs/starfarer/api/combat/ShipAIPlugin"));
+        f.add(new Frame("ship AI frame", "advance", "(FLorg/lwjgl/util/vector/Vector2f;Lorg/lwjgl/util/vector/Vector2f;" + C + "ShipAPI;)V", -1, AI));
+        f.add(new Frame("damage listener frame", "reportDamageApplied", "(Ljava/lang/Object;" + C + "CombatEntityAPI;" + C + "listeners/ApplyDamageResultAPI;)V", -1, DAMAGE));
         return f;
     }
 
@@ -593,6 +610,24 @@ public final class Patcher {
         r.add(new Rule("campaign lookups", M, "is", "(" + STR + "Z)Z", "memIsZ", "(" + MD + STR + "Z)Z", INVOKEINTERFACE));
         String SEC = "com/fs/starfarer/api/campaign/SectorAPI";
         r.add(new Rule("campaign lookups", SEC, "getPersistentData", "()Ljava/util/Map;", "persistentData", "(L" + SEC + ";)Ljava/util/Map;", INVOKEINTERFACE));
+        // Effects drawn inside an AI or damage-listener frame are noted for Wingman (the call itself goes on as asked).
+        String V2 = "Lorg/lwjgl/util/vector/Vector2f;", CE = "Lcom/fs/starfarer/api/combat/CombatEntityAPI;", COL = "Ljava/awt/Color;",
+                ARC = "Lcom/fs/starfarer/api/combat/EmpArcEntityAPI;", ARCP = "Lcom/fs/starfarer/api/combat/EmpArcEntityAPI$EmpArcParams;",
+                DT = "Lcom/fs/starfarer/api/combat/DamageType;", ED = "L" + E + ";";
+        String arcArgs = S + V2 + CE + CE + DT + "FFF" + STR + "F" + COL + COL;
+        r.add(new Rule("effects", E, "spawnEmpArc", "(" + arcArgs + ")" + ARC, "empArc", "(" + ED + arcArgs + ")" + ARC, INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "spawnEmpArc", "(" + arcArgs + ARCP + ")" + ARC, "empArcP", "(" + ED + arcArgs + ARCP + ")" + ARC, INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "spawnEmpArcPierceShields", "(" + arcArgs + ")" + ARC, "empArcPierce", "(" + ED + arcArgs + ")" + ARC, INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "spawnEmpArcPierceShields", "(" + arcArgs + ARCP + ")" + ARC, "empArcPierceP", "(" + ED + arcArgs + ARCP + ")" + ARC, INVOKEINTERFACE));
+        String visArgs = V2 + CE + V2 + CE + "F" + COL + COL;
+        r.add(new Rule("effects", E, "spawnEmpArcVisual", "(" + visArgs + ")" + ARC, "empArcVisual", "(" + ED + visArgs + ")" + ARC, INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "spawnEmpArcVisual", "(" + visArgs + ARCP + ")" + ARC, "empArcVisualP", "(" + ED + visArgs + ARCP + ")" + ARC, INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "spawnExplosion", "(" + V2 + V2 + COL + "FF)V", "explosion", "(" + ED + V2 + V2 + COL + "FF)V", INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "addHitParticle", "(" + V2 + V2 + "FFF" + COL + ")V", "hitParticle", "(" + ED + V2 + V2 + "FFF" + COL + ")V", INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "addHitParticle", "(" + V2 + V2 + "FFFF" + COL + ")V", "hitParticleRamp", "(" + ED + V2 + V2 + "FFFF" + COL + ")V", INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "addHitParticle", "(" + V2 + V2 + "FF" + COL + ")V", "hitParticleShort", "(" + ED + V2 + V2 + "FF" + COL + ")V", INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "addSmoothParticle", "(" + V2 + V2 + "FFF" + COL + ")V", "smoothParticle", "(" + ED + V2 + V2 + "FFF" + COL + ")V", INVOKEINTERFACE));
+        r.add(new Rule("effects", E, "addSmoothParticle", "(" + V2 + V2 + "FFFF" + COL + ")V", "smoothParticleRamp", "(" + ED + V2 + V2 + "FFFF" + COL + ")V", INVOKEINTERFACE));
         r.add(new Rule("MagicSubsystem.advanceInternal", "org/magiclib/subsystems/MagicSubsystem", "advanceInternal", "(F)V", "subsystemAdvance", "(Ljava/lang/Object;F)V", INVOKEVIRTUAL));
         return r;
     }

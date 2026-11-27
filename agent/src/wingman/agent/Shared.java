@@ -49,6 +49,18 @@ public final class Shared {
     public static final Map<String, int[]> misses = Collections.synchronizedMap(new java.util.LinkedHashMap<String, int[]>());
     public static final int MAX_MISSES = 400;
 
+    /**
+     * Effects drawn inside an AI or damage-listener frame (Hooks.enterFrame kinds 6, 7), for Wingman to send on or to
+     * compare with (Hooks.takeVisuals). Each: { kind ("arc", "explosion", "hit", "smooth"), frame kind (Integer),
+     * the class whose frame it was, float[] numbers, anchor or null, anchor or null, Color, Color or null, sound or null }.
+     */
+    public static final java.util.List<Object[]> visuals = new java.util.ArrayList<Object[]>();
+    public static final int MAX_VISUALS = 400;
+    /** The frame kind effects are drawn in now (0: none of those), and the class whose frame it is. */
+    public static volatile int visKind;
+    public static volatile String visClass;
+    public static volatile long visualsNoted, visualsDropped;
+
     public static void miss(String key) {
         if (key == null) return;
         synchronized (misses) {

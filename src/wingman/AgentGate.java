@@ -97,6 +97,12 @@ final class AgentGate {
     }
 
     /** Co-op stopped in this battle: the hooks give the real answers again. */
+    /** Effects mods drew in an AI's or a damage listener's frame since last asked (empty without the agent, or an older one). */
+    static java.util.List<Object[]> takeVisuals() {
+        if (!linked || !present()) return java.util.Collections.emptyList();
+        try { return AgentLink.takeVisuals(); } catch (LinkageError e) { return java.util.Collections.emptyList(); }
+    }
+
     static void stop() {
         linked = false;
         if (!present()) return;

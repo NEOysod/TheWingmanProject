@@ -122,7 +122,7 @@ final class Settings {
         ITEMS.add(new Item(4, "wholeWrecks", "Wrecks stay whole", HOST, true, YES_NO,
                 "On: wrecks never break into pieces, in your battles too, so every screen shows the same wrecks. Off: they break up as normal; the break lines may differ a little on joiners' screens."));
         ITEMS.add(new Item(4, "shotCounts", "Weapons fire as often as the host's", JOINER, true, YES_NO,
-                "On: each weapon on a copy of a ship fires exactly as many times as the real one did."));
+                "On: each weapon on a copy of a ship fires exactly as many times as the real one did, and its shots end as the host's did (struck, absorbed, reflected)."));
         ITEMS.add(new Item(4, "shieldGrace", "Joiners' shields forgive the delay", HOST, true, YES_NO,
                 "On: a shot that a joiner's raised shield (or phase cloak) stopped on their screen, but that hit their ship here before their shield came up, is given back: hull and armor restored, the shield's flux added instead."));
         ITEMS.add(new Item(4, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,
@@ -146,7 +146,7 @@ final class Settings {
         ITEMS.add(new Item(4, "joinerSubsystems", "Extra abilities follow the joiner", BOTH, true, YES_NO,
                 "MagicLib subsystems (extra abilities on their own keys, as on many UAF ships) fire on the host when the joiner presses the key, not by the ship's AI. Needed on both."));
         ITEMS.add(new Item(4, "damageReports", "Damage reports", BOTH, true, YES_NO,
-                "The host reports damage that no weapon accounts for; a joiner plays out what its own game missed. Needed on both."));
+                "The host reports damage no weapon accounts for, and effects mods' AIs and damage listeners draw there; a joiner plays out what its own game missed. Needed on both."));
 
         ITEMS.add(new Item(5, "debugLog", "Detailed log for bug reports", BOTH, true, YES_NO,
                 "On: co-op diagnostics are written to starsector.log. Turn it on (on both PCs) before reproducing a problem."));

@@ -124,6 +124,12 @@ public final class Msg {
     public static final byte STAT_NAMES = 80;
     /** host -> joiner: values of those named stats (Extras.MoreStats), by index, changes only. */
     public static final byte STATS_MORE = 81;
+    /** host -> joiner, each second: ships' time deployed (peak performance) and carriers' replacement rates (Extras.Clock). */
+    public static final byte CLOCKS = 82;
+    /** host -> joiner: what became of ordinary shots that the joiner's copies may not repeat (Extras.ShotFate). */
+    public static final byte SHOT_FATES = 83;
+    /** host -> joiner: effects drawn by code that runs only on the host, or differently there (Extras.Visual). */
+    public static final byte VISUALS = 84;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

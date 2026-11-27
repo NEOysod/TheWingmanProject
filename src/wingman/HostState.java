@@ -39,13 +39,15 @@ import wingman.net.Msg;
  * itself with one log line, leaving the rest.
  */
 final class HostState {
-    static final long LOOK_MS = 66, FULL_MS = 5000;
+    static final long LOOK_MS = 66, FULL_MS = 5000, CLOCK_MS = 1000;
 
     private final Map<ShipAPI, Integer> ids;
     private final Map<MissileAPI, Integer> missileIds;
     private final WingmanConfig cfg;
     private boolean aimsBroken, bodiesBroken, whoBroken;
-    private long lastLook, lastFull;
+    private long lastLook, lastFull, lastClock;
+    private boolean clocksBroken;
+    int clocksSent;
     private final Map<Integer, Extras.Aim> sentAims = new HashMap<Integer, Extras.Aim>();
     private final Map<Integer, Extras.Body> sentBodies = new HashMap<Integer, Extras.Body>();
     /** Each missile's owner and launching ship as first seen (as MISSILE_SPAWN told joiners) or last sent. */
@@ -85,6 +87,15 @@ final class HostState {
             } catch (Throwable t) {
                 bodiesBroken = true;
                 Global.getLogger(HostState.class).error("Wingman: sending ships' bodies failed; they are not copied for this battle", t);
+            }
+        }
+        if (cfg.syncStats && !clocksBroken && now - lastClock >= CLOCK_MS) {
+            lastClock = now;
+            try {
+                sendClocks(session, byId);
+            } catch (Throwable t) {
+                clocksBroken = true;
+                Global.getLogger(HostState.class).error("Wingman: sending peak time and carrier rates failed; they are not copied for this battle", t);
             }
         }
         if (cfg.syncStats && !whoBroken) {
@@ -206,6 +217,32 @@ final class HostState {
         for (String t : all) if (t != null && t.length() <= 80 && !t.startsWith("wingman")) out.add(t);
         Collections.sort(out);
         return out.size() > 40 ? new ArrayList<String>(out.subList(0, 40)) : out;
+    }
+
+    // ---- peak time and carriers' replacement rates ----
+
+    /**
+     * Each second, every ship's time deployed (a joiner's copy starts counting when it is built, so one who came
+     * in mid-battle saw full peak performance) and its bays' replacement rates (a joiner's bays build nothing, so
+     * the rate there never fell).
+     */
+    private void sendClocks(HostSession session, Map<Integer, ShipAPI> byId) {
+        List<Extras.Clock> out = new ArrayList<Extras.Clock>();
+        for (Map.Entry<Integer, ShipAPI> e : byId.entrySet()) {
+            ShipAPI s = e.getValue();
+            if (s == null || s.isFighter() || s.isHulk() || !s.isAlive()) continue;
+            Extras.Clock c = new Extras.Clock();
+            c.ship = e.getKey();
+            c.deployed = s.getTimeDeployedForCRReduction();
+            List<com.fs.starfarer.api.combat.FighterLaunchBayAPI> bays = s.getLaunchBaysCopy();
+            if (bays != null && !bays.isEmpty()) {
+                c.bayRates = new float[Math.min(40, bays.size())];
+                for (int i = 0; i < c.bayRates.length; i++) c.bayRates[i] = bays.get(i).getCurrRate();
+            }
+            out.add(c);
+            if (out.size() >= 300) { session.broadcast(Msg.CLOCKS, Extras.encodeClocks(out)); clocksSent += out.size(); out = new ArrayList<Extras.Clock>(); }
+        }
+        if (!out.isEmpty()) { session.broadcast(Msg.CLOCKS, Extras.encodeClocks(out)); clocksSent += out.size(); }
     }
 
     // ---- missiles' owners ----

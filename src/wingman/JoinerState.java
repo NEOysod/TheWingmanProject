@@ -54,7 +54,8 @@ final class JoinerState {
     private final Map<Integer, Extras.Body> bodies = new HashMap<Integer, Extras.Body>();
     /** Tags the host's last body for each ship had, so a tag the host drops is dropped here (and only those). */
     private final Map<Integer, List<String>> hostTags = new HashMap<Integer, List<String>>();
-    private boolean aimsBroken, bodiesBroken, whoBroken;
+    private boolean aimsBroken, bodiesBroken, whoBroken, clocksBroken;
+    int clocksApplied;
     private float again, ownOffSince = -1f;
     int aimsApplied, bodiesApplied, whoApplied, ownBodiesTaken;
 
@@ -111,6 +112,32 @@ final class JoinerState {
         } catch (Throwable t) {
             whoBroken = true;
             Global.getLogger(JoinerState.class).error("Wingman: missiles' owners from the host couldn't be used; off for this battle", t);
+        }
+    }
+
+    /**
+     * Peak time and replacement rates: a ship's time deployed set where it is more than half a second off the host's
+     * (ours too: it is what the peak-performance bar shows), each bay's rate where it differs.
+     */
+    void onClocks(byte[] data) {
+        if (clocksBroken) return;
+        try {
+            for (Extras.Clock c : Extras.decodeClocks(data)) {
+                ShipAPI s = w.ship(c.ship);
+                if (s == null || s.isHulk()) continue;
+                if (c.deployed == c.deployed && Math.abs(s.getTimeDeployedForCRReduction() - c.deployed) > 0.5f) s.setTimeDeployed(c.deployed);
+                if (c.bayRates.length > 0) {
+                    List<com.fs.starfarer.api.combat.FighterLaunchBayAPI> bays = s.getLaunchBaysCopy();
+                    for (int i = 0; bays != null && i < Math.min(bays.size(), c.bayRates.length); i++) {
+                        float r = c.bayRates[i];
+                        if (r == r && Math.abs(bays.get(i).getCurrRate() - r) > 0.005f) bays.get(i).setCurrRate(r);
+                    }
+                }
+                clocksApplied++;
+            }
+        } catch (Throwable t) {
+            clocksBroken = true;
+            Global.getLogger(JoinerState.class).error("Wingman: peak time and carrier rates from the host couldn't be used; off for this battle", t);
         }
     }
 

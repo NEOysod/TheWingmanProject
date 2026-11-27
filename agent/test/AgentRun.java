@@ -39,6 +39,12 @@ public class AgentRun {
         testmod.TimeScript.Manager[] m = new testmod.TimeScript.Manager[1], hm = new testmod.TimeScript.Manager[1];
     }
 
+    static String describe(java.util.List<Object[]> fx) {
+        StringBuilder b = new StringBuilder("[");
+        for (Object[] f : fx) b.append(f[0]).append('/').append(f[1]).append('/').append(f[2]).append(' ');
+        return b.append(']').toString();
+    }
+
     static void check(boolean ok, String what) {
         checks++;
         if (!ok) { fails++; System.out.println("FAIL " + what); }
@@ -240,6 +246,29 @@ public class AgentRun {
         sys.apply(statsOfJoiner, "id", com.fs.starfarer.api.plugins.ShipSystemStatsScript.State.ACTIVE, 1f);
         check(sys.saw == joiner, "ship system script of the joiner's ship sees the joiner, got " + sys.saw);
         check(ModScript.who(Global.getCombatEngine()) == host, "after them: the real answer");
+
+        // 6f. Effects drawn in a damage listener or a mod's ship AI are noted (for joiners); elsewhere not.
+        Hooks.takeVisuals();
+        testmod.Effects.OnDamage listener = new testmod.Effects.OnDamage();
+        listener.reportDamageApplied(null, null, null);
+        java.util.List<Object[]> seenFx = Hooks.takeVisuals();
+        check(listener.heard == 1 && seenFx.size() == 2 && "hit".equals(seenFx.get(0)[0]) && "arc".equals(seenFx.get(1)[0])
+                && Integer.valueOf(7).equals(seenFx.get(0)[1]) && "testmod.Effects$OnDamage".equals(seenFx.get(0)[2]),
+                "a damage listener's flash and arc are noted, with its frame and class: " + describe(seenFx));
+        float[] arcNums = seenFx.size() == 2 ? (float[]) seenFx.get(1)[3] : new float[5];
+        check(arcNums[2] == 100f && arcNums[4] == 10f && seenFx.get(1)[6] == java.awt.Color.BLUE, "the arc's end, thickness and colour are noted");
+        testmod.Effects.Ai ai = new testmod.Effects.Ai();
+        ai.advance(0.016f);
+        seenFx = Hooks.takeVisuals();
+        check(ai.thought == 1 && seenFx.size() == 1 && "explosion".equals(seenFx.get(0)[0]) && Integer.valueOf(6).equals(seenFx.get(0)[1]),
+                "a mod's ship AI's explosion is noted as the AI's: " + describe(seenFx));
+        new testmod.Effects.NotAi().advance(0.016f);
+        testmod.Effects.plain();
+        check(Hooks.takeVisuals().isEmpty() && wingman.agent.Shared.visKind == 0, "effects outside those frames are not noted, and the frame is left behind");
+        Hooks.setBridge(null);
+        listener.reportDamageApplied(null, null, null);
+        check(listener.heard == 2 && Hooks.takeVisuals().isEmpty(), "with no co-op battle, nothing is noted (the listener still runs)");
+        Hooks.setBridge(hostBridge);
 
         // 7a. A bridge left from an earlier battle (not live): real answers.
         live = false;

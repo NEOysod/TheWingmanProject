@@ -486,4 +486,219 @@ public final class Extras {
         }
         return out;
     }
+
+    // ---- peak time and carriers' replacement rates (Msg.CLOCKS) ----
+
+    /** A ship's time deployed (what its peak performance counts down from) and its bays' replacement rates. */
+    public static final class Clock {
+        public int ship;
+        public float deployed = Float.NaN;
+        public float[] bayRates = new float[0];
+    }
+
+    public static byte[] encodeClocks(List<Clock> list) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeVarInt(list.size());
+            for (Clock c : list) {
+                w.out.writeVarInt(c.ship);
+                w.out.writeFloat(c.deployed);
+                int n = Math.min(40, c.bayRates.length);
+                w.out.writeByte(n);
+                for (int i = 0; i < n; i++) w.out.writeFloat(c.bayRates[i]);
+            }
+        } catch (IOException e) { throw new IllegalStateException(e); }
+        return w.done();
+    }
+
+    public static List<Clock> decodeClocks(byte[] data) throws IOException {
+        In in = Msg.reader(data);
+        int count = in.readVarInt();
+        if (count < 0 || count > 5000) throw new IOException("bad clock count " + count);
+        List<Clock> out = new ArrayList<Clock>(count);
+        for (int i = 0; i < count; i++) {
+            Clock c = new Clock();
+            c.ship = in.readVarInt();
+            c.deployed = in.readFloat();
+            if (!(c.deployed >= 0f && c.deployed < 1e7f)) c.deployed = Float.NaN;
+            int n = in.readByte() & 0xFF;
+            if (n > 40) throw new IOException("too many bays");
+            c.bayRates = new float[n];
+            for (int k = 0; k < n; k++) {
+                float r = in.readFloat();
+                c.bayRates[k] = r >= 0f && r <= 10f ? r : Float.NaN;
+            }
+            out.add(c);
+        }
+        return out;
+    }
+
+    // ---- what became of ordinary shots (Msg.SHOT_FATES) ----
+
+    /** Kinds of ShotFate. */
+    public static final int SHOT_HIT = 1, SHOT_GONE = 2, SHOT_TURNED = 3;
+
+    /**
+     * What became of one of the host's ordinary shots (not a missile, no on-hit script), where a joiner's copy of it
+     * may not do the same by itself: it struck something (the copy may have missed, or flown through a missile that
+     * never collides on a joiner), a script took it off the field, or a script turned it (reflected, redirected,
+     * handed to the other side). Told by the ship that fired it, its weapon (the id's hash), how long it had flown,
+     * and where; the joiner finds its own copy by those.
+     */
+    public static final class ShotFate {
+        public int kind, source, weapon;
+        /** at: the host's battle clock when it happened (the clock position updates carry). */
+        public float at, age, x, y;
+        /** SHOT_HIT: the ship struck (-1: not a ship), the point in that ship's own frame, whether on its shield. */
+        public int target = -1;
+        public float ox, oy;
+        public boolean shield;
+        /** SHOT_TURNED: its new velocity, facing and side. */
+        public float vx, vy, facing;
+        public int owner;
+    }
+
+    public static byte[] encodeShotFates(List<ShotFate> list) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeVarInt(list.size());
+            for (ShotFate f : list) {
+                w.out.writeByte(f.kind);
+                w.out.writeVarInt(f.source);
+                w.out.writeInt(f.weapon);
+                w.out.writeFloat(f.at);
+                w.out.writeFloat(f.age);
+                w.out.writeFloat(f.x);
+                w.out.writeFloat(f.y);
+                if (f.kind == SHOT_HIT) {
+                    w.out.writeVarInt(f.target + 1);
+                    if (f.target >= 0) { w.out.writeFloat(f.ox); w.out.writeFloat(f.oy); w.out.writeBoolean(f.shield); }
+                } else if (f.kind == SHOT_TURNED) {
+                    w.out.writeFloat(f.vx);
+                    w.out.writeFloat(f.vy);
+                    w.out.writeFloat(f.facing);
+                    w.out.writeByte(f.owner);
+                }
+            }
+        } catch (IOException e) { throw new IllegalStateException(e); }
+        return w.done();
+    }
+
+    public static List<ShotFate> decodeShotFates(byte[] data) throws IOException {
+        In in = Msg.reader(data);
+        int count = in.readVarInt();
+        if (count < 0 || count > 5000) throw new IOException("bad shot count " + count);
+        List<ShotFate> out = new ArrayList<ShotFate>(count);
+        for (int i = 0; i < count; i++) {
+            ShotFate f = new ShotFate();
+            f.kind = in.readByte();
+            f.source = in.readVarInt();
+            f.weapon = in.readInt();
+            f.at = in.readFloat();
+            f.age = in.readFloat();
+            f.x = in.readFloat();
+            f.y = in.readFloat();
+            if (f.kind == SHOT_HIT) {
+                f.target = in.readVarInt() - 1;
+                if (f.target >= 0) { f.ox = in.readFloat(); f.oy = in.readFloat(); f.shield = in.readBoolean(); }
+            } else if (f.kind == SHOT_TURNED) {
+                f.vx = in.readFloat();
+                f.vy = in.readFloat();
+                f.facing = in.readFloat();
+                f.owner = in.readByte();
+            } else if (f.kind != SHOT_GONE) throw new IOException("unknown shot fate " + f.kind);
+            boolean sane = Math.abs(f.x) < 1e7f && Math.abs(f.y) < 1e7f && f.age >= 0f && f.age < 1e5f && Math.abs(f.at) < 1e8f
+                    && Math.abs(f.ox) < 1e5f && Math.abs(f.oy) < 1e5f && Math.abs(f.vx) < 1e6f && Math.abs(f.vy) < 1e6f && Math.abs(f.facing) < 1e6f;
+            if (sane) out.add(f);
+        }
+        return out;
+    }
+
+    // ---- effects drawn by code that runs only on the host, or differently there (Msg.VISUALS) ----
+
+    /** Kinds of Visual, and the frames they come from (the agent's frame kinds). */
+    public static final int FX_ARC = 1, FX_EXPLOSION = 2, FX_HIT = 3, FX_SMOOTH = 4;
+    public static final int FX_AI = 6, FX_DAMAGE = 7;
+
+    /**
+     * An effect a mod's code drew on the host inside a ship AI (which runs only there) or a damage listener (which on
+     * a joiner's copy, taking no damage there, hears of next to none): an EMP arc, an explosion, or a particle. Its
+     * points are each given on a ship (that ship's number and the point in its own frame) where there is one to
+     * hold to, so they land on the ship as it stands on the joiner's screen. cls: the hash of the class that drew it.
+     */
+    public static final class Visual {
+        public int kind, frame, cls;
+        public int aShip = -1, bShip = -1;
+        public float ax, ay, bx, by;
+        public float vx, vy, size, duration = -1f, ramp = -1f, brightness = 1f, thickness;
+        public int c1, c2;
+        public String sound = "";
+    }
+
+    public static byte[] encodeVisuals(List<Visual> list) {
+        Msg.W w = new Msg.W();
+        try {
+            w.out.writeVarInt(list.size());
+            for (Visual v : list) {
+                w.out.writeByte(v.kind);
+                w.out.writeByte(v.frame);
+                w.out.writeInt(v.cls);
+                w.out.writeVarInt(v.aShip + 1);
+                w.out.writeFloat(v.ax);
+                w.out.writeFloat(v.ay);
+                w.out.writeInt(v.c1);
+                if (v.kind == FX_ARC) {
+                    w.out.writeVarInt(v.bShip + 1);
+                    w.out.writeFloat(v.bx);
+                    w.out.writeFloat(v.by);
+                    w.out.writeFloat(v.thickness);
+                    w.out.writeInt(v.c2);
+                    w.out.writeUTF(v.sound == null ? "" : v.sound.length() > 80 ? "" : v.sound);
+                } else {
+                    w.out.writeFloat(v.vx);
+                    w.out.writeFloat(v.vy);
+                    w.out.writeFloat(v.size);
+                    w.out.writeFloat(v.duration);
+                    if (v.kind != FX_EXPLOSION) { w.out.writeFloat(v.ramp); w.out.writeFloat(v.brightness); }
+                }
+            }
+        } catch (IOException e) { throw new IllegalStateException(e); }
+        return w.done();
+    }
+
+    public static List<Visual> decodeVisuals(byte[] data) throws IOException {
+        In in = Msg.reader(data);
+        int count = in.readVarInt();
+        if (count < 0 || count > 5000) throw new IOException("bad effect count " + count);
+        List<Visual> out = new ArrayList<Visual>(count);
+        for (int i = 0; i < count; i++) {
+            Visual v = new Visual();
+            v.kind = in.readByte();
+            v.frame = in.readByte();
+            v.cls = in.readInt();
+            v.aShip = in.readVarInt() - 1;
+            v.ax = in.readFloat();
+            v.ay = in.readFloat();
+            v.c1 = in.readInt();
+            if (v.kind == FX_ARC) {
+                v.bShip = in.readVarInt() - 1;
+                v.bx = in.readFloat();
+                v.by = in.readFloat();
+                v.thickness = in.readFloat();
+                v.c2 = in.readInt();
+                v.sound = in.readUTF();
+            } else if (v.kind == FX_EXPLOSION || v.kind == FX_HIT || v.kind == FX_SMOOTH) {
+                v.vx = in.readFloat();
+                v.vy = in.readFloat();
+                v.size = in.readFloat();
+                v.duration = in.readFloat();
+                if (v.kind != FX_EXPLOSION) { v.ramp = in.readFloat(); v.brightness = in.readFloat(); }
+            } else throw new IOException("unknown effect " + v.kind);
+            boolean sane = Math.abs(v.ax) < 1e7f && Math.abs(v.ay) < 1e7f && Math.abs(v.bx) < 1e7f && Math.abs(v.by) < 1e7f
+                    && Math.abs(v.vx) < 1e6f && Math.abs(v.vy) < 1e6f && v.size >= 0f && v.size < 1e5f && v.thickness >= 0f && v.thickness < 1e4f
+                    && v.duration < 1e3f && v.ramp < 1e3f && Math.abs(v.brightness) < 1e3f;
+            if (sane) out.add(v);
+        }
+        return out;
+    }
 }

@@ -107,6 +107,14 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
     shield arc and type, and ship tags. Missiles that change sides or launcher (hijacks) do so on joiners too.
   - **Script values** holding a ship, a missile or a position are copied (as the joiner's own copy of that ship or
     missile), and so are missiles' own script values.
+  - **Peak performance and carriers.** Joiners who came in mid-battle saw full peak performance on every ship;
+    time deployed is now copied. Carriers' fighter replacement rate is copied too (it never dropped on joiners).
+  - **Shots end as they did on the host.** Bullets that hit on the host but missed on a joiner's screen are made to
+    hit (steered the last few degrees, or finished with a flash), bullets that hit missiles no longer fly through
+    them, and bullets a script deleted, reflected or redirected on the host do the same on joiners.
+  - **Effects only the host's mods drew.** With the agent (the .bat launcher) on the host, EMP arcs, explosions and
+    particles drawn by mods' ship AIs and damage listeners show on joiners too (AI doesn't run on joiners, and their
+    copies take no damage, so those effects never came). Ones the joiner already drew itself aren't doubled.
   - **Every ship stat.** 68 more stats (damage taken and dealt by kind, malfunctions, armour rules, ammo and system
     uses, missile guidance, overload time, zero-flux boost at any level...) and every named stat mods make for their
     own mechanics. Bonuses are now exact at every base (a weapon's own range, not just at one reference value).

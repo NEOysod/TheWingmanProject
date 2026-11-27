@@ -139,6 +139,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private final HostDamage damage = new HostDamage();
     private HostExtras extras;
     private HostState shipState;
+    private HostShots shotFates;
+    private HostVisuals visuals;
     /** Fighters that have an officer of their own (a mod's doing): synced as closely as ships. */
     private final Set<Integer> officered = new HashSet<Integer>();
     private int officeredSeen;
@@ -236,6 +238,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         }
         extras = new HostExtras(ids, cfg, officered, missileIds);
         shipState = new HostState(ids, missileIds, cfg);
+        shotFates = new HostShots(ids);
+        visuals = new HostVisuals(ids, cfg);
         session.beginBattle();
         rate = cfg.snapshotRate;
         readyPhase = cfg.readyCheck ? 0 : 2;
@@ -440,6 +444,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                 Global.getLogger(WingmanHostPlugin.class).error("Wingman: reporting scripted shot hits failed; joiners judge those hits themselves for the rest of this battle", t);
             }
         }
+        if (shotFates != null) shotFates.tick(engine, session, gameClock); // every frame: a sharp turn is seen in the frame it happens
         prof.mark(4);
         trackFiring();
         if (!aimsBroken && gameClock - aimsAt >= 0.1f) { // ten times a battle second
@@ -511,6 +516,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         damage.tick(session, byId, extras == null ? null : extras.hitLately());
         if (extras != null) extras.tick(engine, session, byId);
         if (shipState != null) shipState.tick(engine, session, byId);
+        if (visuals != null) visuals.tick(session, byId);
         prof.mark(8);
 
         // Bandwidth meter: with debug logging, a detailed line every 30 seconds while anyone is connected;
@@ -539,7 +545,9 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + (possibleStates == 0 ? 100 : Math.round(100f * sentStates / possibleStates)) + "% of ship/missile states needed sending, "
                         + trimmed + " held back as out of sight, " + scriptEnds + " missiles ended by a script so far; "
                         + (extras == null ? "" : extras.statsSent + " stat values, " + extras.notesSent + " script values and " + extras.hurtsSent + " damage reports sent so far (" + extras.ordinary + " ordinary weapon hits not reported)")
-                        + (shipState == null ? "" : "; targets " + shipState.aimsSent + ", bodies " + shipState.bodiesSent + ", missile owners " + shipState.whoSent)
+                        + (shipState == null ? "" : "; targets " + shipState.aimsSent + ", bodies " + shipState.bodiesSent + ", missile owners " + shipState.whoSent + ", clocks " + shipState.clocksSent)
+                        + (shotFates == null ? "" : "; shot fates: " + shotFates.hits + " hits, " + shotFates.gone + " taken off, " + shotFates.turned + " turned (" + shotFates.dropped + " batches dropped)")
+                        + (visuals == null ? "" : "; AI and damage-listener effects " + visuals.sent + " (" + visuals.capped + " over the cap)")
                         + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
                         + session.packerCounts()[2] + " ship/missile states left out as guessed right"
                         + "; updates: " + session.describeUpdates()

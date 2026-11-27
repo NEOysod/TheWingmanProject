@@ -8,10 +8,13 @@ import java.util.WeakHashMap;
 import com.fs.starfarer.api.Global;
 import com.fs.starfarer.api.campaign.rules.MemoryAPI;
 import com.fs.starfarer.api.combat.CombatEngineAPI;
+import com.fs.starfarer.api.combat.DamageType;
+import com.fs.starfarer.api.combat.EmpArcEntityAPI;
 import com.fs.starfarer.api.combat.EveryFrameCombatPlugin;
 import com.fs.starfarer.api.combat.MutableStat;
 import com.fs.starfarer.api.combat.ShipAPI;
 import com.fs.starfarer.api.combat.ViewportAPI;
+import org.lwjgl.util.vector.Vector2f;
 
 /**
  * What the swapped calls (see {@link Patcher}) go to instead.
@@ -165,6 +168,14 @@ public final class Hooks {
     public static Object enterFrame(Object ctx, int kind) {
         ShipAPI prev = ((ShipAPI) Shared.acting);
         if (Shared.bridge == null || ctx == null) return prev;
+        if (kind == 6 || kind == 7) {
+            // An AI's or a damage listener's frame: effects drawn in it are noted (see empArc). What is handed back
+            // carries what to put back after it (a plain array: this class may be a copy in another loader).
+            Object[] back = new Object[] { VIS, prev, Integer.valueOf(Shared.visKind), Shared.visClass };
+            Shared.visKind = kind;
+            Shared.visClass = ctx.getClass().getName();
+            return back;
+        }
         try {
             ShipAPI s = null;
             switch (kind) {
@@ -193,8 +204,132 @@ public final class Hooks {
         return prev;
     }
 
+    /** Marks what enterFrame hands back for an AI or damage-listener frame (a literal: the same object in every loader). */
+    static final String VIS = "wingman.visualFrame";
+
     public static void exitFrame(Object prev) {
+        if (prev instanceof Object[]) {
+            Object[] back = (Object[]) prev;
+            if (back.length == 4 && back[0] == VIS) {
+                Shared.acting = back[1];
+                Shared.visKind = back[2] instanceof Integer ? ((Integer) back[2]).intValue() : 0;
+                Shared.visClass = (String) back[3];
+                return;
+            }
+        }
         Shared.acting = prev;
+    }
+
+    // ---- effects drawn in AI and damage-listener frames ----
+
+    private static void note(String kind, float[] nums, Object a, Object b, java.awt.Color c1, java.awt.Color c2, String sound) {
+        int vk = Shared.visKind;
+        if (vk == 0 || Shared.bridge == null) return;
+        synchronized (Shared.visuals) {
+            if (Shared.visuals.size() >= Shared.MAX_VISUALS) { Shared.visualsDropped++; return; }
+            Shared.visuals.add(new Object[] { kind, Integer.valueOf(vk), Shared.visClass, nums, a, b, c1, c2, sound });
+        }
+        Shared.visualsNoted++;
+    }
+
+    /** The effects noted since last asked (and forgotten here). */
+    public static java.util.List<Object[]> takeVisuals() {
+        synchronized (Shared.visuals) {
+            if (Shared.visuals.isEmpty()) return java.util.Collections.emptyList();
+            java.util.List<Object[]> out = new java.util.ArrayList<Object[]>(Shared.visuals);
+            Shared.visuals.clear();
+            return out;
+        }
+    }
+
+    private static void noteArc(EmpArcEntityAPI arc, Vector2f from, Object fromAnchor, Object target, float thickness, java.awt.Color fringe, java.awt.Color core, String sound) {
+        if (Shared.visKind == 0) return;
+        try {
+            Vector2f to = arc != null && arc.getTargetLocation() != null ? arc.getTargetLocation()
+                    : target instanceof com.fs.starfarer.api.combat.CombatEntityAPI ? ((com.fs.starfarer.api.combat.CombatEntityAPI) target).getLocation() : null;
+            if (from == null || to == null) return;
+            note("arc", new float[] { from.x, from.y, to.x, to.y, thickness }, fromAnchor, target, fringe, core, sound);
+        } catch (Throwable t) { /* never break the mod's call */ }
+    }
+
+    public static EmpArcEntityAPI empArc(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
+            com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
+            java.awt.Color fringe, java.awt.Color core) {
+        EmpArcEntityAPI arc = e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        return arc;
+    }
+
+    public static EmpArcEntityAPI empArcP(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
+            com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
+            java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        EmpArcEntityAPI arc = e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core, params);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        return arc;
+    }
+
+    public static EmpArcEntityAPI empArcPierce(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
+            com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
+            java.awt.Color fringe, java.awt.Color core) {
+        EmpArcEntityAPI arc = e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        return arc;
+    }
+
+    public static EmpArcEntityAPI empArcPierceP(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
+            com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
+            java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        EmpArcEntityAPI arc = e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core, params);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        return arc;
+    }
+
+    public static EmpArcEntityAPI empArcVisual(CombatEngineAPI e, Vector2f from, com.fs.starfarer.api.combat.CombatEntityAPI fromAnchor, Vector2f to,
+            com.fs.starfarer.api.combat.CombatEntityAPI toAnchor, float thick, java.awt.Color fringe, java.awt.Color core) {
+        EmpArcEntityAPI arc = e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, fringe, core);
+        if (Shared.visKind != 0 && from != null && to != null) note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null);
+        return arc;
+    }
+
+    public static EmpArcEntityAPI empArcVisualP(CombatEngineAPI e, Vector2f from, com.fs.starfarer.api.combat.CombatEntityAPI fromAnchor, Vector2f to,
+            com.fs.starfarer.api.combat.CombatEntityAPI toAnchor, float thick, java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        EmpArcEntityAPI arc = e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, fringe, core, params);
+        if (Shared.visKind != 0 && from != null && to != null) note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null);
+        return arc;
+    }
+
+    public static void explosion(CombatEngineAPI e, Vector2f loc, Vector2f vel, java.awt.Color color, float size, float duration) {
+        e.spawnExplosion(loc, vel, color, size, duration);
+        if (Shared.visKind != 0 && loc != null) note("explosion", new float[] { loc.x, loc.y, vel == null ? 0f : vel.x, vel == null ? 0f : vel.y, size, duration, -1f, 1f }, null, null, color, null, null);
+    }
+
+    private static void particle(String kind, Vector2f loc, Vector2f vel, float size, float brightness, float ramp, float duration, java.awt.Color color) {
+        if (Shared.visKind != 0 && loc != null) note(kind, new float[] { loc.x, loc.y, vel == null ? 0f : vel.x, vel == null ? 0f : vel.y, size, duration, ramp, brightness }, null, null, color, null, null);
+    }
+
+    public static void hitParticle(CombatEngineAPI e, Vector2f loc, Vector2f vel, float size, float brightness, float duration, java.awt.Color color) {
+        e.addHitParticle(loc, vel, size, brightness, duration, color);
+        particle("hit", loc, vel, size, brightness, -1f, duration, color);
+    }
+
+    public static void hitParticleRamp(CombatEngineAPI e, Vector2f loc, Vector2f vel, float size, float brightness, float ramp, float duration, java.awt.Color color) {
+        e.addHitParticle(loc, vel, size, brightness, ramp, duration, color);
+        particle("hit", loc, vel, size, brightness, ramp, duration, color);
+    }
+
+    public static void hitParticleShort(CombatEngineAPI e, Vector2f loc, Vector2f vel, float size, float brightness, java.awt.Color color) {
+        e.addHitParticle(loc, vel, size, brightness, color);
+        particle("hit", loc, vel, size, brightness, -1f, -1f, color);
+    }
+
+    public static void smoothParticle(CombatEngineAPI e, Vector2f loc, Vector2f vel, float size, float brightness, float duration, java.awt.Color color) {
+        e.addSmoothParticle(loc, vel, size, brightness, duration, color);
+        particle("smooth", loc, vel, size, brightness, -1f, duration, color);
+    }
+
+    public static void smoothParticleRamp(CombatEngineAPI e, Vector2f loc, Vector2f vel, float size, float brightness, float ramp, float duration, java.awt.Color color) {
+        e.addSmoothParticle(loc, vel, size, brightness, ramp, duration, color);
+        particle("smooth", loc, vel, size, brightness, ramp, duration, color);
     }
 
     /**

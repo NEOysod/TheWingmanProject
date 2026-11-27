@@ -83,6 +83,9 @@ public final class NetStats {
             case Msg.MISSILE_WHO: return "missile owners";
             case Msg.STAT_NAMES: return "stat names";
             case Msg.STATS_MORE: return "more ship stats";
+            case Msg.CLOCKS: return "peak time and carrier rates";
+            case Msg.SHOT_FATES: return "shot fates";
+            case Msg.VISUALS: return "host-only effects";
             case Msg.WISH: return "wish list changes";
             case Msg.WISH_LIST: return "wish lists";
             case Msg.INPUT_MODE: return "controls mode";
