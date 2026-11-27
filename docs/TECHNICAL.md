@@ -1095,10 +1095,25 @@ copied too. These are:
   past without: taken off with a flash the size of its hit glow. Taken off / turned: when it gets to the point
   (at once if past), turned ones carrying on from it with the host's velocity, facing and side. Up to 400 wait
   1.5 s each.
+- **Bursts** (flak and other proximity fuses): the host pairs a shell gone without striking with an explosion
+  (`getExplosionSpecIfExplosion`) new this frame or the next, same ship and weapon, within 80 units, and sends
+  `SHOT_BURST` with the explosion's look and sound (radius, core, particles, colours, detailed flash, sound set and
+  volume); a shell left unpaired a frame later is `SHOT_GONE`. A joiner's copy seldom bursts by itself (missile
+  copies never collide, so its fuse doesn't see them). The joiner takes its shell off at the point and spawns a
+  `DamagingExplosionSpec` with the host's look, 0 damage and collision class NONE; not if an explosion of ours from
+  that ship and weapon came within 150 units in the last 0.6 s (that is the same burst); no shell of ours: at once.
 - **AI and damage-listener effects** (`VISUALS`, needs the agent on the host; setting `damageReports`). An AI's are
   drawn as they come. A damage listener's may be drawn here too by our own copy of it (one that draws whatever the
   damage), so each is matched with ours (same sort and class, 250 units, 0.6 s): a host one waits ≤ 0.35 s for ours,
   dropped if found, else drawn (arcs with `spawnEmpArcVisual` held to the ships, their impact sound played).
+- **EMP arcs from anywhere.** Scripts often aim an arc at a random ship or point, so each PC's landed elsewhere.
+  With the agent on the host (`Hooks.arcs(true, false)`), every arc mods' and the game's scripts draw is noted,
+  wherever (frame 0), with its damage source, and sent (≤ 500/s apart from other effects); every `VISUALS` carries
+  `VIS_ALL_ARCS` (an empty one every 2 s). While a joiner has heard it within 5 s (and has the agent), its own arcs
+  are drawn see-through and silent (`hideArcs`: colours alpha 0, no sound; the call still happens, so the script
+  gets its arc and the inert damage path runs) and the host's drawn as they come, except arcs of the ship it flies
+  (source, or anchor with no source): those stay its own, at once, and the host's of them are passed over. Only
+  while the bridge is live, so a later battle without co-op draws its arcs as ever.
 
 ---
 

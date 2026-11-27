@@ -39,6 +39,8 @@ public class AgentRun {
         testmod.TimeScript.Manager[] m = new testmod.TimeScript.Manager[1], hm = new testmod.TimeScript.Manager[1];
     }
 
+    static Object[] lastArcArgs;
+
     static String describe(java.util.List<Object[]> fx) {
         StringBuilder b = new StringBuilder("[");
         for (Object[] f : fx) b.append(f[0]).append('/').append(f[1]).append('/').append(f[2]).append(' ');
@@ -70,6 +72,7 @@ public class AgentRun {
         CombatEngineAPI engine = (CombatEngineAPI) Proxy.newProxyInstance(AgentRun.class.getClassLoader(), new Class<?>[] { CombatEngineAPI.class }, new InvocationHandler() {
             public Object invoke(Object p, Method m, Object[] a) {
                 engineCalls.add(m.getName());
+                if (m.getName().startsWith("spawnEmpArc")) lastArcArgs = a;
                 if (m.getName().equals("getPlayerShip")) return host;
                 if (m.getName().equals("getTimeMult")) return realTime;
                 if (m.getName().equals("getViewport")) return view;
@@ -269,6 +272,26 @@ public class AgentRun {
         listener.reportDamageApplied(null, null, null);
         check(listener.heard == 2 && Hooks.takeVisuals().isEmpty(), "with no co-op battle, nothing is noted (the listener still runs)");
         Hooks.setBridge(hostBridge);
+        // 6g. EMP arcs, which scripts aim at random: the host notes every one; a joiner draws its own see-through and
+        // silent while its host sends them, except its own ship's.
+        Hooks.arcs(true, false);
+        testmod.Effects.arcFrom(null);
+        seenFx = Hooks.takeVisuals();
+        check(seenFx.size() == 1 && "arc".equals(seenFx.get(0)[0]) && Integer.valueOf(0).equals(seenFx.get(0)[1]) && lastArcArgs[5] == java.awt.Color.BLUE,
+                "host: an arc drawn outside any AI or listener is noted (frame 0), and drawn as asked: " + describe(seenFx));
+        Hooks.arcs(false, true);
+        testmod.Effects.arcFrom(null);
+        java.awt.Color seen = (java.awt.Color) lastArcArgs[5];
+        check(seen != null && seen.getAlpha() == 0 && Hooks.takeVisuals().isEmpty(), "joiner: its own arc is drawn see-through, and not noted");
+        testmod.Effects.arcFrom(host); // (this test's player ship)
+        check(lastArcArgs[5] == java.awt.Color.BLUE, "joiner: an arc from its own ship is drawn as asked");
+        live = false;
+        testmod.Effects.arcFrom(null);
+        check(lastArcArgs[5] == java.awt.Color.BLUE, "a bridge left from a co-op battle (not live): arcs drawn as asked");
+        live = true;
+        Hooks.setBridge(hostBridge);
+        testmod.Effects.arcFrom(null);
+        check(lastArcArgs[5] == java.awt.Color.BLUE && !wingman.agent.Shared.hideArcs, "a new bridge: arcs as asked again");
 
         // 7a. A bridge left from an earlier battle (not live): real answers.
         live = false;

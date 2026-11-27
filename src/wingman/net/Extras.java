@@ -536,7 +536,7 @@ public final class Extras {
     // ---- what became of ordinary shots (Msg.SHOT_FATES) ----
 
     /** Kinds of ShotFate. */
-    public static final int SHOT_HIT = 1, SHOT_GONE = 2, SHOT_TURNED = 3;
+    public static final int SHOT_HIT = 1, SHOT_GONE = 2, SHOT_TURNED = 3, SHOT_BURST = 4;
 
     /**
      * What became of one of the host's ordinary shots (not a missile, no on-hit script), where a joiner's copy of it
@@ -556,6 +556,15 @@ public final class Extras {
         /** SHOT_TURNED: its new velocity, facing and side. */
         public float vx, vy, facing;
         public int owner;
+        /**
+         * SHOT_BURST: the shot's fuse went off (flak and the like) and it became this explosion at (x, y): its look
+         * and sound (DamagingExplosionSpec), so the joiner can show it without doing damage.
+         */
+        public float exDuration, exRadius, exCore, pSizeMin, pSizeRange, pDuration, exSpawnRadius, soundVolume = 1f,
+                detRadius, detFlashRadius, detFlashDuration;
+        public int pCount, pColor, exColor, detFringe, detCore;
+        public boolean showGraphic = true, detailed;
+        public String sound = "";
     }
 
     public static byte[] encodeShotFates(List<ShotFate> list) {
@@ -578,6 +587,17 @@ public final class Extras {
                     w.out.writeFloat(f.vy);
                     w.out.writeFloat(f.facing);
                     w.out.writeByte(f.owner);
+                } else if (f.kind == SHOT_BURST) {
+                    float[] n = { f.exDuration, f.exRadius, f.exCore, f.pSizeMin, f.pSizeRange, f.pDuration, f.exSpawnRadius, f.soundVolume,
+                            f.detRadius, f.detFlashRadius, f.detFlashDuration };
+                    for (float x : n) w.out.writeFloat(x);
+                    w.out.writeVarInt(Math.max(0, Math.min(2000, f.pCount)));
+                    w.out.writeInt(f.pColor);
+                    w.out.writeInt(f.exColor);
+                    w.out.writeInt(f.detFringe);
+                    w.out.writeInt(f.detCore);
+                    w.out.writeByte((f.showGraphic ? 1 : 0) | (f.detailed ? 2 : 0));
+                    w.out.writeUTF(f.sound == null || f.sound.length() > 80 ? "" : f.sound);
                 }
             }
         } catch (IOException e) { throw new IllegalStateException(e); }
@@ -606,6 +626,22 @@ public final class Extras {
                 f.vy = in.readFloat();
                 f.facing = in.readFloat();
                 f.owner = in.readByte();
+            } else if (f.kind == SHOT_BURST) {
+                f.exDuration = in.readFloat(); f.exRadius = in.readFloat(); f.exCore = in.readFloat();
+                f.pSizeMin = in.readFloat(); f.pSizeRange = in.readFloat(); f.pDuration = in.readFloat();
+                f.exSpawnRadius = in.readFloat(); f.soundVolume = in.readFloat();
+                f.detRadius = in.readFloat(); f.detFlashRadius = in.readFloat(); f.detFlashDuration = in.readFloat();
+                f.pCount = in.readVarInt();
+                f.pColor = in.readInt(); f.exColor = in.readInt(); f.detFringe = in.readInt(); f.detCore = in.readInt();
+                int b = in.readByte();
+                f.showGraphic = (b & 1) != 0;
+                f.detailed = (b & 2) != 0;
+                f.sound = in.readUTF();
+                float[] n = { f.exDuration, f.exRadius, f.exCore, f.pSizeMin, f.pSizeRange, f.pDuration, f.exSpawnRadius, f.soundVolume,
+                        f.detRadius, f.detFlashRadius, f.detFlashDuration };
+                boolean ok = f.pCount >= 0 && f.pCount <= 2000;
+                for (float x : n) if (!(x > -1f && x < 1e5f)) ok = false;
+                if (!ok) continue;
             } else if (f.kind != SHOT_GONE) throw new IOException("unknown shot fate " + f.kind);
             boolean sane = Math.abs(f.x) < 1e7f && Math.abs(f.y) < 1e7f && f.age >= 0f && f.age < 1e5f && Math.abs(f.at) < 1e8f
                     && Math.abs(f.ox) < 1e5f && Math.abs(f.oy) < 1e5f && Math.abs(f.vx) < 1e6f && Math.abs(f.vy) < 1e6f && Math.abs(f.facing) < 1e6f;
@@ -627,7 +663,8 @@ public final class Extras {
      * hold to, so they land on the ship as it stands on the joiner's screen. cls: the hash of the class that drew it.
      */
     public static final class Visual {
-        public int kind, frame, cls;
+        /** frame 0: drawn anywhere (an arc, sent from wherever it was drawn: see VIS_ALL_ARCS). src: an arc's damage source, a ship number or -1. */
+        public int kind, frame, cls, src = -1;
         public int aShip = -1, bShip = -1;
         public float ax, ay, bx, by;
         public float vx, vy, size, duration = -1f, ramp = -1f, brightness = 1f, thickness;
@@ -635,9 +672,15 @@ public final class Extras {
         public String sound = "";
     }
 
-    public static byte[] encodeVisuals(List<Visual> list) {
+    /** VISUALS flag: the host sends every EMP arc drawn there, so a joiner draws the host's instead of its own. */
+    public static final int VIS_ALL_ARCS = 1;
+
+    public static byte[] encodeVisuals(List<Visual> list) { return encodeVisuals(list, 0); }
+
+    public static byte[] encodeVisuals(List<Visual> list, int flags) {
         Msg.W w = new Msg.W();
         try {
+            w.out.writeByte(flags);
             w.out.writeVarInt(list.size());
             for (Visual v : list) {
                 w.out.writeByte(v.kind);
@@ -648,6 +691,7 @@ public final class Extras {
                 w.out.writeFloat(v.ay);
                 w.out.writeInt(v.c1);
                 if (v.kind == FX_ARC) {
+                    w.out.writeVarInt(v.src + 1);
                     w.out.writeVarInt(v.bShip + 1);
                     w.out.writeFloat(v.bx);
                     w.out.writeFloat(v.by);
@@ -666,8 +710,13 @@ public final class Extras {
         return w.done();
     }
 
-    public static List<Visual> decodeVisuals(byte[] data) throws IOException {
+    public static List<Visual> decodeVisuals(byte[] data) throws IOException { return decodeVisuals(data, null); }
+
+    /** flagsOut (if given): flagsOut[0] gets the message's flags (VIS_ALL_ARCS). */
+    public static List<Visual> decodeVisuals(byte[] data, int[] flagsOut) throws IOException {
         In in = Msg.reader(data);
+        int flags = in.readByte() & 0xFF;
+        if (flagsOut != null && flagsOut.length > 0) flagsOut[0] = flags;
         int count = in.readVarInt();
         if (count < 0 || count > 5000) throw new IOException("bad effect count " + count);
         List<Visual> out = new ArrayList<Visual>(count);
@@ -681,6 +730,7 @@ public final class Extras {
             v.ay = in.readFloat();
             v.c1 = in.readInt();
             if (v.kind == FX_ARC) {
+                v.src = in.readVarInt() - 1;
                 v.bShip = in.readVarInt() - 1;
                 v.bx = in.readFloat();
                 v.by = in.readFloat();

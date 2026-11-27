@@ -546,7 +546,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + trimmed + " held back as out of sight, " + scriptEnds + " missiles ended by a script so far; "
                         + (extras == null ? "" : extras.statsSent + " stat values, " + extras.notesSent + " script values and " + extras.hurtsSent + " damage reports sent so far (" + extras.ordinary + " ordinary weapon hits not reported)")
                         + (shipState == null ? "" : "; targets " + shipState.aimsSent + ", bodies " + shipState.bodiesSent + ", missile owners " + shipState.whoSent + ", clocks " + shipState.clocksSent)
-                        + (shotFates == null ? "" : "; shot fates: " + shotFates.hits + " hits, " + shotFates.gone + " taken off, " + shotFates.turned + " turned (" + shotFates.dropped + " batches dropped)")
+                        + (shotFates == null ? "" : "; shot fates: " + shotFates.hits + " hits, " + shotFates.gone + " taken off, " + shotFates.turned + " turned, " + shotFates.bursts + " burst (" + shotFates.dropped + " batches dropped)")
                         + (visuals == null ? "" : "; AI and damage-listener effects " + visuals.sent + " (" + visuals.capped + " over the cap)")
                         + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
                         + session.packerCounts()[2] + " ship/missile states left out as guessed right"

@@ -43,7 +43,13 @@ public final class Hooks {
     private Hooks() {}
 
 
-    public static void setBridge(Bridge b) { Shared.bridge = b; Shared.acting = null; Shared.owners.clear(); Shared.guardScripts = false; }
+    public static void setBridge(Bridge b) {
+        Shared.bridge = b; Shared.acting = null; Shared.owners.clear(); Shared.guardScripts = false;
+        Shared.noteAllArcs = false; Shared.hideArcs = false;
+    }
+
+    /** See Shared.noteAllArcs / hideArcs. */
+    public static void arcs(boolean noteAll, boolean hide) { Shared.noteAllArcs = noteAll; Shared.hideArcs = hide; }
 
     /** A joiner's battle: mods' scripts failing in wrapped methods are caught (see frameFailed). Until the next setBridge. */
     public static void guardScripts(boolean on) { Shared.guardScripts = on; }
@@ -223,13 +229,36 @@ public final class Hooks {
     // ---- effects drawn in AI and damage-listener frames ----
 
     private static void note(String kind, float[] nums, Object a, Object b, java.awt.Color c1, java.awt.Color c2, String sound) {
+        note(kind, nums, a, b, c1, c2, sound, null, false);
+    }
+
+    /** anywhere: noted outside an AI's or damage listener's frame too (arcs, while noteAllArcs). */
+    private static void note(String kind, float[] nums, Object a, Object b, java.awt.Color c1, java.awt.Color c2, String sound, Object src, boolean anywhere) {
         int vk = Shared.visKind;
-        if (vk == 0 || Shared.bridge == null) return;
+        Bridge br = Shared.bridge;
+        if ((vk == 0 && !anywhere) || br == null) return;
+        try { if (!br.live()) return; } catch (Throwable t) { return; }
         synchronized (Shared.visuals) {
             if (Shared.visuals.size() >= Shared.MAX_VISUALS) { Shared.visualsDropped++; return; }
-            Shared.visuals.add(new Object[] { kind, Integer.valueOf(vk), Shared.visClass, nums, a, b, c1, c2, sound });
+            Shared.visuals.add(new Object[] { kind, Integer.valueOf(vk), vk == 0 ? null : Shared.visClass, nums, a, b, c1, c2, sound, src });
         }
         Shared.visualsNoted++;
+    }
+
+    private static final java.awt.Color CLEAR = new java.awt.Color(0, 0, 0, 0);
+
+    /** Is this arc to be drawn see-through and silent here (a joiner's, not of its own ship)? */
+    private static boolean hiding(Object src, Object anchor) {
+        Bridge b = Shared.bridge;
+        if (!Shared.hideArcs || b == null) return false;
+        try {
+            if (!b.live()) return false; // a bridge left from a co-op battle: this one's arcs are its own
+            CombatEngineAPI e = Global.getCombatEngine();
+            ShipAPI me = e == null ? null : e.getPlayerShip();
+            if (me != null && (src == me || (src == null && anchor == me))) return false;
+        } catch (Throwable t) { return false; }
+        Shared.arcsHidden++;
+        return true;
     }
 
     /** The effects noted since last asked (and forgotten here). */
@@ -242,59 +271,67 @@ public final class Hooks {
         }
     }
 
-    private static void noteArc(EmpArcEntityAPI arc, Vector2f from, Object fromAnchor, Object target, float thickness, java.awt.Color fringe, java.awt.Color core, String sound) {
-        if (Shared.visKind == 0) return;
+    private static void noteArc(EmpArcEntityAPI arc, Vector2f from, Object fromAnchor, Object target, float thickness, java.awt.Color fringe, java.awt.Color core, String sound, Object src) {
+        if (Shared.visKind == 0 && !Shared.noteAllArcs) return;
         try {
             Vector2f to = arc != null && arc.getTargetLocation() != null ? arc.getTargetLocation()
                     : target instanceof com.fs.starfarer.api.combat.CombatEntityAPI ? ((com.fs.starfarer.api.combat.CombatEntityAPI) target).getLocation() : null;
             if (from == null || to == null) return;
-            note("arc", new float[] { from.x, from.y, to.x, to.y, thickness }, fromAnchor, target, fringe, core, sound);
+            note("arc", new float[] { from.x, from.y, to.x, to.y, thickness }, fromAnchor, target, fringe, core, sound, src, Shared.noteAllArcs);
         } catch (Throwable t) { /* never break the mod's call */ }
     }
 
     public static EmpArcEntityAPI empArc(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
             com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
             java.awt.Color fringe, java.awt.Color core) {
+        if (hiding(src, anchor)) return e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, null, thick, CLEAR, CLEAR);
         EmpArcEntityAPI arc = e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core);
-        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound, src);
         return arc;
     }
 
     public static EmpArcEntityAPI empArcP(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
             com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
             java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        if (hiding(src, anchor)) return e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, null, thick, CLEAR, CLEAR, params);
         EmpArcEntityAPI arc = e.spawnEmpArc(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core, params);
-        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound, src);
         return arc;
     }
 
     public static EmpArcEntityAPI empArcPierce(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
             com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
             java.awt.Color fringe, java.awt.Color core) {
+        if (hiding(src, anchor)) return e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, null, thick, CLEAR, CLEAR);
         EmpArcEntityAPI arc = e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core);
-        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound, src);
         return arc;
     }
 
     public static EmpArcEntityAPI empArcPierceP(CombatEngineAPI e, ShipAPI src, Vector2f p, com.fs.starfarer.api.combat.CombatEntityAPI anchor,
             com.fs.starfarer.api.combat.CombatEntityAPI target, DamageType type, float dmg, float emp, float range, String sound, float thick,
             java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        if (hiding(src, anchor)) return e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, null, thick, CLEAR, CLEAR, params);
         EmpArcEntityAPI arc = e.spawnEmpArcPierceShields(src, p, anchor, target, type, dmg, emp, range, sound, thick, fringe, core, params);
-        noteArc(arc, p, anchor, target, thick, fringe, core, sound);
+        noteArc(arc, p, anchor, target, thick, fringe, core, sound, src);
         return arc;
     }
 
     public static EmpArcEntityAPI empArcVisual(CombatEngineAPI e, Vector2f from, com.fs.starfarer.api.combat.CombatEntityAPI fromAnchor, Vector2f to,
             com.fs.starfarer.api.combat.CombatEntityAPI toAnchor, float thick, java.awt.Color fringe, java.awt.Color core) {
+        if (hiding(null, fromAnchor)) return e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, CLEAR, CLEAR);
         EmpArcEntityAPI arc = e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, fringe, core);
-        if (Shared.visKind != 0 && from != null && to != null) note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null);
+        if ((Shared.visKind != 0 || Shared.noteAllArcs) && from != null && to != null)
+            note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null, null, Shared.noteAllArcs);
         return arc;
     }
 
     public static EmpArcEntityAPI empArcVisualP(CombatEngineAPI e, Vector2f from, com.fs.starfarer.api.combat.CombatEntityAPI fromAnchor, Vector2f to,
             com.fs.starfarer.api.combat.CombatEntityAPI toAnchor, float thick, java.awt.Color fringe, java.awt.Color core, EmpArcEntityAPI.EmpArcParams params) {
+        if (hiding(null, fromAnchor)) return e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, CLEAR, CLEAR, params);
         EmpArcEntityAPI arc = e.spawnEmpArcVisual(from, fromAnchor, to, toAnchor, thick, fringe, core, params);
-        if (Shared.visKind != 0 && from != null && to != null) note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null);
+        if ((Shared.visKind != 0 || Shared.noteAllArcs) && from != null && to != null)
+            note("arc", new float[] { from.x, from.y, to.x, to.y, thick }, fromAnchor, toAnchor, fringe, core, null, null, Shared.noteAllArcs);
         return arc;
     }
 

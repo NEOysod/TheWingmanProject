@@ -32,6 +32,7 @@ final class AgentLink implements Bridge {
     static void recordLookups(boolean on) { Hooks.setRecording(on); }
     static java.util.Map<String, Integer> takeMisses() { return Hooks.takeMisses(); }
     static java.util.List<Object[]> takeVisuals() { return Hooks.takeVisuals(); }
+    static void arcs(boolean noteAll, boolean hide) { Hooks.arcs(noteAll, hide); }
     static long[] polledKeys() { return Hooks.polledKeys(); }
 
     public boolean live() { return host.agentLive(); }

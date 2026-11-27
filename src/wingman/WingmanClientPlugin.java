@@ -176,6 +176,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             return pp == null || pp.ship == null || engine == null || !engine.isEntityInPlay(pp.ship) ? null : pp.ship;
         }
         public CombatEngineAPI engine() { return engine; }
+        public int ownId() { return ownId; }
     });
     /** Ships' targets, bodies and missiles' owners from the host (TARGETS, BODY, MISSILE_WHO). */
     private final JoinerState shipState = new JoinerState(new JoinerState.World() {
@@ -2634,7 +2635,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
                     + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage), other stats " + moreFixes + " times (" + hostStatNames.size() + " named); ships given the host's id " + ShipIds.given + ", targets put on " + shipState.aimsApplied + ", bodies " + shipState.bodiesApplied + " (ours taken " + shipState.ownBodiesTaken + "), missiles changed sides " + shipState.whoApplied + ", peak times and carrier rates " + shipState.clocksApplied
                     + "; host's shots found here " + shotFates.matched + " (not found " + shotFates.unmatched + "): struck by themselves " + shotFates.struckByThemselves
-                    + ", finished with a flash " + shotFates.flashed + ", taken off " + shotFates.removed + ", turned " + shotFates.turned + "; host's AI and damage-listener effects drawn " + visuals.drawn + " (" + visuals.matched + " were ours already)" + statNames()
+                    + ", finished with a flash " + shotFates.flashed + ", taken off " + shotFates.removed + ", turned " + shotFates.turned + ", bursts shown " + shotFates.burstsShown + " (ours already " + shotFates.burstsOurs + ")" + "; host's AI and damage-listener effects drawn " + visuals.drawn + " (" + visuals.matched + " were ours already), host's arcs drawn instead of ours " + visuals.arcsFromHost + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "

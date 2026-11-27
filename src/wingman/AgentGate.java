@@ -97,6 +97,15 @@ final class AgentGate {
     }
 
     /** Co-op stopped in this battle: the hooks give the real answers again. */
+    /** The agent is in for this battle (and new enough to note effects). */
+    static boolean linkedNow() { return linked && present(); }
+
+    /** Host: note every arc (noteAll); joiner: draw our own arcs see-through and silent (hide). False if it can't. */
+    static boolean arcs(boolean noteAll, boolean hide) {
+        if (!linked || !present()) return false;
+        try { AgentLink.arcs(noteAll, hide); return true; } catch (LinkageError e) { return false; }
+    }
+
     /** Effects mods drew in an AI's or a damage listener's frame since last asked (empty without the agent, or an older one). */
     static java.util.List<Object[]> takeVisuals() {
         if (!linked || !present()) return java.util.Collections.emptyList();

@@ -20,11 +20,17 @@ import wingman.net.Extras;
  * of that listener (one that draws whatever the damage, on a hit our copy saw), so each is first matched with ours:
  * the same sort of effect from the same class within 250 units and 0.6 s. A host one waits up to 0.35 s for ours;
  * matched, it is dropped (ours is the same effect), else drawn. Our own are learned of through the agent too.
+ *
+ * EMP arcs: while the host says it sends every arc (VIS_ALL_ARCS, said at least every 2 s; 5 s without, and ours are
+ * back), ours are drawn see-through and silent (the agent's hideArcs) and the host's drawn instead, as they come,
+ * so an arc a script aims at a random ship lands where it did on the host. Arcs of the ship we fly stay ours (they
+ * show at once, and the host's of them are passed over).
  */
 final class JoinerVisuals {
     interface World {
         ShipAPI ship(int netId);
         CombatEngineAPI engine();
+        int ownId();
     }
 
     static final float MATCH_RANGE = 250f, MATCH_TIME = 0.6f, WAIT = 0.35f;
@@ -43,9 +49,9 @@ final class JoinerVisuals {
     private final World w;
     private final List<Local> ours = new ArrayList<Local>();
     private final List<Pending> pending = new ArrayList<Pending>();
-    private float clock;
-    private boolean broken;
-    int drawn, matched;
+    private float clock, hostArcsAt = -100f;
+    private boolean broken, hiding;
+    int drawn, matched, arcsFromHost;
 
     JoinerVisuals(World w) { this.w = w; }
 
@@ -54,10 +60,28 @@ final class JoinerVisuals {
         pending.clear();
     }
 
+    /** The battle is over here: our arcs drawn as ever again. */
+    void stop() {
+        if (hiding) AgentGate.arcs(false, false);
+        hiding = false;
+    }
+
+    private boolean hostArcs() { return clock - hostArcsAt < 5f; }
+
     void onVisuals(byte[] data) {
         if (broken) return;
         try {
-            for (Extras.Visual v : Extras.decodeVisuals(data)) {
+            int[] flags = new int[1];
+            List<Extras.Visual> list = Extras.decodeVisuals(data, flags);
+            if ((flags[0] & Extras.VIS_ALL_ARCS) != 0) hostArcsAt = clock;
+            for (Extras.Visual v : list) {
+                if (v.kind == Extras.FX_ARC && hostArcs()) {
+                    int own = w.ownId();
+                    if (own >= 0 && (v.src == own || (v.src < 0 && v.aShip == own))) continue; // ours, drawn here already
+                    draw(v);
+                    arcsFromHost++;
+                    continue;
+                }
                 if (v.frame != Extras.FX_DAMAGE) { draw(v); continue; }
                 if (consume(v)) { matched++; continue; }
                 if (pending.size() >= 300) { draw(v); continue; }
@@ -77,6 +101,8 @@ final class JoinerVisuals {
     void tick(float amount) {
         clock += amount;
         if (broken) return;
+        boolean want = hostArcs();
+        if (want != hiding) hiding = AgentGate.arcs(false, want) && want;
         try {
             for (Object[] n : AgentGate.takeVisuals()) {
                 if (!(n[1] instanceof Integer) || (Integer) n[1] != Extras.FX_DAMAGE) continue;

@@ -112,6 +112,11 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
   - **Shots end as they did on the host.** Bullets that hit on the host but missed on a joiner's screen are made to
     hit (steered the last few degrees, or finished with a flash), bullets that hit missiles no longer fly through
     them, and bullets a script deleted, reflected or redirected on the host do the same on joiners.
+  - **Flak bursts.** Flak and other proximity-fuse shells that burst on the host burst on joiners too (with the
+    host's look and sound, doing no damage). Before, joiners' shells flew through missiles and never went off.
+  - **EMP arcs land where the host's did.** Scripts often aim arcs at a random ship, so every PC drew them somewhere
+    else. With the agent on both, joiners now show the host's arcs instead of their own (arcs from the ship you fly
+    still show instantly).
   - **Effects only the host's mods drew.** With the agent (the .bat launcher) on the host, EMP arcs, explosions and
     particles drawn by mods' ship AIs and damage listeners show on joiners too (AI doesn't run on joiners, and their
     copies take no damage, so those effects never came). Ones the joiner already drew itself aren't doubled.

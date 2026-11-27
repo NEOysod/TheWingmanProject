@@ -23,16 +23,21 @@ import wingman.net.Msg;
  * are taken here and sent, each point held to a ship where there is one: an arc's ends to the entities it was
  * fixed to, other points to the nearest ship within 400 units (the point in that ship's own frame), so they land on
  * the ship as it stands on the joiner's screen. At most 300 a second; droppable (a late effect is no use).
+ *
+ * EMP arcs from anywhere: scripts often aim an arc at a random ship or point, so each PC's landed elsewhere. Every
+ * arc a script draws on the host is noted (the agent's noteAllArcs), sent (at most 500 a second, apart from the
+ * rest), and every message says so (VIS_ALL_ARCS; an empty one every 2 s): a joiner then draws its own arcs
+ * see-through and silent and the host's instead, except arcs of the ship it flies, which stay its own.
  */
 final class HostVisuals {
-    static final int MAX_PER_SECOND = 300;
+    static final int MAX_PER_SECOND = 300, MAX_ARCS_PER_SECOND = 500;
     static final float HOLD_RANGE = 400f;
 
     private final Map<ShipAPI, Integer> ids;
     private final WingmanConfig cfg;
-    private boolean broken;
-    private long second;
-    private int thisSecond;
+    private boolean broken, allArcs;
+    private long second, toldAt;
+    private int thisSecond, arcsThisSecond;
     int sent, capped;
 
     HostVisuals(Map<ShipAPI, Integer> ids, WingmanConfig cfg) {
@@ -42,21 +47,25 @@ final class HostVisuals {
 
     void tick(HostSession session, Map<Integer, ShipAPI> byId) {
         if (broken) return;
+        if (!allArcs && cfg.damageReports && AgentGate.linkedNow()) allArcs = AgentGate.arcs(true, false);
         List<Object[]> noted = AgentGate.takeVisuals(); // taken every frame even when unsent, so they don't pile up
-        if (noted.isEmpty() || !cfg.damageReports || session.getPlayers().isEmpty()) return;
+        if (!cfg.damageReports || session.getPlayers().isEmpty()) return;
         try {
             long now = System.currentTimeMillis();
-            if (now - second >= 1000) { second = now; thisSecond = 0; }
+            if (now - second >= 1000) { second = now; thisSecond = 0; arcsThisSecond = 0; }
             List<Extras.Visual> out = new ArrayList<Extras.Visual>();
             for (Object[] n : noted) {
-                if (thisSecond >= MAX_PER_SECOND) { capped++; continue; }
+                boolean arc = "arc".equals(n[0]);
+                if (arc ? arcsThisSecond >= MAX_ARCS_PER_SECOND : thisSecond >= MAX_PER_SECOND) { capped++; continue; }
                 Extras.Visual v = visual(n, byId);
                 if (v == null) continue;
                 out.add(v);
-                thisSecond++;
+                if (arc) arcsThisSecond++; else thisSecond++;
             }
-            if (out.isEmpty()) return;
-            session.broadcastDroppable(Msg.VISUALS, Extras.encodeVisuals(out));
+            int flags = allArcs ? Extras.VIS_ALL_ARCS : 0;
+            if (out.isEmpty() && !(allArcs && now - toldAt >= 2000)) return; // (the flag is said again every 2 s)
+            toldAt = now;
+            session.broadcastDroppable(Msg.VISUALS, Extras.encodeVisuals(out, flags));
             sent += out.size();
         } catch (Throwable t) {
             broken = true;
@@ -82,6 +91,8 @@ final class HostVisuals {
             v.thickness = nums[4];
             v.c2 = n[7] instanceof Color ? ((Color) n[7]).getRGB() : Color.WHITE.getRGB();
             v.sound = n[8] instanceof String ? (String) n[8] : "";
+            Integer src = n.length > 9 && n[9] instanceof ShipAPI ? ids.get(n[9]) : null;
+            v.src = src == null ? -1 : src;
         } else {
             if (nums.length < 8) return null;
             hold(v, true, nums[0], nums[1], null, byId);

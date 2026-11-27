@@ -60,6 +60,13 @@ public final class Shared {
     public static volatile int visKind;
     public static volatile String visClass;
     public static volatile long visualsNoted, visualsDropped;
+    /**
+     * EMP arcs, which scripts often aim at a random ship or point, so each PC's land elsewhere: on the host every
+     * arc mods' and the game's scripts draw is noted, wherever drawn (noteAllArcs); on a joiner whose host sends them,
+     * its own are drawn see-through and silent (hideArcs), the host's being drawn instead, except its own ship's.
+     */
+    public static volatile boolean noteAllArcs, hideArcs;
+    public static volatile long arcsHidden;
 
     public static void miss(String key) {
         if (key == null) return;

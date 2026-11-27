@@ -33,7 +33,10 @@ import wingman.net.Msg;
  * (reflected, redirected, handed to the other side) on the host. Every frame the host follows each ordinary shot
  * and reports those: a hit with the point in the struck ship's own frame; a shot gone before the end of its range
  * without striking; a sharp turn in one frame (over 12 degrees, a speed change over 40%, or a change of side).
- * Gradual steering is left alone: the script doing it runs on the joiner's copy too.
+ * Gradual steering is left alone: the script doing it runs on the joiner's copy too. A shot whose fuse goes off
+ * (flak and the like: it is taken off and an explosion takes its place, in the same frame or the next) is reported
+ * as that burst, with the explosion's look and sound: a joiner's copy seldom goes off by itself, as missiles there
+ * never collide and its fuse doesn't see them.
  *
  * At most 600 reports a second; sent with each frame's batch on the droppable path (a late fate is no use).
  */
@@ -42,7 +45,7 @@ final class HostShots {
     static final float TURN_COS = (float) Math.cos(Math.toRadians(12));
 
     private static final class Track {
-        boolean skip, hit;
+        boolean skip, hit, spent;
         int frame, source, weapon, owner;
         ShipAPI sourceShip;
         float vx, vy, x, y, age, seenAt, life, turnedAt = -1f;
@@ -57,6 +60,10 @@ final class HostShots {
     /** Projectile kinds with an on-hit script (reported as SHOT_HIT by the host plugin instead). */
     private final Map<String, Boolean> scripted = new HashMap<String, Boolean>();
     private final List<Extras.ShotFate> batch = new ArrayList<Extras.ShotFate>();
+    /** A shot gone this frame (or the last) and an explosion new this frame (or the last), to be paired as a burst. */
+    private List<Track> goneNow = new ArrayList<Track>(), goneBefore = new ArrayList<Track>();
+    private List<Object[]> burstsNow = new ArrayList<Object[]>(), burstsBefore = new ArrayList<Object[]>();
+    int bursts;
     private int frame, thisSecond;
     /** The host's battle clock (as position updates carry it) this frame. */
     private float now;
@@ -99,7 +106,10 @@ final class HostShots {
         return s;
     }
 
-    private void follow(CombatEngineAPI engine) {
+    /** What this frame found, not yet sent (for the test). */
+    List<Extras.ShotFate> batch() { return batch; }
+
+    void follow(CombatEngineAPI engine) {
         frame++;
         List<DamagingProjectileAPI> all = engine.getProjectiles();
         for (int i = 0, n = all.size(); i < n; i++) {
@@ -107,6 +117,13 @@ final class HostShots {
             if (p instanceof MissileAPI) continue;
             Track t = tracks.get(p);
             if (t == null) {
+                com.fs.starfarer.api.loading.DamagingExplosionSpec ex = null;
+                try { ex = p.getExplosionSpecIfExplosion(); } catch (Throwable x) { /* none */ }
+                if (ex != null) { // an explosion: perhaps a shot whose fuse went off
+                    burstsNow.add(new Object[] { p.getSource(), p.getWeapon(), new Vector2f(p.getLocation()), ex });
+                    tracks.put(p, SKIP);
+                    continue;
+                }
                 t = start(p);
                 tracks.put(p, t);
             }
@@ -153,9 +170,77 @@ final class HostShots {
             it.remove();
             if (t.hit) continue;
             if (p.didDamage()) { hit(p, t, new Vector2f(t.x, t.y)); continue; } // struck and was gone between two frames
-            if (t.fading || t.age >= t.life * 0.85f) continue; // spent: every copy ends there too
-            gone(t);
+            t.spent = t.fading || t.age >= t.life * 0.85f; // spent: every copy ends there too (unless it burst)
+            goneNow.add(t); // gone, or burst: decided once explosions are looked at
         }
+        pairBursts();
+    }
+
+    /**
+     * Shots gone and explosions new, this frame and the last: a shot and an explosion from the same ship and weapon
+     * within 80 units are a burst. A shot left unpaired a frame later was taken off; an explosion left unpaired was
+     * something else's (a missile's fuse, a script's).
+     */
+    private void pairBursts() {
+        List<Track> shots = new ArrayList<Track>(goneBefore);
+        shots.addAll(goneNow);
+        List<Object[]> booms = new ArrayList<Object[]>(burstsBefore);
+        booms.addAll(burstsNow);
+        for (Iterator<Object[]> bi = booms.iterator(); bi.hasNext();) {
+            Object[] b = bi.next();
+            Integer sid = b[0] == null ? null : ids.get(b[0]);
+            WeaponAPI w = (WeaponAPI) b[1];
+            int wh = w == null || w.getId() == null ? 0 : w.getId().hashCode();
+            Vector2f at = (Vector2f) b[2];
+            Track best = null;
+            float bestD = 80f * 80f;
+            for (Track t : shots) {
+                if (sid == null || t.source != sid || (wh != 0 && t.weapon != wh)) continue;
+                float dx = t.x - at.x, dy = t.y - at.y, d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = t; }
+            }
+            if (best == null) continue;
+            shots.remove(best);
+            goneNow.remove(best);
+            goneBefore.remove(best);
+            bi.remove();
+            burstsNow.remove(b);
+            burstsBefore.remove(b);
+            burst(best, at, (com.fs.starfarer.api.loading.DamagingExplosionSpec) b[3]);
+        }
+        for (Track t : goneBefore) if (!t.spent) gone(t); // a frame on, no burst: taken off
+        goneBefore = goneNow;
+        goneNow = new ArrayList<Track>();
+        burstsBefore = burstsNow; // (older unpaired explosions are let go)
+        burstsNow = new ArrayList<Object[]>();
+    }
+
+    private void burst(Track t, Vector2f at, com.fs.starfarer.api.loading.DamagingExplosionSpec ex) {
+        if (!room()) return;
+        Extras.ShotFate f = fate(Extras.SHOT_BURST, t, t.seenAt, t.age, at.x, at.y);
+        try {
+            f.exDuration = ex.getDuration();
+            f.exRadius = ex.getRadius();
+            f.exCore = ex.getCoreRadius();
+            f.pSizeMin = ex.getParticleSizeMin();
+            f.pSizeRange = ex.getParticleSizeRange();
+            f.pDuration = ex.getParticleDuration();
+            f.pCount = ex.getParticleCount();
+            f.pColor = ex.getParticleColor() == null ? 0 : ex.getParticleColor().getRGB();
+            f.exColor = ex.getExplosionColor() == null ? 0 : ex.getExplosionColor().getRGB();
+            f.exSpawnRadius = ex.getParticleSpawnRadius();
+            f.sound = ex.getSoundSetId() == null ? "" : ex.getSoundSetId();
+            f.soundVolume = ex.getSoundVolume();
+            f.showGraphic = ex.isShowGraphic();
+            f.detailed = ex.isUseDetailedExplosion();
+            f.detRadius = ex.getDetailedExplosionRadius();
+            f.detFlashRadius = ex.getDetailedExplosionFlashRadius();
+            f.detFlashDuration = ex.getDetailedExplosionFlashDuration();
+            f.detFringe = ex.getDetailedExplosionFlashColorFringe() == null ? 0 : ex.getDetailedExplosionFlashColorFringe().getRGB();
+            f.detCore = ex.getDetailedExplosionFlashColorCore() == null ? 0 : ex.getDetailedExplosionFlashColorCore().getRGB();
+        } catch (Throwable x) { /* what could be read */ }
+        batch.add(f);
+        bursts++;
     }
 
     private Track start(DamagingProjectileAPI p) {

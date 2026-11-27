@@ -47,6 +47,11 @@ public class Effects {
         }
     }
 
+    /** An arc a script draws anywhere, from the given ship (or from nothing). */
+    public static void arcFrom(com.fs.starfarer.api.combat.ShipAPI from) {
+        Global.getCombatEngine().spawnEmpArcVisual(new Vector2f(1f, 1f), from, new Vector2f(200f, 0f), null, 8f, Color.BLUE, Color.WHITE);
+    }
+
     /** Effects drawn outside any such frame. */
     public static void plain() {
         Global.getCombatEngine().addHitParticle(new Vector2f(), new Vector2f(), 10f, 1f, 0.1f, Color.GREEN);

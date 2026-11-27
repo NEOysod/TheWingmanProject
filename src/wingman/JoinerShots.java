@@ -35,6 +35,10 @@ import wingman.net.Extras;
  *   a flash at the point the size of the shot's own hit glow.
  * - taken off: when it gets to the point (at once if past it).
  * - turned: when it gets to the turning point, it carries on from there with the host's velocity, facing and side.
+ * - burst (flak and the like): when it gets to the point, taken off, and the explosion it became shown there (the
+ *   host's look and sound, doing no damage: collision class none). Not if our copy burst there by itself (an
+ *   explosion of ours from that ship's same weapon within 150 units in the last 0.6 s): ours is the same burst.
+ *   No copy of ours found and none burst here: shown at once.
  * A copy not yet at its point waits on a list (at most 400, 1.5 s each).
  */
 final class JoinerShots {
@@ -61,6 +65,11 @@ final class JoinerShots {
     /** Copies already given a fate (so one copy isn't given two). */
     private final Map<DamagingProjectileAPI, Boolean> taken = new IdentityHashMap<DamagingProjectileAPI, Boolean>();
     private float clock, pruneAt;
+    /** Explosions of ours (a copy's fuse went off here): which ship and weapon, where, when; and the ones we made. */
+    private final List<float[]> ourBursts = new ArrayList<float[]>();
+    private final List<Object> ourBurstFrom = new ArrayList<Object>();
+    private final Map<DamagingProjectileAPI, Boolean> explosionsSeen = new IdentityHashMap<DamagingProjectileAPI, Boolean>();
+    int burstsShown, burstsOurs;
     private boolean broken;
     int matched, unmatched, struckByThemselves, flashed, removed, turned;
 
@@ -69,6 +78,9 @@ final class JoinerShots {
     void reset() {
         waiting.clear();
         taken.clear();
+        ourBursts.clear();
+        ourBurstFrom.clear();
+        explosionsSeen.clear();
     }
 
     void onFates(byte[] data) {
@@ -78,12 +90,16 @@ final class JoinerShots {
             if (fates.isEmpty()) return;
             CombatEngineAPI engine = w.engine();
             if (engine == null) return;
+            noteOurBursts(engine); // (bursts of ours since the last frame, to compare with)
             // Our ordinary shots, by the ship that fired them.
             Map<ShipAPI, List<DamagingProjectileAPI>> bySource = new HashMap<ShipAPI, List<DamagingProjectileAPI>>();
             List<DamagingProjectileAPI> all = engine.getProjectiles();
             for (int i = 0, n = all.size(); i < n; i++) {
                 DamagingProjectileAPI p = all.get(i);
-                if (p instanceof MissileAPI || p.getSource() == null || p.didDamage() || taken.containsKey(p)) continue;
+                if (p instanceof MissileAPI || p.getSource() == null || p.didDamage() || taken.containsKey(p) || explosionsSeen.containsKey(p)) continue;
+                boolean boom = false;
+                try { boom = p.getExplosionSpecIfExplosion() != null; } catch (Throwable t) { /* a shot */ }
+                if (boom) continue; // an explosion is no shot's copy
                 List<DamagingProjectileAPI> l = bySource.get(p.getSource());
                 if (l == null) bySource.put(p.getSource(), l = new ArrayList<DamagingProjectileAPI>());
                 l.add(p);
@@ -92,7 +108,14 @@ final class JoinerShots {
                 ShipAPI src = w.ship(f.source);
                 List<DamagingProjectileAPI> mine = src == null ? null : bySource.get(src);
                 DamagingProjectileAPI copy = mine == null ? null : find(mine, f);
-                if (copy == null) { unmatched++; continue; }
+                if (copy == null) {
+                    if (f.kind == Extras.SHOT_BURST) { // ours may have burst already, or there is none
+                        if (burstHere(f)) burstsOurs++;
+                        else showBurst(engine, f, src);
+                    }
+                    unmatched++;
+                    continue;
+                }
                 matched++;
                 taken.put(copy, Boolean.TRUE);
                 mine.remove(copy);
@@ -116,10 +139,16 @@ final class JoinerShots {
         try {
             CombatEngineAPI engine = w.engine();
             if (engine == null) return;
+            noteOurBursts(engine);
             for (Iterator<Waiting> it = waiting.iterator(); it.hasNext();) {
                 Waiting wt = it.next();
                 if (!engine.isEntityInPlay(wt.shot) || wt.shot.didDamage()) { // it struck (or ended) by itself
                     if (wt.fate.kind == Extras.SHOT_HIT && wt.shot.didDamage()) struckByThemselves++;
+                    if (wt.fate.kind == Extras.SHOT_BURST) {
+                        noteOurBursts(engine);
+                        if (burstHere(wt.fate)) burstsOurs++;
+                        else showBurst(engine, wt.fate, wt.shot.getSource());
+                    }
                     it.remove();
                     continue;
                 }
@@ -215,6 +244,11 @@ final class JoinerShots {
                 engine.removeEntity(p);
                 removed++;
                 return true;
+            case Extras.SHOT_BURST:
+                if (!there) return false;
+                engine.removeEntity(p);
+                showBurst(engine, f, p.getSource());
+                return true;
             case Extras.SHOT_TURNED: {
                 if (!there) return false;
                 // From the turning point, on the new course, as far as it has come past it.
@@ -247,5 +281,67 @@ final class JoinerShots {
         if (c == null) c = new Color(255, 200, 150, 255);
         engine.addHitParticle(at, vel, size, 1f, 0.12f, c);
         engine.addHitParticle(at, vel, size * 0.5f, 1f, 0.08f, Color.WHITE);
+    }
+
+    // ---- bursts ----
+
+    /** Explosions our own copies' fuses made since last looked (not ones we showed for the host). */
+    private void noteOurBursts(CombatEngineAPI engine) {
+        List<DamagingProjectileAPI> all = engine.getProjectiles();
+        for (int i = 0, n = all.size(); i < n; i++) {
+            DamagingProjectileAPI p = all.get(i);
+            if (p instanceof MissileAPI || explosionsSeen.containsKey(p)) continue;
+            boolean boom = false;
+            try { boom = p.getExplosionSpecIfExplosion() != null; } catch (Throwable t) { /* not one */ }
+            if (!boom) continue;
+            explosionsSeen.put(p, Boolean.TRUE);
+            WeaponAPI gun = p.getWeapon();
+            ourBursts.add(new float[] { gun == null || gun.getId() == null ? 0 : gun.getId().hashCode(), p.getLocation().x, p.getLocation().y, clock });
+            ourBurstFrom.add(p.getSource());
+        }
+        for (int i = ourBursts.size() - 1; i >= 0; i--) {
+            if (clock - ourBursts.get(i)[3] > 0.6f) { ourBursts.remove(i); ourBurstFrom.remove(i); }
+        }
+        if (explosionsSeen.size() > 300) {
+            for (Iterator<DamagingProjectileAPI> it = explosionsSeen.keySet().iterator(); it.hasNext();) if (!engine.isEntityInPlay(it.next())) it.remove();
+        }
+    }
+
+    /** One of ours is this burst (and is used up); see the class comment. */
+    private boolean burstHere(Extras.ShotFate f) {
+        ShipAPI src = w.ship(f.source);
+        for (int i = 0; i < ourBursts.size(); i++) {
+            float[] b = ourBursts.get(i);
+            if (ourBurstFrom.get(i) != src || (b[0] != 0f && (int) b[0] != f.weapon)) continue;
+            float dx = b[1] - f.x, dy = b[2] - f.y;
+            if (dx * dx + dy * dy > 150f * 150f) continue;
+            ourBursts.remove(i);
+            ourBurstFrom.remove(i);
+            return true;
+        }
+        return false;
+    }
+
+    /** The host's burst, shown here: its look and sound, no damage (it collides with nothing). */
+    private void showBurst(CombatEngineAPI engine, Extras.ShotFate f, ShipAPI source) {
+        com.fs.starfarer.api.loading.DamagingExplosionSpec spec = new com.fs.starfarer.api.loading.DamagingExplosionSpec(
+                Math.max(0.05f, f.exDuration), f.exRadius, f.exCore, 0f, 0f,
+                com.fs.starfarer.api.combat.CollisionClass.NONE, com.fs.starfarer.api.combat.CollisionClass.NONE,
+                f.pSizeMin, f.pSizeRange, f.pDuration, f.pCount, new Color(f.pColor, true), new Color(f.exColor, true));
+        if (f.sound != null && !f.sound.isEmpty()) spec.setSoundSetId(f.sound);
+        spec.setSoundVolume(f.soundVolume);
+        spec.setShowGraphic(f.showGraphic);
+        spec.setParticleSpawnRadius(f.exSpawnRadius);
+        if (f.detailed) {
+            spec.setUseDetailedExplosion(true);
+            spec.setDetailedExplosionRadius(f.detRadius);
+            spec.setDetailedExplosionFlashRadius(f.detFlashRadius);
+            spec.setDetailedExplosionFlashDuration(f.detFlashDuration);
+            spec.setDetailedExplosionFlashColorFringe(new Color(f.detFringe, true));
+            spec.setDetailedExplosionFlashColorCore(new Color(f.detCore, true));
+        }
+        DamagingProjectileAPI made = engine.spawnDamagingExplosion(spec, source, new Vector2f(f.x, f.y));
+        if (made != null) explosionsSeen.put(made, Boolean.TRUE); // not "ours" for matching
+        burstsShown++;
     }
 }

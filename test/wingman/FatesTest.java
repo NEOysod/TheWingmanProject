@@ -30,7 +30,8 @@ public class FatesTest {
     // ---- a small battle: ships, shots, an engine ----
 
     static final List<Object> field = new ArrayList<Object>();
-    static int particles;
+    static int particles, bursts;
+    static com.fs.starfarer.api.loading.DamagingExplosionSpec lastBurst;
 
     static ShipAPI ship(final float x, final float y, final float facing) {
         final Vector2f at = new Vector2f(x, y), vel = new Vector2f();
@@ -51,13 +52,19 @@ public class FatesTest {
         final Vector2f loc, vel;
         float elapsed, facing;
         int owner;
+        boolean boom; // an explosion (a fuse went off)
+        boolean struck;
+        ShipAPI struckShip;
         DamagingProjectileAPI api;
         Shot(float x, float y, float vx, float vy, float elapsed) { loc = new Vector2f(x, y); vel = new Vector2f(vx, vy); this.elapsed = elapsed; }
     }
 
     static DamagingProjectileAPI shot(final Shot s, final ShipAPI source, final String gunId) {
         final WeaponAPI gun = (WeaponAPI) Proxy.newProxyInstance(FatesTest.class.getClassLoader(), new Class<?>[] { WeaponAPI.class }, new InvocationHandler() {
-            public Object invoke(Object p, Method m, Object[] a) { return m.getName().equals("getId") ? gunId : null; }
+            public Object invoke(Object p, Method m, Object[] a) {
+                if (m.getName().equals("getRange")) return 1000f;
+                return m.getName().equals("getId") ? gunId : null;
+            }
         });
         s.api = (DamagingProjectileAPI) Proxy.newProxyInstance(FatesTest.class.getClassLoader(), new Class<?>[] { DamagingProjectileAPI.class }, new InvocationHandler() {
             public Object invoke(Object p, Method m, Object[] a) {
@@ -67,10 +74,16 @@ public class FatesTest {
                 if (n.equals("getElapsed")) return s.elapsed;
                 if (n.equals("getSource")) return source;
                 if (n.equals("getWeapon")) return gun;
-                if (n.equals("didDamage")) return false;
+                if (n.equals("didDamage")) return s.struck;
+                if (n.equals("getDamageTarget")) return s.struckShip;
+                if (n.equals("getProjectileSpecId")) return "test_shot";
+                if (n.equals("getMoveSpeed")) return s.vel.length();
+                if (n.equals("isFading")) return false;
                 if (n.equals("getOwner")) return s.owner;
                 if (n.equals("setOwner")) { s.owner = (Integer) a[0]; return null; }
                 if (n.equals("getFacing")) return s.facing;
+                if (n.equals("getExplosionSpecIfExplosion")) return s.boom ? new com.fs.starfarer.api.loading.DamagingExplosionSpec(0.1f, 50f, 35f, 0f, 0f,
+                        com.fs.starfarer.api.combat.CollisionClass.NONE, com.fs.starfarer.api.combat.CollisionClass.NONE, 3f, 3f, 1f, 100, Color.RED, Color.RED) : null;
                 if (n.equals("setFacing")) { s.facing = (Float) a[0]; return null; }
                 if (n.equals("hashCode")) return System.identityHashCode(p);
                 if (n.equals("equals")) return p == a[0];
@@ -88,6 +101,7 @@ public class FatesTest {
             if (n.equals("isEntityInPlay")) return field.contains(a[0]);
             if (n.equals("removeEntity")) { field.remove(a[0]); return null; }
             if (n.equals("addHitParticle")) { particles++; return null; }
+            if (n.equals("spawnDamagingExplosion")) { bursts++; lastBurst = (com.fs.starfarer.api.loading.DamagingExplosionSpec) a[0]; return null; }
             return null;
         }
     });
@@ -186,6 +200,81 @@ public class FatesTest {
         js.tick(0.016f);
         check(!field.contains(mine1.api) && field.contains(mine2.api), "our own shot is matched a round trip ahead (the nearer of two in a row)");
         own = -1;
+
+        // ---- flak: a shell whose fuse went off on the host ----
+        Extras.ShotFate fb1 = fate(Extras.SHOT_BURST, 5, "flak", 10.05f, 0.3f, 300f, 0f);
+        fb1.exDuration = 0.1f; fb1.exRadius = 50f; fb1.exCore = 35f; fb1.pSizeMin = 3f; fb1.pSizeRange = 3f; fb1.pDuration = 1f; fb1.pCount = 100;
+        fb1.pColor = new Color(255, 155, 155).getRGB(); fb1.exColor = Color.RED.getRGB(); fb1.sound = "explosion_flak"; fb1.soundVolume = 0.8f;
+        Extras.ShotFate fbb = Extras.decodeShotFates(Extras.encodeShotFates(Arrays.asList(fb1))).get(0);
+        check(fbb.kind == Extras.SHOT_BURST && fbb.exRadius == 50f && fbb.pCount == 100 && fbb.sound.equals("explosion_flak") && fbb.soundVolume == 0.8f
+                && fbb.showGraphic && !fbb.detailed, "a burst arrives with the explosion's look and sound");
+        field.clear();
+        Shot shell = new Shot(250f, 0f, 1000f, 0f, 0.25f); // ours: 50 units short of where the host's went off
+        shot(shell, gunShip, "flak");
+        js.onFates(Extras.encodeShotFates(Arrays.asList(fb1)));
+        check(field.contains(shell.api) && bursts == 0, "our shell is found and goes on to the point");
+        shell.loc.x = 299f;
+        js.tick(0.016f);
+        check(!field.contains(shell.api) && bursts == 1 && lastBurst.getMaxDamage() == 0f
+                && lastBurst.getCollisionClass() == com.fs.starfarer.api.combat.CollisionClass.NONE && "explosion_flak".equals(lastBurst.getSoundSetId()),
+                "there it is taken off and the burst shown: the host's look and sound, no damage, colliding with nothing");
+        // ours went off by itself nearby: the host's burst is that one, not shown again
+        Shot ownBoom = new Shot(320f, 10f, 0f, 0f, 0f);
+        ownBoom.boom = true;
+        shot(ownBoom, gunShip, "flak");
+        js.tick(0.016f);
+        js.onFates(Extras.encodeShotFates(Arrays.asList(fb1)));
+        check(bursts == 1 && js.burstsOurs == 1, "our shell burst by itself there: the host's burst isn't shown twice");
+        // no copy and no burst of ours: shown at once
+        js.onFates(Extras.encodeShotFates(Arrays.asList(fate(Extras.SHOT_BURST, 5, "flak", 10.05f, 0.3f, 900f, 900f))));
+        check(bursts == 2, "a burst with no shell of ours anywhere is shown at once");
+
+        // ---- the host's side: what it sees become of its shots, frame by frame ----
+        field.clear();
+        Map<ShipAPI, Integer> hostIds = new HashMap<ShipAPI, Integer>();
+        ShipAPI hostGun = ship(0f, 0f, 0f), hostTarget = ship(500f, 0f, 90f);
+        hostIds.put(hostGun, 5);
+        hostIds.put(hostTarget, 12);
+        HostShots hs = new HostShots(hostIds);
+        Shot flak = new Shot(100f, 0f, 1000f, 0f, 0.1f), plain = new Shot(100f, 50f, 1000f, 0f, 0.1f), bounce = new Shot(100f, -50f, 1000f, 0f, 0.1f),
+                bullet = new Shot(480f, 0f, 1000f, 0f, 0.48f);
+        shot(flak, hostGun, "flak"); shot(plain, hostGun, "gun"); shot(bounce, hostGun, "gun"); shot(bullet, hostGun, "gun");
+        hs.follow(engine);
+        check(hs.batch().isEmpty(), "host, first frame: nothing to tell");
+        field.remove(flak.api); // its fuse went off: an explosion in its place
+        Shot ex = new Shot(110f, 0f, 0f, 0f, 0f);
+        ex.boom = true;
+        shot(ex, hostGun, "flak");
+        field.remove(plain.api); // a script took it off, nothing in its place
+        bounce.vel.set(-1000f, 0f); // reflected
+        bullet.struck = true; bullet.struckShip = hostTarget; bullet.loc.set(495f, 10f);
+        hs.follow(engine);
+        List<Extras.ShotFate> told = new ArrayList<Extras.ShotFate>(hs.batch());
+        hs.batch().clear();
+        boolean sawBurst = false, sawTurn = false, sawHit = false, sawGone = false;
+        for (Extras.ShotFate t : told) {
+            if (t.kind == Extras.SHOT_BURST && t.x == 110f && t.exRadius == 50f && t.pCount == 100) sawBurst = true;
+            if (t.kind == Extras.SHOT_TURNED && t.vx == -1000f) sawTurn = true;
+            // the target faces +y (90): the point (-5, +10) from its centre is 10 ahead, 5 to its left (ox 10, oy 5)
+            if (t.kind == Extras.SHOT_HIT && t.target == 12 && Math.abs(t.ox - 10f) < 0.01f && Math.abs(t.oy - 5f) < 0.01f) sawHit = true;
+            if (t.kind == Extras.SHOT_GONE) sawGone = true;
+        }
+        if (!(sawBurst && sawTurn && sawHit && !sawGone)) for (Extras.ShotFate t : told) System.out.println("  told: kind " + t.kind + " at " + t.x + "," + t.y + " ox " + t.ox + " oy " + t.oy + " vx " + t.vx);
+        check(sawBurst && sawTurn && sawHit && !sawGone, "host: a shell that became an explosion is a burst, a reflected one turned, a struck one a hit "
+                + "(point in the struck ship's own frame); the one taken off waits a frame for an explosion");
+        hs.follow(engine);
+        check(hs.batch().size() == 1 && hs.batch().get(0).kind == Extras.SHOT_GONE && hs.batch().get(0).x == 100f && hs.batch().get(0).y == 50f,
+                "a frame later, no explosion: it was taken off where it last was");
+        hs.batch().clear();
+
+        // ---- effects: the all-arcs flag and an arc's source travel with them ----
+        Extras.Visual arc2 = new Extras.Visual();
+        arc2.kind = Extras.FX_ARC; arc2.src = 7; arc2.aShip = 7; arc2.bShip = -1; arc2.thickness = 5f;
+        int[] flagsOut = new int[1];
+        List<Extras.Visual> vf = Extras.decodeVisuals(Extras.encodeVisuals(Arrays.asList(arc2), Extras.VIS_ALL_ARCS), flagsOut);
+        check(flagsOut[0] == Extras.VIS_ALL_ARCS && vf.get(0).src == 7 && vf.get(0).frame == 0, "the host's 'every arc' flag and an arc's source arrive");
+        check(Extras.decodeVisuals(Extras.encodeVisuals(new ArrayList<Extras.Visual>(), Extras.VIS_ALL_ARCS), flagsOut).isEmpty() && flagsOut[0] == 1,
+                "an empty message still carries the flag (said every 2 s)");
 
         // ---- peak time and carriers' replacement rates, effects: handled where they arrive (JoinerState, JoinerVisuals) ----
         System.out.println(fails == 0 ? "FATES PASSED (" + checks + " checks)" : "FATES FAILED: " + fails + " of " + checks);
