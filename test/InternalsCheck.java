@@ -75,6 +75,9 @@ public class InternalsCheck {
         if (a.length > 1) urls.add(new File(a[1]).toURI().toURL());
         game = new URLClassLoader(urls.toArray(new URL[0]), InternalsCheck.class.getClassLoader());
 
+        // ShipIds: the ship class's private id field (set to the host's id on a joiner)
+        hasField("ShipIds", "com.fs.starfarer.combat.entities.Ship", "id", "java.lang.String", false);
+
         // BayQuiet, BayLink: the launch bay class and its private fields
         String bay = null;
         try {

@@ -383,6 +383,8 @@ final class Screens {
         out.add(new Shot("settings", 1920, 1080, -1, -1, new Runnable() { public void run() { settings(3, 6); } }));
         out.add(new Shot("settings-trouble-1366", 1366, 768, -1, -1, new Runnable() { public void run() { settings(5, 1); } }));
         out.add(new Shot("settings-officers-720", 1280, 720, -1, -1, new Runnable() { public void run() { settings(0, 7); } }));
+        out.add(new Shot("settings-stats-720", 1280, 720, -1, -1, new Runnable() { public void run() { settings(4, 5); } }));
+        out.add(new Shot("settings-memory-720", 1280, 720, -1, -1, new Runnable() { public void run() { settings(4, 6); } }));
         out.add(new Shot("help", 1920, 1080, -1, -1, new Runnable() { public void run() {
             mousePanel().renderBelow(1912f, 1020f, 432f, WingmanTitlePlugin.helpDoc(1));
         } }));

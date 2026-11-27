@@ -6,7 +6,7 @@ import java.io.IOException;
 public final class Msg {
     private Msg() {}
 
-    public static final int PROTOCOL_VERSION = 64;
+    public static final int PROTOCOL_VERSION = 65;
 
     // client -> host
     public static final byte HELLO = 1;     // int protocol, UTF name, ModList
@@ -114,6 +114,16 @@ public final class Msg {
     public static final byte PINGS = 75;
     /** joiner -> host: UTF text. host -> joiners: byte slot, UTF name, UTF text (see ChatLog). */
     public static final byte CHAT = 76;
+    /** host -> joiner: what ships aim their systems and themselves at (Extras.Aim): R target, system / maneuver / carrier targets, system point. */
+    public static final byte TARGETS = 77;
+    /** host -> joiner: ships' bodies and switches (Extras.Body): collision class, mass, radius, shield arc and type, disabled shields or system, tags. */
+    public static final byte BODY = 78;
+    /** host -> joiner: a missile changed sides or launcher (Extras.MissileWho): hijacked, retargeted, handed over. */
+    public static final byte MISSILE_WHO = 79;
+    /** host -> joiner: names for stats beyond the fixed ones (Extras.StatName): index, name ("m:" getter, "d:" / "b:" a mod's named stat). */
+    public static final byte STAT_NAMES = 80;
+    /** host -> joiner: values of those named stats (Extras.MoreStats), by index, changes only. */
+    public static final byte STATS_MORE = 81;
     public static final byte FLEET = 60;        // host -> joiner: one campaign fleet in the battle (FleetInfo), before the first SPAWN of a ship of it
     public static final byte[] EMPTY = new byte[0];
 

@@ -78,6 +78,11 @@ public final class NetStats {
             case Msg.REFIT_REQUEST: return "refit requests";
             case Msg.REFIT_RESULT: return "refit results";
             case Msg.AIMS: return "point defense aims";
+            case Msg.TARGETS: return "ships' targets";
+            case Msg.BODY: return "ships' bodies";
+            case Msg.MISSILE_WHO: return "missile owners";
+            case Msg.STAT_NAMES: return "stat names";
+            case Msg.STATS_MORE: return "more ship stats";
             case Msg.WISH: return "wish list changes";
             case Msg.WISH_LIST: return "wish lists";
             case Msg.INPUT_MODE: return "controls mode";

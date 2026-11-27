@@ -138,6 +138,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
     private final HostEnvironment environment = new HostEnvironment();
     private final HostDamage damage = new HostDamage();
     private HostExtras extras;
+    private HostState shipState;
     /** Fighters that have an officer of their own (a mod's doing): synced as closely as ships. */
     private final Set<Integer> officered = new HashSet<Integer>();
     private int officeredSeen;
@@ -233,7 +234,8 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             Ui.say(engine, "Co-op: could not open port " + cfg.port + " (" + e.getMessage() + "). Hosting is off.");
             return false;
         }
-        extras = new HostExtras(ids, cfg, officered);
+        extras = new HostExtras(ids, cfg, officered, missileIds);
+        shipState = new HostState(ids, missileIds, cfg);
         session.beginBattle();
         rate = cfg.snapshotRate;
         readyPhase = cfg.readyCheck ? 0 : 2;
@@ -457,6 +459,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
             p.conn.send(Msg.RESET, Msg.EMPTY);
             damage.resendAll();
             if (extras != null) extras.resendAll();
+            if (shipState != null) shipState.resendAll();
             if (!campaignCopyTried) { campaignCopyTried = true; campaignCopy = HostCampaign.build(engine); } // once per battle
             if (!lunaCopyTried) { lunaCopyTried = true; lunaCopy = LunaCopy.encodeHost(); } // once per battle
             if (lunaCopy != null) p.conn.send(Msg.LUNA, lunaCopy); // before the ships: hullmods read settings as they are built
@@ -507,6 +510,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         prof.mark(7);
         damage.tick(session, byId, extras == null ? null : extras.hitLately());
         if (extras != null) extras.tick(engine, session, byId);
+        if (shipState != null) shipState.tick(engine, session, byId);
         prof.mark(8);
 
         // Bandwidth meter: with debug logging, a detailed line every 30 seconds while anyone is connected;
@@ -535,6 +539,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
                         + (possibleStates == 0 ? 100 : Math.round(100f * sentStates / possibleStates)) + "% of ship/missile states needed sending, "
                         + trimmed + " held back as out of sight, " + scriptEnds + " missiles ended by a script so far; "
                         + (extras == null ? "" : extras.statsSent + " stat values, " + extras.notesSent + " script values and " + extras.hurtsSent + " damage reports sent so far (" + extras.ordinary + " ordinary weapon hits not reported)")
+                        + (shipState == null ? "" : "; targets " + shipState.aimsSent + ", bodies " + shipState.bodiesSent + ", missile owners " + shipState.whoSent)
                         + "; values left unsent as near enough to where the joiner already has them: " + session.packerCounts()[0] + " against " + session.packerCounts()[1] + " sent, "
                         + session.packerCounts()[2] + " ship/missile states left out as guessed right"
                         + "; updates: " + session.describeUpdates()
@@ -1376,6 +1381,7 @@ public class WingmanHostPlugin extends BaseEveryFrameCombatPlugin {
         ShipVariantAPI v = s.getVariant();
         try { if (v.getTags() != null) sp.variantTags.addAll(v.getTags()); } catch (Throwable t) { /* no tags */ }
         try { if (!s.isFighter() && s.getFleetMember() != null && s.getFleetMember().getId() != null) sp.memberId = s.getFleetMember().getId(); } catch (Throwable t) { /* none */ }
+        try { if (s.getId() != null) sp.shipId = s.getId(); } catch (Throwable t) { /* none */ }
         sp.vents = v.getNumFluxVents();
         sp.caps = v.getNumFluxCapacitors();
         sp.hullMods.addAll(v.getHullMods());

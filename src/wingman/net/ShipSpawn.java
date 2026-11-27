@@ -78,6 +78,11 @@ public final class ShipSpawn {
     public Person captain;
     /** The fleet the ship belongs to on the host (see FleetInfo), or -1. */
     public int fleetKey = -1;
+    /**
+     * The host's ship id (ShipAPI.getId(), "" if none). The game makes a random one on each PC; a joiner gives its
+     * copy the host's, so data scripts keep under "something_" + ship.getId() is found on every PC (protocol 65).
+     */
+    public String shipId = "";
 
     private static void writeList(Msg.W w, List<String> l) throws IOException {
         w.out.writeShort(l.size());
@@ -149,6 +154,7 @@ public final class ShipSpawn {
             w.out.writeInt(fleetKey);
             w.out.writeBoolean(ally);
             w.out.writeByte(hullSize + 1); // (0: as its hull)
+            w.out.writeUTF(shipId == null ? "" : shipId.length() > 100 ? shipId.substring(0, 100) : shipId);
         } catch (IOException e) { throw new IllegalStateException(e); }
         return w.done();
     }
@@ -224,6 +230,7 @@ public final class ShipSpawn {
             s.hullSize = (in.readByte() & 0xFF) - 1;
             if (s.hullSize < -1 || s.hullSize >= com.fs.starfarer.api.combat.ShipAPI.HullSize.values().length) s.hullSize = -1;
         }
+        if (in.remaining() > 0) s.shipId = in.readUTF();
         return s;
     }
 }

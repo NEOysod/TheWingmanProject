@@ -95,6 +95,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         boolean drone;          // a drone some ship's system launched
         boolean statsDue;       // new figures have arrived and are yet to be applied
         float[] hostStats;      // its stats as they stand on the host (NaN: not told yet); see ShipStats
+        Map<Integer, Float> hostMore; // its other stats on the host, by the host's number for their name (MoreStats); NaN: gone
         int statTurn;
         int[] ahead;            // per weapon: shots fired here minus shots fired on the host
         boolean[] counted;      // per weapon: the host has sent a shot count for it at least once
@@ -151,6 +152,30 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private ClientLink.State lastState = ClientLink.State.IDLE;
     private ShipAPI placeholder;
     private final Map<Integer, Puppet> puppets = new HashMap<Integer, Puppet>();
+    /** The host's names for its stat numbers (STAT_NAMES), for MoreStats. */
+    private final Map<Integer, String> hostStatNames = new HashMap<Integer, String>();
+    private final Map<String, Integer> statByName = new HashMap<String, Integer>();
+    /** Named stats for ships not built here yet, by the host's ship number. */
+    private final Map<Integer, Map<Integer, Float>> pendingMore = new HashMap<Integer, Map<Integer, Float>>();
+    private int moreFixes;
+    /** Ships' targets, bodies and missiles' owners from the host (TARGETS, BODY, MISSILE_WHO). */
+    private final JoinerState shipState = new JoinerState(new JoinerState.World() {
+        public ShipAPI ship(int netId) {
+            Puppet pp = puppets.get(netId);
+            return pp == null || pp.ship == null || engine == null || !engine.isEntityInPlay(pp.ship) ? null : pp.ship;
+        }
+        public MissileAPI missile(int id) {
+            MissilePuppet mp = missiles.get(id);
+            return mp == null ? null : mp.missile;
+        }
+        public int ownId() { return ownId; }
+        public float clock() { return clock; }
+        public float patience() { return Math.max(0.5f, Math.min(1.5f, roundTrip > 0f ? roundTrip + 0.3f : 0.5f)); }
+        public boolean bodyIsOurs(ShipAPI s) {
+            Puppet pp = byShip.get(s);
+            return pp == null || pp.drone || pp.fighter || s.isHulk() || s == placeholder;
+        }
+    });
     private final Map<ShipAPI, Puppet> byShip = new IdentityHashMap<ShipAPI, Puppet>();
     private final Map<Integer, MissilePuppet> missiles = new HashMap<Integer, MissilePuppet>();
     private final Map<MissileAPI, MissilePuppet> byMissile = new IdentityHashMap<MissileAPI, MissilePuppet>();
@@ -537,6 +562,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             if (asked != null && asked.ship == engine.getPlayerShip()) handsOn = asked;
         }
         for (Puppet pp : puppets.values()) apply(pp, pp == handsOn, amount);
+        shipState.tick(amount);
+        retryRefs();
         catchUpShots(handsOn, amount);
         AgentGate.reportCaught();
         prof.mark(2);
@@ -1494,13 +1521,59 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     pp.statsDue = true;
                 }
                 break;
+            case Msg.STAT_NAMES:
+                for (wingman.net.Extras.StatName n : wingman.net.Extras.decodeStatNames(p.data)) { hostStatNames.put(n.index, n.name); statByName.put(n.name, n.index); }
+                break;
+            case Msg.STATS_MORE:
+                if (cfg == null || !cfg.syncStats) break;
+                for (wingman.net.Extras.MoreStats st : wingman.net.Extras.decodeMoreStats(p.data)) {
+                    Puppet pp = puppets.get(st.ship);
+                    Map<Integer, Float> into;
+                    if (pp != null) {
+                        if (pp.hostMore == null) pp.hostMore = new HashMap<Integer, Float>();
+                        into = pp.hostMore;
+                        pp.statsDue = true;
+                    } else { // not built here yet: kept for when it is
+                        into = pendingMore.get(st.ship);
+                        if (into == null) {
+                            if (pendingMore.size() >= 500) continue;
+                            into = new HashMap<Integer, Float>();
+                            pendingMore.put(st.ship, into);
+                        }
+                    }
+                    for (int i = 0; i < st.index.length; i++) {
+                        float v = st.values[i];
+                        if (v == v && Snapshot.bad(v)) continue;
+                        into.put(st.index[i], v);
+                    }
+                }
+                break;
+            case Msg.TARGETS:
+                if (cfg != null && cfg.syncScriptMemory) shipState.onAims(p.data);
+                break;
+            case Msg.BODY:
+                if (cfg != null && cfg.syncStats) shipState.onBodies(p.data);
+                break;
+            case Msg.MISSILE_WHO:
+                if (cfg != null && cfg.syncStats) shipState.onMissileWho(p.data);
+                break;
             case Msg.NOTES:
                 if (cfg == null || !cfg.syncScriptMemory) break;
                 for (wingman.net.Extras.Note n : wingman.net.Extras.decodeNotes(p.data)) {
-                    if (n.key.startsWith("wingman")) continue;
+                    if (n.key.startsWith("wingman") || n.key.startsWith("nonAI_SAIF_")) continue;
                     Object v = n.value(n.wide);
                     try {
-                        if (n.ship < 0) {
+                        if (n.kind >= wingman.net.Extras.SHIP_REF) {
+                            int r = putRefNote(n);
+                            if (r > 0) notesApplied++;
+                            else if (r < 0 && refsWaiting.size() < 300) { refsWaiting.add(n); refsWaitingSince.add(clock); }
+                            continue;
+                        }
+                        if (n.onMissile) {
+                            MissilePuppet holder = missiles.get(n.ship);
+                            if (holder == null || holder.missile == null) continue;
+                            if (v == null) holder.missile.removeCustomData(n.key); else holder.missile.setCustomData(n.key, v);
+                        } else if (n.ship < 0) {
                             if (v == null) engine.getCustomData().remove(n.key); else engine.getCustomData().put(n.key, v);
                         } else {
                             Puppet pp = puppets.get(n.ship);
@@ -1564,6 +1637,12 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
             case Msg.RESET: {
                 hostPaused = false;
                 pdAims.clear();
+                shipState.reset();
+                refsWaiting.clear();
+                refsWaitingSince.clear();
+                hostStatNames.clear(); // they come again with the battle
+                statByName.clear();
+                pendingMore.clear();
                 Subsystems.reset();
                 // A refresh we asked for (requestResync), not a new battle: the ship we fly is kept as it is, and
                 // we stay at its helm, with its modules. Its description comes again and is passed over (spawn: it
@@ -2521,7 +2600,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                     + "; of the host's scripted hits " + hitsMatched + " were also made here, "
                     + hitsCopied + " were copied from the host, and " + hitsOwnOnly + " made here were not reported by the host; wrecks followed: " + wrecks.size() + ", break-ups copied " + wreckSplitsDone + " (" + wreckCutsSame + " cut as on the host, " + wreckCutsOwn + " cut here)"
                     + ", not possible " + wreckSplitsFailed + "); " + straysRemoved + " fighters/missiles made by this game were cleared away, "
-                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage)" + statNames()
+                    + missilesUnbuilt + " host missiles could not be built here, " + standIns + " were built with a borrowed launcher (" + wrongLaunchers + " not even of the same weapon, their hits made by hand)" + caughtLine() + "; ship systems switched to match the host " + systemsForced + " times, started the proper way " + systemsStarted + " times, stopped the proper way " + systemsStopped + " times, teleports drawn " + blinksDrawn + " times, overloads heard " + overloadsHeard + ", system starts heard (pushed) " + systemSoundsPlayed + ", our ship's script values kept over the host's older ones " + ownNotesKept + " times, refreshes we stayed in our ship " + refreshesKept + ", fighter builds cleared from bays " + BayQuiet.cleared + " times; modules shown " + modulesShown + ", drones shown " + dronesShown + "; stats corrected " + statFixes + " times (held back " + statsHeldBack + " times while a system or cloak changed stage), other stats " + moreFixes + " times (" + hostStatNames.size() + " named); ships given the host's id " + ShipIds.given + ", targets put on " + shipState.aimsApplied + ", bodies " + shipState.bodiesApplied + " (ours taken " + shipState.ownBodiesTaken + "), missiles changed sides " + shipState.whoApplied + statNames()
                     + "; script values copied " + notesApplied + "; damage reports " + hurtsSeen + " (" + hurtsPlayed + " played out here); shots made up " + shotsMadeUp
                     + " frames, held " + shotsHeld + " frames; launchers held back from firing ahead of the host " + launchesHeld + " frames, " + launchesRefuted
                     + " missiles fired here that the host never fired; missiles ended by a script on the host: "
@@ -2969,6 +3048,7 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
 
     /** Make a ship in this battle the stand-in for one of the host's: inert, unhurtable, and on our books. */
     private Puppet register(ShipSpawn sp, ShipAPI ship) {
+        ShipIds.give(ship, sp.shipId); // before its scripts' first frame, so keys they make from it are the host's
         ship.setShipAI(new PuppetAI());
         makeInvulnerable(ship);
         HullGuard guard = new HullGuard();
@@ -3028,6 +3108,8 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
                         + differ + " weapon slot(s): " + detail);
             }
         }
+        Map<Integer, Float> waiting = pendingMore.remove(sp.netId);
+        if (waiting != null) { pp.hostMore = waiting; pp.statsDue = true; }
         puppets.put(sp.netId, pp);
         byShip.put(ship, pp);
         return pp;
@@ -4699,6 +4781,103 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
     private int ownNoteShip = -1, ownNotesKept;
 
     /** Has this game's own script changed this value on our ship lately (since we last left it)? */
+    /** Script values holding a ship or missile not built here yet, tried again for 5 s (with when they came). */
+    private final List<wingman.net.Extras.Note> refsWaiting = new ArrayList<wingman.net.Extras.Note>();
+    private final List<Float> refsWaitingSince = new ArrayList<Float>();
+    private float refsTriedAt;
+
+    /** The waiting script values, twice a second: put once their ship or missile is here, dropped after 5 s. */
+    private void retryRefs() {
+        if (refsWaiting.isEmpty() || clock - refsTriedAt < 0.5f) return;
+        refsTriedAt = clock;
+        for (int i = refsWaiting.size() - 1; i >= 0; i--) {
+            int r = putRefNote(refsWaiting.get(i));
+            if (r > 0) notesApplied++;
+            if (r >= 0 || clock - refsWaitingSince.get(i) > 5f) { refsWaiting.remove(i); refsWaitingSince.remove(i); }
+        }
+    }
+
+    /**
+     * Put a script value that is one of the host's ships or missiles (as our copy of it) or a point, into the store
+     * of the ship, missile or battle it belongs to here. Left alone where the value here is of another sort (then it
+     * isn't the same script's). Returns 1 if put, 0 if nothing to do, -1 if its ship or missile isn't here yet.
+     */
+    private int putRefNote(wingman.net.Extras.Note n) {
+        Map<String, Object> data;
+        if (n.onMissile) {
+            MissilePuppet holder = missiles.get(n.ship);
+            if (holder == null || holder.missile == null) return -1;
+            data = holder.missile.getCustomData();
+        } else if (n.ship < 0) {
+            data = engine == null ? null : engine.getCustomData();
+        } else {
+            Puppet holder = puppets.get(n.ship);
+            if (holder == null || holder.ship == null) return -1;
+            if (n.ship == ownId && ownNoteLocal(holder.ship, n.key)) { ownNotesKept++; return 0; }
+            data = holder.ship.getCustomData();
+        }
+        if (data == null) return 0;
+        Object cur = data.get(n.key);
+        switch (n.kind) {
+            case wingman.net.Extras.SHIP_REF: {
+                if (cur != null && !(cur instanceof ShipAPI)) return 0;
+                Puppet t = n.whole < 0 ? null : puppets.get((int) n.whole);
+                if (t == null || t.ship == null) return n.whole < 0 ? 0 : -1;
+                if (cur == t.ship) return 0;
+                data.put(n.key, t.ship);
+                return 1;
+            }
+            case wingman.net.Extras.MISSILE_REF: {
+                if (cur != null && !(cur instanceof MissileAPI)) return 0;
+                MissilePuppet t = n.whole < 0 ? null : missiles.get((int) n.whole);
+                if (t == null || t.missile == null) return n.whole < 0 ? 0 : -1;
+                if (cur == t.missile) return 0;
+                data.put(n.key, t.missile);
+                return 1;
+            }
+            case wingman.net.Extras.POINT: {
+                float x = (float) n.number;
+                if (cur instanceof Vector2f) { // the same object scripts may hold on to: moved, not replaced
+                    Vector2f at = (Vector2f) cur;
+                    if (Math.abs(at.x - x) < 0.5f && Math.abs(at.y - n.y) < 0.5f) return 0;
+                    at.set(x, n.y);
+                    return 1;
+                }
+                if (cur != null) return 0;
+                data.put(n.key, new Vector2f(x, n.y));
+                return 1;
+            }
+            default:
+                return 0;
+        }
+    }
+
+    /** A bonus's value at base 0 on the host (its "#0" partner), NaN if not told. */
+    private float hostAt0(Puppet pp, String name) {
+        if (pp.hostMore == null) return Float.NaN;
+        Integer k = statByName.get(name);
+        Float v = k == null ? null : pp.hostMore.get(k);
+        return v == null ? Float.NaN : v;
+    }
+
+    /**
+     * The ship's other stats (MoreStats) made the host's, bonuses with their value at base 0 ("#0") so they are right
+     * at every base; a stat the host let go of is let go of here, once. "s:" entries belong to ShipStats' list.
+     */
+    private void forceMore(Puppet pp, MutableShipStatsAPI stats) {
+        if (pp.hostMore == null || pp.hostMore.isEmpty()) return;
+        for (Iterator<Map.Entry<Integer, Float>> it = pp.hostMore.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<Integer, Float> e = it.next();
+            String name = hostStatNames.get(e.getKey());
+            if (name == null) continue; // its name hasn't come yet
+            float v = e.getValue();
+            if (name.endsWith("#0") || name.startsWith("s:")) { if (v != v) it.remove(); continue; } // used with their partners
+            Object stat = MoreStats.resolve(stats, name);
+            if (stat != null && MoreStats.force(stat, v, hostAt0(pp, name + "#0"))) moreFixes++;
+            if (v != v) it.remove();
+        }
+    }
+
     private boolean ownNoteLocal(ShipAPI ship, String key) {
         if (ownNoteShip != ownId) { ownNoteShip = ownId; ownNoteLeft.clear(); ownNoteChanged.clear(); }
         Object cur = ship.getCustomData() == null ? null : ship.getCustomData().get(key);
@@ -5311,14 +5490,15 @@ public class WingmanClientPlugin extends BaseEveryFrameCombatPlugin {
         // second while a system is running on it or it is the ship in our hands (that is when this game's own
         // scripts keep changing them); otherwise once a second is plenty.
         boolean lively = own || t.system != 0 || t.cloak != 0;
-        if (pp.hostStats != null && cfg != null && cfg.syncStats && !statsBroken && statsSettled(pp, t, own)
+        if ((pp.hostStats != null || pp.hostMore != null) && cfg != null && cfg.syncStats && !statsBroken && statsSettled(pp, t, own)
                 && (pp.statsDue || ((frame + pp.netId) % (lively ? 6 : 60)) == 0)) {
             pp.statsDue = false;
             try {
                 MutableShipStatsAPI stats = ship.getMutableStats();
-                for (int i = 0; i < ShipStats.COUNT; i++) {
-                    if (ShipStats.force(stats, i, pp.hostStats[i])) { statFixes++; statFixedMask |= 1L << i; }
+                if (pp.hostStats != null) for (int i = 0; i < ShipStats.COUNT; i++) {
+                    if (ShipStats.force(stats, i, pp.hostStats[i], hostAt0(pp, "s:" + i + "#0"))) { statFixes++; statFixedMask |= 1L << i; }
                 }
+                forceMore(pp, stats);
             } catch (Throwable th) {
                 statsBroken = true;
                 Global.getLogger(WingmanClientPlugin.class).error("Wingman: keeping ship stats equal to the host's failed; off for this battle", th);

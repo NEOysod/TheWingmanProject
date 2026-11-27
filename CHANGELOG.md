@@ -97,6 +97,19 @@ Protocol 64: everyone needs this build (0.9.4-beta can't play with it).
   - Your ship system is switched back to the host's state only after a round trip and a little (at least
     0.8 s as before): on a slow link it was switched off before the host had even started it.
   - A ship drifting after a flameout no longer counts as being in a burst.
+- **More of the battle copied from the host (protocol 65: host and joiners need this build).** Scripts run on every PC
+  and the results come from the host, but several things scripts *read* still differed per PC:
+  - **Ship ids.** The game made a random id per ship on each PC, so mod data saved under `"..." + ship.getId()`
+    (very common) was never found on joiners. Joiners' ships now carry the host's ids.
+  - **Targets.** AI ships' system targets, R targets and carrier targets are copied, so targeted systems (Entropy
+    Amplifier, Interdictor, mods' own) hit the right ship on joiners' screens instead of nothing.
+  - **Bodies and switches.** Collision class, mass, collision radius, shields or system switched off by a script,
+    shield arc and type, and ship tags. Missiles that change sides or launcher (hijacks) do so on joiners too.
+  - **Script values** holding a ship, a missile or a position are copied (as the joiner's own copy of that ship or
+    missile), and so are missiles' own script values.
+  - **Every ship stat.** 68 more stats (damage taken and dealt by kind, malfunctions, armour rules, ammo and system
+    uses, missile guidance, overload time, zero-flux boost at any level...) and every named stat mods make for their
+    own mechanics. Bonuses are now exact at every base (a weapon's own range, not just at one reference value).
 - **Friends' officers learn every combat skill, all elite** (host setting, on; was "level like a player"). A
   linked officer now levels until it knows every combat skill the game's officer level-up can teach: 14 in
   vanilla, one per level, so level 14 (officer skills from mods are counted). Every one may be made elite in the

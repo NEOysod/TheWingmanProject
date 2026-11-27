@@ -126,9 +126,9 @@ final class Settings {
         ITEMS.add(new Item(4, "shieldGrace", "Joiners' shields forgive the delay", HOST, true, YES_NO,
                 "On: a shot that a joiner's raised shield (or phase cloak) stopped on their screen, but that hit their ship here before their shield came up, is given back: hull and armor restored, the shield's flux added instead."));
         ITEMS.add(new Item(4, "syncStats", "Ship stats follow the host", BOTH, true, YES_NO,
-                "Speed, turn rate, flux, ranges, rate of fire. The host sends them, the joiner applies them: needed on both."));
+                "Every ship stat (mods' own too), mass, collision, shield arc, switched-off shields or systems, and missiles changing sides. The host sends them, the joiner applies them: needed on both."));
         ITEMS.add(new Item(4, "syncScriptMemory", "Script memory follows the host", BOTH, true, YES_NO,
-                "The simple values mods' scripts keep on a ship are copied from the host. Needed on both."));
+                "What mods' scripts keep on ships, missiles and the battle (values, marked ships, points, tags), and what each ship aims its system at, copied from the host. Needed on both."));
         ITEMS.add(new Item(4, "campaignStandIn", "Stand-in campaign for mod scripts", JOINER, false, YES_NO,
                 "On: mods' battle scripts that look at the player fleet, its cargo, skills or campaign flags find a copy of the host's instead of nothing (which can crash the game). Off: if a mod misbehaves with it."));
         ITEMS.add(new Item(4, "playerList", "Player list on the campaign map", HOST, true, YES_NO,

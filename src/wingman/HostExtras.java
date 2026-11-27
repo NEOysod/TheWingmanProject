@@ -73,16 +73,149 @@ final class HostExtras implements DamageTakenModifier {
     /** Fighters to treat as ships here (they have officers of their own). */
     private final java.util.Set<Integer> officered;
 
-    HostExtras(Map<ShipAPI, Integer> ids, WingmanConfig cfg, java.util.Set<Integer> officered) {
+    /** The host's missile numbers (-1: a missile joiners never get), for missiles' own values and values that are missiles. */
+    private final Map<com.fs.starfarer.api.combat.MissileAPI, Integer> missileIds;
+
+    HostExtras(Map<ShipAPI, Integer> ids, WingmanConfig cfg, java.util.Set<Integer> officered,
+            Map<com.fs.starfarer.api.combat.MissileAPI, Integer> missileIds) {
         this.officered = officered;
         this.ids = ids;
         this.cfg = cfg;
+        this.missileIds = missileIds;
     }
 
     /** A player has just been sent the whole battle: everything here goes out afresh too. */
     void resendAll() {
         sentStats.clear();
         sentNotes.clear();
+        sentMore.clear();
+        newNames.clear();
+        newNames.addAll(statNames); // names first: a joiner that just came has none
+    }
+
+    // ---- stats beyond ShipStats' list (MoreStats): named on first use, then sent by number ----
+    private final Map<String, Integer> statIndex = new HashMap<String, Integer>();
+    private final List<Extras.StatName> statNames = new ArrayList<Extras.StatName>();
+    /** Names given out since they were last sent. */
+    private final List<Extras.StatName> newNames = new ArrayList<Extras.StatName>();
+    /** Per ship: each named stat's value as last sent. */
+    private final Map<Integer, Map<Integer, Float>> sentMore = new HashMap<Integer, Map<Integer, Float>>();
+    private boolean moreBroken;
+    int moreSent;
+
+    private int statIndexOf(String name) {
+        Integer i = statIndex.get(name);
+        if (i != null) return i;
+        i = statIndex.size();
+        statIndex.put(name, i);
+        Extras.StatName n = new Extras.StatName();
+        n.index = i;
+        n.name = name;
+        statNames.add(n);
+        newNames.add(n);
+        return i;
+    }
+
+    /** Collects one ship's named stats that changed (see moreOf). */
+    private final class MoreRun {
+        final Map<Integer, Float> last;
+        final java.util.Set<Integer> seen = new java.util.HashSet<Integer>();
+        int[] idx = new int[16];
+        float[] val = new float[16];
+        int n;
+
+        MoreRun(Map<Integer, Float> last) { this.last = last; }
+
+        void put(int k, float v) {
+            if (n == idx.length) { idx = java.util.Arrays.copyOf(idx, n * 2); val = java.util.Arrays.copyOf(val, n * 2); }
+            idx[n] = k;
+            val[n++] = v;
+        }
+
+        /** A stat's value now: noted as seen, and kept for sending if it changed. */
+        void look(String name, float v) {
+            if (v != v || Math.abs(v) > 1.0e7f) return;
+            int k = statIndexOf(name);
+            seen.add(k);
+            Float was = last.get(k);
+            if (was != null && ShipStats.same(was, v)) return;
+            put(k, v);
+            last.put(k, v);
+        }
+
+        /** A stat or bonus; a bonus also by its value at base 0 (name + "#0"), so the joiner gets it right at every base. */
+        void look(String name, Object stat) {
+            look(name, MoreStats.value(stat));
+            if (stat instanceof com.fs.starfarer.api.combat.StatBonus) {
+                try { look(wireName(at0Names, "", name), ((com.fs.starfarer.api.combat.StatBonus) stat).computeEffective(0f)); } catch (Throwable t) { /* at BASE only */ }
+            }
+        }
+    }
+
+    /** Wire names made once (looked at many times a second): named stats, named bonuses, and bonuses' "#0". */
+    private final Map<String, String> statWireNames = new HashMap<String, String>(), bonusWireNames = new HashMap<String, String>(),
+            at0Names = new HashMap<String, String>();
+
+    private static String wireName(Map<String, String> cache, String prefix, String key) {
+        String n = cache.get(key);
+        if (n == null) {
+            n = prefix.isEmpty() ? key + "#0" : prefix + key;
+            if (cache.size() < 5000) cache.put(key, n);
+        }
+        return n;
+    }
+
+    /** "s:" + index + "#0": ShipStats' bonuses at base 0 (their values at BASE go in STATS). */
+    private static final String[] FIXED_AT0 = new String[ShipStats.COUNT];
+    static {
+        for (int i = 0; i < ShipStats.COUNT; i++) FIXED_AT0[i] = "s:" + i + "#0";
+    }
+
+    /**
+     * The ship's named stats that changed since last sent (and those gone, as NaN), or null if none did: every getter
+     * in MoreStats, the mod's own named stats and bonuses, and ShipStats' bonuses at base 0.
+     */
+    private Extras.MoreStats moreOf(int id, ShipAPI s) {
+        Map<Integer, Float> last = sentMore.get(id);
+        if (last == null) { last = new HashMap<Integer, Float>(); sentMore.put(id, last); }
+        com.fs.starfarer.api.combat.MutableShipStatsAPI st = s.getMutableStats();
+        MoreRun run = new MoreRun(last);
+        for (int i = 0; i < MoreStats.COUNT; i++) {
+            Object stat;
+            try { stat = MoreStats.get(st, i); } catch (Throwable t) { continue; } // a getter this game version lacks
+            run.look(MoreStats.NAMES[i], stat);
+        }
+        for (int i = 0; i < ShipStats.COUNT; i++) {
+            com.fs.starfarer.api.combat.StatBonus b = ShipStats.bonus(st, i);
+            if (b != null) run.look(FIXED_AT0[i], b.computeEffective(0f));
+        }
+        com.fs.starfarer.api.util.DynamicStatsAPI dyn = st.getDynamic();
+        if (dyn != null) {
+            for (int pass = 0; pass < 2; pass++) {
+                Map<String, ?> map = pass == 0 ? dyn.getStats() : dyn.getMods();
+                if (map == null) continue;
+                int taken = 0;
+                for (Map.Entry<String, ?> e : map.entrySet()) {
+                    String key = e.getKey();
+                    if (key == null || key.length() > 100 || key.startsWith("wingman")) continue;
+                    if (pass == 1 && key.equals(com.fs.starfarer.api.impl.campaign.ids.Stats.PHASE_CLOAK_SPEED_MOD)) continue; // in ShipStats' list
+                    if (++taken > 200) break;
+                    run.look(pass == 0 ? wireName(statWireNames, "d:", key) : wireName(bonusWireNames, "b:", key), e.getValue());
+                }
+            }
+        }
+        for (Iterator<Map.Entry<Integer, Float>> it = last.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<Integer, Float> e = it.next();
+            if (run.seen.contains(e.getKey())) continue;
+            it.remove(); // gone on the host (a named stat a script removed): the joiner lets go of it too
+            run.put(e.getKey(), Float.NaN);
+        }
+        if (run.n == 0) return null;
+        Extras.MoreStats m = new Extras.MoreStats();
+        m.ship = id;
+        m.index = java.util.Arrays.copyOf(run.idx, run.n);
+        m.values = java.util.Arrays.copyOf(run.val, run.n);
+        return m;
     }
 
     void tick(CombatEngineAPI engine, HostSession session, Map<Integer, ShipAPI> byId) {
@@ -124,6 +257,7 @@ final class HostExtras implements DamageTakenModifier {
 
     private void sendStats(HostSession session, Map<Integer, ShipAPI> byId) {
         List<Extras.Stats> out = new ArrayList<Extras.Stats>();
+        List<Extras.MoreStats> more = new ArrayList<Extras.MoreStats>();
         float[] now = new float[ShipStats.COUNT];
         statRound++;
         java.util.Set<Integer> flown = new java.util.HashSet<Integer>();
@@ -143,6 +277,15 @@ final class HostExtras implements DamageTakenModifier {
                 continue;
             }
             statLooks++;
+            if (!moreBroken) {
+                try {
+                    Extras.MoreStats m = moreOf(e.getKey(), s);
+                    if (m != null) { more.add(m); moreSent += m.index.length; statsChanging.put(e.getKey(), System.currentTimeMillis() + 1000L); }
+                } catch (Throwable t) {
+                    moreBroken = true;
+                    Global.getLogger(HostExtras.class).error("Wingman: sending the wider ship stats failed; only the main ones are kept alike for this battle", t);
+                }
+            }
             long mask = 0L;
             int changed = 0;
             for (int i = 0; i < ShipStats.COUNT; i++) {
@@ -169,8 +312,14 @@ final class HostExtras implements DamageTakenModifier {
             if (out.size() >= 30) { session.broadcast(Msg.STATS, Extras.encodeStats(out)); out = new ArrayList<Extras.Stats>(); }
         }
         if (!out.isEmpty()) session.broadcast(Msg.STATS, Extras.encodeStats(out));
+        if (!newNames.isEmpty()) { // names before the values that use them (same connection, in order)
+            session.broadcast(Msg.STAT_NAMES, Extras.encodeStatNames(newNames));
+            newNames.clear();
+        }
+        for (int i = 0; i < more.size(); i += 30) session.broadcast(Msg.STATS_MORE, Extras.encodeMoreStats(more.subList(i, Math.min(more.size(), i + 30))));
         touched.clear();
         if (sentStats.size() > byId.size() + 50) sentStats.keySet().retainAll(byId.keySet());
+        if (sentMore.size() > byId.size() + 50) sentMore.keySet().retainAll(byId.keySet());
         if (statsChanging.size() > byId.size() + 50) statsChanging.keySet().retainAll(byId.keySet());
     }
 
@@ -187,22 +336,52 @@ final class HostExtras implements DamageTakenModifier {
 
     private void sendNotes(CombatEngineAPI engine, HostSession session, Map<Integer, ShipAPI> byId) {
         List<Extras.Note> out = new ArrayList<Extras.Note>();
-        gather(-1, engine.getCustomData(), out);
+        gather(-1, false, engine.getCustomData(), out);
         noteRound++;
         for (Map.Entry<Integer, ShipAPI> e : byId.entrySet()) {
             ShipAPI s = e.getValue();
             if (s.isFighter() && !officered.contains(e.getKey())) continue;
-            gather(e.getKey(), s.getCustomData(), out);
+            gather(e.getKey(), false, s.getCustomData(), out);
             if (out.size() >= 150) { session.broadcast(Msg.NOTES, Extras.encodeNotes(out)); notesSent += out.size(); out = new ArrayList<Extras.Note>(); }
+        }
+        // Missiles' own values (a mod's missile script keeping its stage, its mark, its charge on the missile).
+        java.util.Set<Integer> liveMissiles = new java.util.HashSet<Integer>();
+        if (missileIds != null) {
+            for (Map.Entry<com.fs.starfarer.api.combat.MissileAPI, Integer> e : missileIds.entrySet()) {
+                int mid = e.getValue();
+                if (mid < 0) continue;
+                liveMissiles.add(mid);
+                Map<String, Object> data;
+                try { data = e.getKey().getCustomData(); } catch (Throwable t) { continue; }
+                gather(mid, true, data, out);
+                if (out.size() >= 150) { session.broadcast(Msg.NOTES, Extras.encodeNotes(out)); notesSent += out.size(); out = new ArrayList<Extras.Note>(); }
+            }
         }
         if (!out.isEmpty()) { session.broadcast(Msg.NOTES, Extras.encodeNotes(out)); notesSent += out.size(); }
         if (sentNotes.size() > byId.size() + 50) {
-            for (Iterator<Integer> it = sentNotes.keySet().iterator(); it.hasNext();) { int id = it.next(); if (id >= 0 && !byId.containsKey(id)) it.remove(); }
+            for (Iterator<Integer> it = sentNotes.keySet().iterator(); it.hasNext();) {
+                int id = it.next();
+                if (id >= 0 ? !byId.containsKey(id) : id <= -2 && !liveMissiles.contains(-2 - id)) it.remove();
+            }
+            for (Iterator<String> it = streaks.keySet().iterator(); it.hasNext();) { // runs of values on ships and missiles gone
+                String k = it.next();
+                int bar = k.indexOf('|');
+                try {
+                    int id = Integer.parseInt(k.substring(0, bar));
+                    if (id >= 0 ? !byId.containsKey(id) : id <= -2 && !liveMissiles.contains(-2 - id)) it.remove();
+                } catch (RuntimeException ex) { it.remove(); }
+            }
         }
     }
 
-    /** Add to the list every simple value in a script's store that is new, changed or gone since last time. */
-    private void gather(int ship, Map<String, Object> data, List<Extras.Note> out) {
+    /**
+     * Add to the list every value in a script's store that is new, changed or gone since last time: the simple
+     * sorts (true/false, numbers, short text), and a ship, a missile or a point (sent as the ship's or missile's
+     * number, or x and y), which scripts keep for a mark, a target, a place to go. Other objects stay each game's own.
+     * Keyed by ship number, -1 for the battle, -2 - number for a missile.
+     */
+    private void gather(int owner, boolean missile, Map<String, Object> data, List<Extras.Note> out) {
+        int ship = missile ? -2 - owner : owner;
         Map<String, String> last = sentNotes.get(ship);
         if ((data == null || data.isEmpty()) && (last == null || last.isEmpty())) return;
         if (last == null) { last = new HashMap<String, String>(); sentNotes.put(ship, last); }
@@ -211,29 +390,48 @@ final class HostExtras implements DamageTakenModifier {
         if (data != null) {
             for (Map.Entry<String, Object> e : new ArrayList<Map.Entry<String, Object>>(data.entrySet())) {
                 String key = e.getKey();
-                if (key == null || key.startsWith("wingman") || kept >= 40) continue;
-                Extras.Note n = e.getValue() == null ? null : Extras.noteOf(ship, key, e.getValue());
-                if (n == null) continue; // not a simple value: an object only this game's script can make sense of
+                if (key == null || key.startsWith("wingman") || key.startsWith("nonAI_SAIF_") || kept >= 40) continue;
+                Object v = e.getValue();
+                Extras.Note n = v == null ? null : noteOf(missile ? owner : ship, key, v);
+                if (n == null) continue; // an object only this game's script can make sense of
+                n.onMissile = missile;
                 kept++;
-                String sig = n.kind + (n.wide ? "w:" : ":") + e.getValue();
+                String sig = n.kind + (n.wide ? "w:" : ":") + (n.kind >= Extras.SHIP_REF ? n.whole + "," + Math.round(n.number) + "," + Math.round(n.y) : String.valueOf(v));
                 seen.put(key, sig);
                 if (sig.equals(last.get(key))) { streaks.remove(ship + "|" + key); continue; }
                 // A value that is different every single time we look is a timer or a running figure, which
                 // each game's own copy of the script keeps for itself. Copying it would only make the joiner's
                 // jump about. After a few in a row it is left alone for good.
-                String sk = ship + "|" + key;
-                if (restless.contains(sk)) continue;
+                // (A missile's timer is the same script's on every missile of that kind: once one shows it, all do.)
+                String sk = ship + "|" + key, rk = missile ? "m|" + key : sk;
+                if (restless.contains(rk)) continue;
                 int[] run = streaks.get(sk);
                 if (run == null) { run = new int[1]; streaks.put(sk, run); }
-                if (++run[0] >= RESTLESS_LOOKS) { restless.add(sk); streaks.remove(sk); continue; }
+                if (++run[0] >= RESTLESS_LOOKS) { restless.add(rk); streaks.remove(sk); continue; }
                 out.add(n);
             }
         }
         for (String key : last.keySet()) {
-            if (!seen.containsKey(key)) out.add(Extras.noteOf(ship, key, null)); // was there, is gone
+            if (seen.containsKey(key)) continue;
+            Extras.Note gone = Extras.noteOf(missile ? owner : ship, key, null); // was there, is gone
+            if (gone != null) { gone.onMissile = missile; out.add(gone); }
         }
         last.clear();
         last.putAll(seen);
+    }
+
+    /** A value as a note: the simple sorts, or one of our ships or missiles by number, or a point; null otherwise. */
+    private Extras.Note noteOf(int owner, String key, Object v) {
+        if (v instanceof ShipAPI) {
+            Integer id = ids.get(v);
+            return id == null ? null : Extras.refNote(owner, key, Extras.SHIP_REF, id);
+        }
+        if (v instanceof com.fs.starfarer.api.combat.MissileAPI) {
+            Integer id = missileIds == null ? null : missileIds.get(v);
+            return id == null || id < 0 ? null : Extras.refNote(owner, key, Extras.MISSILE_REF, id);
+        }
+        if (v instanceof Vector2f) return Extras.pointNote(owner, key, ((Vector2f) v).x, ((Vector2f) v).y);
+        return Extras.noteOf(owner, key, v);
     }
 
     private void sendHurts(HostSession session) {

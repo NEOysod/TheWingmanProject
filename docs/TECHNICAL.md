@@ -180,8 +180,8 @@ mods; see `docs/MOD_API.md`), `INPUT_MODE` (steady controls on or off), and read
 
 ### 4.6 Messages
 
-Protocol version 64 (`Msg.PROTOCOL_VERSION`; 64 since turret angles, shield facing and missile headings went to
-65536 steps a turn); host and joiner must match. Payloads are packed with `Out`/`In`:
+Protocol version 65 (`Msg.PROTOCOL_VERSION`; 65 since ships carry the host's ship id and the channels 77-81 below
+came; 64 when turret angles, shield facing and missile headings went to 65536 steps a turn); host and joiner must match. Payloads are packed with `Out`/`In`:
 big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per character. Every read checks bounds
 (`IOException("message cut short")`).
 
@@ -246,6 +246,11 @@ big-endian numbers, varints (7 bits per byte), text as length + 2 bytes per char
 | 66 | REFIT_RESULT | host → joiner | what became of it (`RefitResult`): received, accepted, denied, refused, withdrawn; text ≤ 1,000 (lines) |
 | 73 / 74 | ECHO / ECHO_BACK | both | the sender's clock (ms); answered by the connection itself, never reaches the game (4.2) |
 | 75 | PINGS | host → joiners | every 2 s: count, then per joiner its P number and round trip to the host (ms, −1 unknown); `Pings` |
+| 77 | TARGETS | host → joiner | per ship that changed: R target, system / maneuver / carrier target (ship numbers, -1 none), system point (`Extras.Aim`) |
+| 78 | BODY | host → joiner | per ship that changed: collision class, mass, collision radius, switches (shields / system disabled), shield arc and type, tags (≤ 40, ≤ 80 characters) (`Extras.Body`) |
+| 79 | MISSILE_WHO | host → joiner | a missile whose side or launching ship changed after launch: number, owner, source ship |
+| 80 | STAT_NAMES | host → joiner | names for stat numbers: `m:` + a `MutableShipStatsAPI` getter, `d:` / `b:` + a named stat / bonus, `#0` = a bonus at base 0, `s:<i>#0` = ShipStats bonus *i* at base 0 |
+| 81 | STATS_MORE | host → joiner | per ship: (stat number, value) for those that changed; NaN = gone on the host |
 | 76 | CHAT | both | joiner → host: a line (≤ 200 characters, ≤ 6 per 10 s, control characters dropped). Host → all: P number, name, line; `ChatLog` keeps the last 100 on each PC |
 | 64 | REFIT_DATA | host → joiner | what the refit screen shows (`RefitData`, 6.8): the ship (weapons by slot ≤ 160, bays ≤ 20, hull mods, S-mods, permanent mods ≤ 600 each; OP, vents, capacitors and S-mods with their limits), credits, story points, cargo, storage, submarkets (≤ 8: name, tariff, usable or why not, stock, what each won't sell or buy), known hull mods (≤ 600), base values (≤ 2,000); ≤ 300 items per list |
 
@@ -579,6 +584,7 @@ expected count.
 | `HostExtras` | `STATS`, `NOTES`, `HURTS` | One engine damage listener notes ships hit. **Stats** every 33 ms for a ship touched, flown, busy, or whose stats changed in the last second; the rest once a second in turns (`STATS_IDLE_EVERY`); changes over 0.5% only. **Notes** 15×/s (`NOTES_MS` 66), every ship each pass: simple custom-data values (boolean, number, text ≤ 64) of the engine and ships, ≤ 40 per ship, keys ≤ 80 not starting `wingman`; a value that changed at 23 looks running (1.5 s; protocol 64 kept 6 s, 90 looks) is a timer and stops being sent. On the joiner's own ship a value its own scripts changed within a round trip + 0.3 s (0.5-1.5 s) is not overwritten by the host's (`ownNoteLocal`): those scripts run a round trip ahead, under the player's controls. **Hurts** every 33 ms (`HURTS_MS`; until 0.9.4 stats and hurts went 4×/s, notes 2×/s, half the ships each pass): damage per ship not from a weapon's projectile or beam (those happen on every PC anyway), summed, with the heaviest blow's type, point and source. |
 | `HostEnvironment` | `BATTLE_INFO`, `NEBULA`, `ASTEROIDS` | Battle info: map size, background, colours, glow, starfield, hyperspace, the planets behind the battle (read from the engine, with each one's look; `Backdrop`), the objectives (kind, place; ≤ 64) and the campaign facts (8.3). Nebula as one bit per tile. Asteroids 2×/s by battle time, those off by 6 units or 1 unit/s; the full list every 5 s (how removals are learned); at most 600. |
 | `HostOrders` | `OBJECTIVES`, `ORDERS`, `OBJECTIVE_TEXT` | Objective owners, with `Orders.GONE` (0x80) added once the host's game has taken one off the field; each objective's tooltip (its script's `getLongDescription`), checked every second and sent on change; side 0's task manager: full assault/retreat, assignments with targets and ships, direct retreat/search-and-destroy orders. Rebuilt every 300 ms, sent on change or every 3 s. |
+| `HostState` | `TARGETS`, `BODY`, `MISSILE_WHO` | 15×/s, change-only, everything again every 5 s and in full after a resync; each part off by itself on failure (7.15) |
 | `ShipStats` | (used by both) | 57 stats: 31 `MutableStat` (speed, acceleration, turn, flux, rates of fire, projectile speed, time mult, shield, vent, recoil, beam flux cost, shield upkeep, soft-flux conversion, range cap and past it, reload rates…) and 26 `StatBonus` measured as `computeEffective(1000)` (ranges, weapon turn, shield arc, sight, missile handling, system range/cooldown/regen/flux cost, peak CR, phase speed/cooldown/upkeep/activation, weapon flux costs…). Damage-only stats are left out; so is the fighter refit time, which the joiner sets itself (`BayQuiet`). Not compared while the ship's system or phase cloak is charging up or down on either side, or on on one side only (`statsSettled`; then until a round trip + 0.1 s after, 0.25-1 s): both sides put the system's own effect on the stats a moment apart, and a correction across that moment doubled it or took it away (on the ship you fly, every use). A system not run on copies (teleporter, drones, `SystemWatch`-blocked) doesn't hold them back. The five engine stats (top speed, acceleration, deceleration, turn rate, turn acceleration) are read and corrected without the game's `engine_damage_penalty` multiplier and `zero_flux_boost` flat (`withoutEngines`): the copy works those out from the engines and flux it is told of. Copying them let "top speed 0" from a flameout reach a copy whose engines still ran, and `Ship.advance` slows a ship over its top speed: the ship you fly stopped dead instead of drifting. |
 
 ### 6.7 The after-action report and the aftermath (`BattleStats`, `CampaignLobby.aftermath`)
@@ -1039,6 +1045,38 @@ react. Replayed damage is not counted as local.
 screen space, plus an optional diamond outline (raw OpenGL line loop at 1.15 × collision radius, 1 px, 55% opacity,
 state saved and restored). P1 is the host's flagship; others from the lobby. F3 in battle hides them until the game
 closes.
+
+### 7.15 What scripts change besides position (protocol 65)
+
+Scripts run on every PC and the host's results are copied, but a script's *inputs* differ per PC unless they are
+copied too. These are:
+
+- **Ship ids** (`ShipIds`). The game gives each ship a random id (`Misc.genUID()`), so the same ship had a different
+  `getId()` on every PC; mods key per-ship data by it (`"mymod_" + ship.getId()` in the battle's custom data, stat
+  modifier names), so what the host's scripts wrote was never found here. `ShipSpawn.shipId` carries the host's; the
+  joiner sets its copy's private field `Ship.id` (java.lang.invoke, checked by `InternalsCheck`) in `register`,
+  before the ship's first frame. Fail-soft: one log line, ids left as they are.
+- **Targets** (`TARGETS`). A system script asks a ship that isn't the local player's for its mark through the AI
+  flags (`TARGET_FOR_SHIP_SYSTEM`, `MANEUVER_TARGET`, `CARRIER_FIGHTER_TARGET`, `SYSTEM_TARGET_COORDS`); a copy's AI
+  does nothing, so targeted systems found nothing here. The host sends each ship's flags and R target (its own ship
+  answered as the game answers its player: R target, else the enemy nearest the mouse); the joiner puts them on the
+  copy's `PuppetAI` flags and R target, again twice a second (an AI the game gave back loses them). Never on our own ship.
+- **Bodies** (`BODY`): collision class, mass, collision radius, `setDefenseDisabled` / `setShipSystemDisabled`, the
+  shield's arc and type, the ship's tags. Applied to copies at once (collision class left alone on wrecks, drones,
+  fighters and the stand-in); the shield arc only once the host's has held still 0.3 s (a sweeping system runs here
+  too). On our own ship, whose scripts run a round trip early, the host's body is taken only after ours has differed
+  for longer than round trip + 0.3 s (0.5-1.5 s). A tag the host drops is dropped; tags only our scripts put stay.
+- **Missiles' owners** (`MISSILE_WHO`): hijacked or handed-over missiles change side and launcher here too.
+- **Script values** (`NOTES`) now also carry a ship or missile (by number, turned into our copy) and a point
+  (`Vector2f`, moved in place if the script holds one), and missiles' own custom data. Put only where the value here
+  is missing or of the same sort; a ship or missile not built yet is tried again for 5 s. A missile key that runs
+  as a timer on one missile is taken as a timer on all of that kind.
+- **Every stat** (`STAT_NAMES`, `STATS_MORE`, `MoreStats`): the 68 `MutableShipStatsAPI` stats that can matter in
+  battle and aren't in ShipStats' 57 (campaign ones and the five that keep a copy unhurt left out), and every named
+  stat and bonus mods make (`getDynamic()`). Named on first use, then sent by number, change-only with the stats
+  pass; held back on our own ship as the main stats are (`statsSettled`). Bonuses go with their value at base 0 as
+  well, so `ShipStats.forceBonus` makes both slope and offset the host's: right at every base, not only at BASE
+  (this now also applies to ShipStats' own bonuses: weapon ranges, armour).
 
 ---
 

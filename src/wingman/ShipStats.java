@@ -14,9 +14,9 @@ final class ShipStats {
     private ShipStats() {}
 
     static final int COUNT = 57;
-    private static final String KEY = "wingman_host";
+    static final String KEY = "wingman_host";
     /** A bonus is measured by what it makes of this base value. */
-    private static final float BASE = 1000f;
+    static final float BASE = 1000f;
 
     private static MutableStat plain(MutableShipStatsAPI s, int i) {
         switch (i) {
@@ -55,7 +55,7 @@ final class ShipStats {
         }
     }
 
-    private static StatBonus bonus(MutableShipStatsAPI s, int i) {
+    static StatBonus bonus(MutableShipStatsAPI s, int i) {
         switch (i) {
             case 20: return s.getBallisticWeaponRangeBonus();
             case 21: return s.getEnergyWeaponRangeBonus();
@@ -142,7 +142,10 @@ final class ShipStats {
      * first, so that whatever this game's scripts have done to the stat since is what gets corrected.
      * Returns true if a correction was needed.
      */
-    static boolean force(MutableShipStatsAPI s, int i, float host) {
+    static boolean force(MutableShipStatsAPI s, int i, float host) { return force(s, i, host, Float.NaN); }
+
+    /** As above; for a bonus, hostAt0 is its value at base 0 on the host (NaN if not known), which makes it exact. */
+    static boolean force(MutableShipStatsAPI s, int i, float host, float hostAt0) {
         if (host != host || Math.abs(host) > 1.0e7f) return false; // unknown, or nonsense
         try {
             MutableStat m = plain(s, i);
@@ -160,25 +163,52 @@ final class ShipStats {
                 }
                 return true;
             }
-            if (m != null) {
-                m.unmodify(KEY);
-                float local = m.getModifiedValue();
-                if (same(local, host)) return false;
-                if (Math.abs(local) > 0.0001f && host / local > 0f) m.modifyMult(KEY, host / local);
-                else m.modifyFlat(KEY, host - local);
-                return true;
-            }
+            if (m != null) return forceStat(m, host);
             StatBonus b = bonus(s, i);
-            if (b == null) return false;
-            b.unmodify(KEY);
-            float local = b.computeEffective(BASE);
-            if (same(local, host)) return false;
-            if (Math.abs(local) > 0.0001f && host / local > 0f) b.modifyMult(KEY, host / local);
-            else b.modifyFlat(KEY, host - local);
-            return true;
+            return b != null && forceBonus(b, host, hostAt0);
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** Make a stat's final value the host's with our one modifier (our earlier one taken off first). True if needed. */
+    static boolean forceStat(MutableStat m, float host) {
+        if (host != host || Math.abs(host) > 1.0e7f) return false;
+        m.unmodify(KEY);
+        float local = m.getModifiedValue();
+        if (same(local, host)) return false;
+        if (Math.abs(local) > 0.0001f && host / local > 0f) m.modifyMult(KEY, host / local);
+        else m.modifyFlat(KEY, host - local);
+        return true;
+    }
+
+    /** The same for a bonus, compared at BASE. */
+    static boolean forceBonus(StatBonus b, float host) { return forceBonus(b, host, Float.NaN); }
+
+    /**
+     * The same for a bonus. A bonus is a line, (base x (1 + percent) + flat) x mult: a slope and a value at base 0.
+     * With the host's value at base 0 as well (hostAt0), both are made the host's, so it is right at every base (a
+     * weapon's own range, a hull's own armour); without it, only at BASE, as until protocol 65.
+     */
+    static boolean forceBonus(StatBonus b, float host, float hostAt0) {
+        if (host != host || Math.abs(host) > 1.0e7f) return false;
+        b.unmodify(KEY);
+        float local = b.computeEffective(BASE);
+        if (hostAt0 == hostAt0 && Math.abs(hostAt0) < 1.0e7f) {
+            float localAt0 = b.computeEffective(0f);
+            if (same(local, host) && same(localAt0, hostAt0)) return false;
+            float slopeHere = (local - localAt0) / BASE, slopeHost = (host - hostAt0) / BASE, mult = b.getMult();
+            if (Math.abs(slopeHere) > 1.0e-6f && slopeHost / slopeHere > 0f && Math.abs(mult) > 1.0e-6f) {
+                float m = slopeHost / slopeHere, flatHere = b.getFlatBonus(); // (ours taken off above)
+                b.modifyMult(KEY, m);
+                b.modifyFlat(KEY, hostAt0 / (mult * m) - flatHere); // flat inside the mult: (flat + F) x mult x m = hostAt0
+                return true;
+            }
+        }
+        if (same(local, host)) return false;
+        if (Math.abs(local) > 0.0001f && host / local > 0f) b.modifyMult(KEY, host / local);
+        else b.modifyFlat(KEY, host - local);
+        return true;
     }
 
     private static final String[] NAMES = { "top speed", "acceleration", "deceleration", "turn rate", "turn acceleration", "flux capacity",
